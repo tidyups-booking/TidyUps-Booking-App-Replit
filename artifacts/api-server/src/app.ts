@@ -30,7 +30,36 @@ app.use(
 // Clerk proxy must be mounted BEFORE body parsers — it streams raw bytes
 app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
 
-app.use(cors({ credentials: true, origin: true }));
+// Build an explicit allowlist of origins rather than reflecting any origin.
+// ALLOWED_ORIGINS env var accepts a comma-separated list of additional
+// production / staging origins (e.g. "https://bookcleaning.app").
+// REPLIT_DOMAINS is injected by the platform and covers the dev preview domain.
+const allowedOrigins: string[] = [
+  ...(process.env.REPLIT_DOMAINS
+    ? process.env.REPLIT_DOMAINS.split(",").map((d) => `https://${d.trim()}`)
+    : []),
+  ...(process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim())
+    : []),
+];
+
+app.use(
+  cors({
+    credentials: true,
+    origin: (requestOrigin, callback) => {
+      // Allow server-to-server requests that have no Origin header.
+      if (!requestOrigin) {
+        callback(null, true);
+        return;
+      }
+      if (allowedOrigins.includes(requestOrigin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS: origin '${requestOrigin}' not allowed`));
+      }
+    },
+  }),
+);
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true }));
 
