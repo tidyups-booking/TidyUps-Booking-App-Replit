@@ -106,11 +106,71 @@ router.get("/jobber/callback", async (req, res) => {
   try {
     const redirectUri = getCallbackUrl(req.get("host"));
     await exchangeCodeForTokens(code, redirectUri);
-    // Redirect back to the booking app
-    res.redirect("/?jobber=connected");
+    // Serve a small page that signals the opener via BroadcastChannel then
+    // closes itself, so the original dashboard tab updates without a manual
+    // refresh (Jobber blocks iframe embedding so we open OAuth in a new tab).
+    res.send(`<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Jobber Connected</title>
+<style>
+  body{font-family:system-ui,sans-serif;display:flex;align-items:center;
+       justify-content:center;height:100vh;margin:0;background:#f0fdf4;color:#166534}
+  .box{text-align:center;padding:2rem;border-radius:1rem;background:#dcfce7;
+       border:1px solid #bbf7d0;max-width:320px}
+  h2{margin:0 0 .5rem}p{margin:0;font-size:.9rem;color:#4b7c5d}
+</style>
+</head>
+<body>
+<div class="box">
+  <h2>✓ Jobber Connected</h2>
+  <p>This tab will close automatically…</p>
+</div>
+<script>
+  try {
+    const ch = new BroadcastChannel("jobber_oauth");
+    ch.postMessage({ type: "connected" });
+    ch.close();
+  } catch (_) {}
+  // Fall back to localStorage for browsers that don't support BroadcastChannel
+  try {
+    localStorage.setItem("jobber_oauth_signal", Date.now().toString());
+  } catch (_) {}
+  setTimeout(() => window.close(), 1200);
+</script>
+</body>
+</html>`);
   } catch (err: any) {
     console.error("Jobber OAuth callback error:", err);
-    res.redirect(`/?jobber=error&reason=${encodeURIComponent(err.message)}`);
+    // Serve an error page that also signals the opener, then closes
+    res.send(`<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Jobber Error</title>
+<style>
+  body{font-family:system-ui,sans-serif;display:flex;align-items:center;
+       justify-content:center;height:100vh;margin:0;background:#fef2f2;color:#991b1b}
+  .box{text-align:center;padding:2rem;border-radius:1rem;background:#fee2e2;
+       border:1px solid #fecaca;max-width:360px}
+  h2{margin:0 0 .5rem}p{margin:0;font-size:.85rem;color:#7f1d1d;word-break:break-word}
+</style>
+</head>
+<body>
+<div class="box">
+  <h2>⚠ Jobber connection failed</h2>
+  <p>${err.message}</p>
+  <p style="margin-top:.75rem">You can close this tab and try again.</p>
+</div>
+<script>
+  try {
+    const ch = new BroadcastChannel("jobber_oauth");
+    ch.postMessage({ type: "error", reason: ${JSON.stringify(err.message)} });
+    ch.close();
+  } catch (_) {}
+  try {
+    localStorage.setItem("jobber_oauth_signal", "error:" + Date.now());
+  } catch (_) {}
+</script>
+</body>
+</html>`);
   }
 });
 

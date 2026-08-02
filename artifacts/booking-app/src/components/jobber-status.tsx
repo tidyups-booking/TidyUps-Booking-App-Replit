@@ -41,19 +41,41 @@ export function JobberStatus({ baseUrl }: Props) {
 
   useEffect(() => { check(); }, [baseUrl]);
 
-  // Check for ?jobber= redirect from OAuth callback
+  // Listen for the signal posted by the OAuth callback page (opened in a new
+  // tab).  Two mechanisms for broad browser support:
+  //  1. BroadcastChannel — works in all modern browsers
+  //  2. localStorage "storage" event — fallback for browsers without BC
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const jobberParam = params.get("jobber");
-    if (jobberParam === "connected") {
-      setStatus("connected");
-      const url = new URL(window.location.href);
-      url.searchParams.delete("jobber");
-      window.history.replaceState({}, "", url.toString());
-    } else if (jobberParam === "error") {
-      setStatus("disconnected");
-    }
-  }, []);
+    // BroadcastChannel listener
+    let bc: BroadcastChannel | null = null;
+    try {
+      bc = new BroadcastChannel("jobber_oauth");
+      bc.onmessage = (e) => {
+        if (e.data?.type === "connected") {
+          check();
+        } else if (e.data?.type === "error") {
+          setStatus("disconnected");
+        }
+      };
+    } catch (_) { /* not supported */ }
+
+    // localStorage storage-event listener (cross-tab, fires in other tabs)
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== "jobber_oauth_signal" || !e.newValue) return;
+      if (e.newValue.startsWith("error:")) {
+        setStatus("disconnected");
+      } else {
+        check();
+      }
+    };
+    window.addEventListener("storage", onStorage);
+
+    return () => {
+      bc?.close();
+      window.removeEventListener("storage", onStorage);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseUrl]);
 
   const handleConnect = () => {
     // Open in a new tab — Jobber's OAuth page blocks iframe embedding (X-Frame-Options),
