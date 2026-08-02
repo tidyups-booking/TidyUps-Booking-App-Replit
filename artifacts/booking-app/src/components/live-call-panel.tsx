@@ -33,6 +33,7 @@ interface ExtractedFields {
 
 interface LiveCallPanelProps {
   onFieldsExtracted: (fields: ExtractedFields, newKeys: string[]) => void;
+  onTranscriptChange?: (transcript: string) => void;
   baseUrl: string;
 }
 
@@ -57,7 +58,7 @@ const FIELD_LABELS: Record<string, string> = {
 type Mode = "mic" | "phone";
 type CallStatus = "idle" | "active" | "ended";
 
-export function LiveCallPanel({ onFieldsExtracted, baseUrl }: LiveCallPanelProps) {
+export function LiveCallPanel({ onFieldsExtracted, onTranscriptChange, baseUrl }: LiveCallPanelProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [mode, setMode] = useState<Mode>("phone");
   const [transcript, setTranscript] = useState("");
@@ -124,6 +125,11 @@ export function LiveCallPanel({ onFieldsExtracted, baseUrl }: LiveCallPanelProps
   useEffect(() => {
     lastExtractedRef.current = lastExtracted;
   }, [lastExtracted]);
+
+  // Notify parent whenever transcript changes
+  useEffect(() => {
+    onTranscriptChange?.(transcript);
+  }, [transcript, onTranscriptChange]);
 
   // Auto-extract on transcript changes — only for mic mode; phone mode gets fields via SSE
   useEffect(() => {

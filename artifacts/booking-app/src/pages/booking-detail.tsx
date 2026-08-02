@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useLocation, useParams } from "wouter";
 import { 
   useGetBooking, 
@@ -19,7 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { 
   ArrowLeft, MapPin, Phone, Mail, Home, Clock, Calendar, 
   Edit3, Trash2, CheckCircle2, AlertCircle, FileText, 
-  User
+  User, ChevronDown, ChevronUp, Mic
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { JobberSyncCard, type JobberSyncStatus } from "@/components/jobber-sync-card";
@@ -27,6 +27,14 @@ import { JobberSyncCard, type JobberSyncStatus } from "@/components/jobber-sync-
 function getBaseUrl() {
   const base = import.meta.env.BASE_URL ?? "/";
   return base.endsWith("/") ? base : base + "/";
+}
+
+interface CallTranscriptRow {
+  id: number;
+  bookingId: number;
+  transcript: string;
+  callDurationSeconds: number | null;
+  createdAt: string;
 }
 
 export default function BookingDetail() {
@@ -38,6 +46,9 @@ export default function BookingDetail() {
   const [jobberJobId, setJobberJobId] = useState<string | null | undefined>(undefined);
   const [jobberSyncStatus, setJobberSyncStatus] = useState<JobberSyncStatus | null | undefined>(undefined);
   const [jobberSyncError, setJobberSyncError] = useState<string | null | undefined>(undefined);
+
+  const [transcripts, setTranscripts] = useState<CallTranscriptRow[]>([]);
+  const [transcriptOpen, setTranscriptOpen] = useState(false);
 
   const { data: booking, isLoading, isError } = useGetBooking(id, {
     query: {
@@ -59,6 +70,15 @@ export default function BookingDetail() {
 
   const updateBooking = useUpdateBooking();
   const deleteBooking = useDeleteBooking();
+
+  // Fetch call transcript for this booking
+  useEffect(() => {
+    if (!id) return;
+    fetch(`${getBaseUrl()}api/call-transcripts/${id}`, { credentials: "include" })
+      .then((r) => r.ok ? r.json() : [])
+      .then((rows: CallTranscriptRow[]) => setTranscripts(rows))
+      .catch(() => {});
+  }, [id]);
 
   if (isError) {
     return (
@@ -221,6 +241,46 @@ export default function BookingDetail() {
                   {booking.notes}
                 </p>
               </CardContent>
+            </Card>
+          )}
+
+          {/* Call Transcript Card */}
+          {transcripts.length > 0 && (
+            <Card className="shadow-sm border-purple-200 dark:border-purple-900/40">
+              <button
+                type="button"
+                className="w-full text-left"
+                onClick={() => setTranscriptOpen((v) => !v)}
+              >
+                <CardHeader className="pb-3 bg-purple-50/60 dark:bg-purple-950/20 rounded-t-xl border-b border-purple-100 dark:border-purple-900/30">
+                  <CardTitle className="text-base flex items-center justify-between gap-2 text-purple-800 dark:text-purple-400">
+                    <span className="flex items-center gap-2">
+                      <Mic className="w-4 h-4" />
+                      Call Transcript
+                      <span className="text-xs font-normal text-purple-600 dark:text-purple-500 ml-1">
+                        {new Date(transcripts[0].createdAt).toLocaleDateString()}
+                      </span>
+                    </span>
+                    {transcriptOpen ? (
+                      <ChevronUp className="w-4 h-4 text-purple-500 flex-shrink-0" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-purple-500 flex-shrink-0" />
+                    )}
+                  </CardTitle>
+                </CardHeader>
+              </button>
+              {transcriptOpen && (
+                <CardContent className="pt-4">
+                  {transcripts.map((t) => (
+                    <p
+                      key={t.id}
+                      className="whitespace-pre-wrap text-sm text-muted-foreground leading-relaxed font-mono bg-muted/40 rounded-lg p-4 border"
+                    >
+                      {t.transcript}
+                    </p>
+                  ))}
+                </CardContent>
+              )}
             </Card>
           )}
         </div>

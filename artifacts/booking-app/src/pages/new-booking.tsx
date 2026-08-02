@@ -90,6 +90,9 @@ export default function NewBooking() {
   // Track which fields were auto-filled so we can flash them
   const [highlightedFields, setHighlightedFields] = useState<Set<string>>(new Set());
 
+  // Track the live-call transcript so it can be saved with the booking
+  const [callTranscript, setCallTranscript] = useState("");
+
   // Nearest cleaner suggestion
   const [nearestCleaner, setNearestCleaner] = useState<{ name: string; km: number; id: number } | null>(null);
   const geocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -172,11 +175,12 @@ export default function NewBooking() {
   );
 
   const onSubmit = (data: BookingFormValues) => {
-    const submitData = { ...data };
+    const submitData: Record<string, any> = { ...data };
     if (isNaN(submitData.estimatedPrice as any)) submitData.estimatedPrice = undefined;
     if (submitData.email === "") submitData.email = undefined;
     if (submitData.postalCode === "") submitData.postalCode = undefined;
     if (!submitData.staffId) submitData.staffId = undefined;
+    if (callTranscript.trim()) submitData.callTranscript = callTranscript.trim();
 
     createBooking.mutate({ data: submitData as any }, {
       onSuccess: () => {
@@ -208,7 +212,11 @@ export default function NewBooking() {
 
       {/* Live Call Panel */}
       <div className="mb-6">
-        <LiveCallPanel onFieldsExtracted={handleFieldsExtracted} baseUrl={getBaseUrl()} />
+        <LiveCallPanel
+          onFieldsExtracted={handleFieldsExtracted}
+          onTranscriptChange={setCallTranscript}
+          baseUrl={getBaseUrl()}
+        />
       </div>
 
       <Form {...form}>

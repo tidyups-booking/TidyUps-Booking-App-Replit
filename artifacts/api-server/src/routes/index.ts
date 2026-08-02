@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { requireAuth } from "../app.js";
 import healthRouter from "./health";
 import bookingsRouter from "./bookings";
+import callTranscriptsRouter from "./call-transcripts";
 import aiRouter from "./ai";
 import jobberRouter from "./jobber";
 import staffRouter from "./staff";
@@ -26,6 +27,7 @@ router.post("/twilio/voice", (req, res, next) => next());
 
 router.use(requireAuth);
 router.use(bookingsRouter);
+router.use(callTranscriptsRouter);
 router.use(aiRouter);
 router.use(jobberRouter);
 router.use(staffRouter);

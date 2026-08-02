@@ -504,6 +504,9 @@ components:
           type: string
           enum: [pending, confirmed, in_progress, completed, cancelled]
           default: pending
+        callTranscript:
+          type: string
+          description: Full transcript of the inbound call that generated this booking.
 
     BookingUpdate:
       type: object

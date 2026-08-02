@@ -97,7 +97,8 @@ export const CreateBookingBody = zod.object({
   "frequency": zod.enum(['one_time', 'weekly', 'biweekly', 'monthly']),
   "estimatedPrice": zod.number().optional(),
   "notes": zod.string().optional(),
-  "status": zod.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']).default(createBookingBodyStatusDefault)
+  "status": zod.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']).default(createBookingBodyStatusDefault),
+  "callTranscript": zod.string().optional()
 })
 
 export const CreateBookingResponse = zod.object({

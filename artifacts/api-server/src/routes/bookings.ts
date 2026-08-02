@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, gte, lte, and, sql } from "drizzle-orm";
-import { db, bookingsTable } from "@workspace/db";
+import { db, bookingsTable, callTranscriptsTable } from "@workspace/db";
 import { syncBookingToJobber, getStoredTokens } from "../services/jobber.js";
 import {
   ListBookingsQueryParams,
@@ -176,6 +176,19 @@ router.post("/bookings", async (req, res): Promise<void> => {
       staffId: data.staffId ?? null,
     })
     .returning();
+
+  // Store call transcript synchronously so it's always visible on first detail load
+  if (data.callTranscript && data.callTranscript.trim().length > 0) {
+    try {
+      await db
+        .insert(callTranscriptsTable)
+        .values({ bookingId: booking.id, transcript: data.callTranscript.trim() });
+    } catch (err: any) {
+      req.log.warn({ bookingId: booking.id, err: err.message }, "Could not save call transcript");
+      res.status(500).json({ error: "Booking created but transcript could not be saved" });
+      return;
+    }
+  }
 
   res.status(201).json(CreateBookingResponse.parse(booking));
 
