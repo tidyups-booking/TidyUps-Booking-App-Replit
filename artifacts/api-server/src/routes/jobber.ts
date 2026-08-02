@@ -18,7 +18,7 @@ const JOBBER_AUTH_URL = "https://api.getjobber.com/api/oauth/authorize";
 // frontend can display it for copy-paste into the Jobber developer portal
 router.get("/jobber/redirect-uri", (req, res) => {
   try {
-    res.json({ redirectUri: getCallbackUrl() });
+    res.json({ redirectUri: getCallbackUrl(req.get("host")) });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -54,7 +54,8 @@ router.get("/jobber/auth", (req, res) => {
 
   let callbackUrl: string;
   try {
-    callbackUrl = getCallbackUrl();
+    // Use the live request host so this works on dev AND production domains
+    callbackUrl = getCallbackUrl(req.get("host"));
   } catch (err: any) {
     res.status(500).json({ error: err.message });
     return;
@@ -103,7 +104,8 @@ router.get("/jobber/callback", async (req, res) => {
   }
 
   try {
-    await exchangeCodeForTokens(code);
+    const redirectUri = getCallbackUrl(req.get("host"));
+    await exchangeCodeForTokens(code, redirectUri);
     // Redirect back to the booking app
     res.redirect("/?jobber=connected");
   } catch (err: any) {

@@ -22,10 +22,18 @@ function getClientSecret() {
   return s;
 }
 
-export function getCallbackUrl() {
-  const domain = process.env.REPLIT_DEV_DOMAIN;
-  if (!domain) throw new Error("REPLIT_DEV_DOMAIN not set");
-  return `https://${domain}/api/jobber/callback`;
+/**
+ * Build the Jobber OAuth callback URL.
+ * Prefer the host derived from the live request so it works on any domain
+ * (dev .replit.dev, production .replit.app, custom domain, etc.).
+ * Falls back to REPLIT_DEV_DOMAIN for contexts where no request is available.
+ */
+export function getCallbackUrl(host?: string) {
+  const h = host ?? process.env.REPLIT_DEV_DOMAIN;
+  if (!h) throw new Error("Cannot determine callback host — REPLIT_DEV_DOMAIN not set");
+  // host from req.get('host') already includes the port when non-standard;
+  // always use https since Replit proxies terminate TLS.
+  return `https://${h}/api/jobber/callback`;
 }
 
 // ── Token storage ─────────────────────────────────────────────────────────────
@@ -70,13 +78,13 @@ export async function upsertTokens(data: {
 
 // ── OAuth token exchange ──────────────────────────────────────────────────────
 
-export async function exchangeCodeForTokens(code: string) {
+export async function exchangeCodeForTokens(code: string, redirectUri: string) {
   const body = new URLSearchParams({
     client_id: getClientId(),
     client_secret: getClientSecret(),
     grant_type: "authorization_code",
     code,
-    redirect_uri: getCallbackUrl(),
+    redirect_uri: redirectUri,
   });
 
   const res = await fetch(`${JOBBER_API_BASE}/oauth/token`, {
