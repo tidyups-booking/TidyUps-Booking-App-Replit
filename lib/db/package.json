@@ -9,7 +9,8 @@
   },
   "scripts": {
     "push": "drizzle-kit push --config ./drizzle.config.ts",
-    "push-force": "drizzle-kit push --force --config ./drizzle.config.ts"
+    "push-force": "drizzle-kit push --force --config ./drizzle.config.ts",
+    "migrate": "node -e \"const { execSync } = require('child_process'); require('fs').readdirSync('./migrations').sort().forEach(f => { console.log('Applying', f); execSync('psql \"' + process.env.DATABASE_URL + '\" -f ./migrations/' + f, { stdio: 'inherit' }); });\""
   },
   "dependencies": {
     "drizzle-orm": "catalog:",

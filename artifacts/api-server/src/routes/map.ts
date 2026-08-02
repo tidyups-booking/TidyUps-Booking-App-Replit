@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
+import { getAuth } from "@clerk/express";
 import { db, staffTable, bookingsTable, cleanerLocationsTable } from "@workspace/db";
 
 const router: IRouter = Router();
@@ -22,6 +23,35 @@ router.post("/staff/:id/location", async (req, res): Promise<void> => {
   const staffId = parseInt(req.params.id, 10);
   if (isNaN(staffId)) {
     res.status(400).json({ error: "Invalid staff id" });
+    return;
+  }
+
+  // Ownership check: if the staff record has a linked Clerk account, only that
+  // user may update it. This prevents any authenticated user from spoofing
+  // another cleaner's GPS position.
+  const [staff] = await db
+    .select({ clerkUserId: staffTable.clerkUserId })
+    .from(staffTable)
+    .where(eq(staffTable.id, staffId));
+
+  if (!staff) {
+    res.status(404).json({ error: "Staff member not found" });
+    return;
+  }
+
+  // Require the record to have a linked Clerk account. Without this a cleaner
+  // has no verified identity — any authenticated user could post for them.
+  if (staff.clerkUserId === null) {
+    res.status(403).json({
+      error: "Staff account not linked to a Clerk user. Ask a dispatcher to link your account first.",
+    });
+    return;
+  }
+
+  const auth = getAuth(req);
+  const callerId = auth?.userId;
+  if (!callerId || callerId !== staff.clerkUserId) {
+    res.status(403).json({ error: "Forbidden: cannot update another staff member's location" });
     return;
   }
 

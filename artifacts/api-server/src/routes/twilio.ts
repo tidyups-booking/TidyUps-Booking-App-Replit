@@ -1,9 +1,37 @@
 import { Router } from "express";
 import { randomUUID } from "crypto";
+import { getAuth } from "@clerk/express";
 import { addSseClient, removeSseClient, getCallState } from "../services/twilio-stream.js";
+import { issueStreamToken } from "../services/stream-tokens.js";
 import { getClerkProxyHost } from "../middlewares/clerkProxyMiddleware.js";
+import {
+  requireTwilioWebhookAuth,
+  getVoiceWebhookUrl,
+} from "../middlewares/twilioWebhookAuth.js";
 
 const router = Router();
+
+/**
+ * GET /twilio/webhook-url
+ * Returns the full voice webhook URL (including the required ?sig= parameter)
+ * for pasting into the Twilio Console.
+ * Requires a valid Clerk session — do not expose this to unauthenticated callers.
+ */
+router.get("/twilio/webhook-url", (req, res) => {
+  // Inline auth check: this route lives in the public router block but must be
+  // accessible only to authenticated users (the sig value is sensitive config).
+  const auth = getAuth(req);
+  if (!auth?.userId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  const url = getVoiceWebhookUrl(req);
+  if (!url) {
+    res.status(503).json({ error: "SESSION_SECRET is not configured" });
+    return;
+  }
+  res.json({ webhookUrl: url });
+});
 
 /**
  * POST /twilio/voice
@@ -11,10 +39,10 @@ const router = Router();
  * Returns TwiML that starts a media stream back to our WebSocket so we can
  * transcribe the caller's audio in real time.
  *
- * Set this URL in your Twilio console → Phone Numbers → Manage → your number
- * → "A call comes in" → Webhook → POST → https://<your-domain>/api/twilio/voice
+ * Configure the Twilio webhook URL using GET /api/twilio/webhook-url
+ * (it includes the required ?sig= authentication parameter).
  */
-router.post("/twilio/voice", (req, res) => {
+router.post("/twilio/voice", requireTwilioWebhookAuth, (req, res) => {
   // Use the live request host so the WebSocket URL is correct on dev AND production
   const host = getClerkProxyHost(req) ?? process.env.REPLIT_DEV_DOMAIN;
   if (!host) {
@@ -22,7 +50,10 @@ router.post("/twilio/voice", (req, res) => {
     return;
   }
 
-  const wsUrl = `wss://${host}/api/twilio/stream`;
+  // Issue a one-time token so only Twilio (which received this TwiML) can open
+  // the WebSocket. The token is validated and consumed on the upgrade request.
+  const streamToken = issueStreamToken();
+  const wsUrl = `wss://${host}/api/twilio/stream?token=${streamToken}`;
   const businessPhone = process.env.BUSINESS_PHONE_NUMBER;
 
   if (!businessPhone) {

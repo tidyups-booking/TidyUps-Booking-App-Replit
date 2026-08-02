@@ -25,6 +25,9 @@ export const staffTable = pgTable("staff", {
   homeAddress: text("home_address"),
   homeLat: doublePrecision("home_lat"),
   homeLng: doublePrecision("home_lng"),
+  /** Clerk user ID for the staff member's own account. When set, only that
+   *  Clerk user may update this record or post a location for it. */
+  clerkUserId: text("clerk_user_id").unique(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
