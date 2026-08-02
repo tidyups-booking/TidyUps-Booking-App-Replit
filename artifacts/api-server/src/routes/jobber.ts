@@ -62,15 +62,33 @@ router.get("/jobber/auth", (req, res) => {
 
 // GET /jobber/callback — Jobber redirects here with ?code=
 router.get("/jobber/callback", async (req, res) => {
-  const { code, error } = req.query as { code?: string; error?: string };
+  // Log everything Jobber sends so we can debug
+  req.log.info({ query: req.query }, "Jobber OAuth callback received");
+
+  const { code, error, error_description } = req.query as {
+    code?: string;
+    error?: string;
+    error_description?: string;
+  };
 
   if (error) {
-    res.redirect(`/?jobber=error&reason=${encodeURIComponent(error)}`);
+    const reason = error_description ? `${error}: ${error_description}` : error;
+    req.log.warn({ error, error_description }, "Jobber OAuth error");
+    res.redirect(`/?jobber=error&reason=${encodeURIComponent(reason)}`);
     return;
   }
 
   if (!code) {
-    res.status(400).send("Missing code parameter from Jobber");
+    // Show a helpful page instead of blank 400
+    const allParams = JSON.stringify(req.query, null, 2);
+    res.status(400).send(`
+      <h2>Jobber callback — no code received</h2>
+      <p>Jobber redirected here but did not include an authorization code.</p>
+      <p>This usually means the <strong>redirect URI</strong> in your Jobber app doesn't match exactly.</p>
+      <p>Make sure your Jobber developer app has this redirect URI registered:</p>
+      <code>${req.protocol}://${req.get("host")}${req.path}</code>
+      <p>Raw query params received: <pre>${allParams}</pre></p>
+    `);
     return;
   }
 
