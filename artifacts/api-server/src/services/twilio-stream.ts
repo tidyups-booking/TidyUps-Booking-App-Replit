@@ -53,6 +53,84 @@ function buildWav(pcm: Int16Array, sampleRate = 8000): Buffer {
   return buf;
 }
 
+// ── GPT booking-field extraction ────────────────────────────────────────────
+
+async function extractBookingFields(transcript: string): Promise<Record<string, unknown> | null> {
+  const base = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL?.replace(/\/$/, "");
+  const key = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+  if (!base || !key) return null;
+
+  const today = new Date().toISOString().split("T")[0];
+
+  try {
+    const res = await fetch(`${base}/v1/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        max_tokens: 512,
+        messages: [
+          {
+            role: "system",
+            content: `You are a booking assistant for 833 Tidyups, an Edmonton home cleaning service.
+Extract booking information from a phone call transcript and return a JSON object.
+Only include fields you are confident about from what was said. Do not guess or invent details.
+Today's date is ${today}.
+
+Return ONLY a valid JSON object with these optional fields (omit any field not clearly mentioned):
+{
+  "firstName": string,
+  "lastName": string,
+  "phone": string (Canadian format e.g. 780-555-1234),
+  "email": string,
+  "address": string (street address only, no city),
+  "city": string (default "Edmonton" if the caller is local and city not mentioned),
+  "postalCode": string,
+  "serviceType": "standard_clean" | "deep_clean" | "move_in_out" | "post_construction",
+  "bedrooms": number (integer),
+  "bathrooms": number (can be 0.5 increments),
+  "scheduledDate": string (YYYY-MM-DD, interpret relative dates like "next Tuesday" using today's date),
+  "scheduledTime": string (HH:MM 24h format, e.g. "09:00"),
+  "frequency": "one_time" | "weekly" | "biweekly" | "monthly",
+  "notes": string (anything special: entry instructions, pets, parking, etc.),
+  "extras": array of strings from: ["Oven","Fridge","Windows","Laundry","Garage","Basement","Inside Cabinets"]
+}
+
+Service type clues:
+- "standard" or "regular" → standard_clean
+- "deep" or "thorough" → deep_clean
+- "moving", "move in", "move out" → move_in_out
+- "construction", "renovation", "builder" → post_construction`,
+          },
+          {
+            role: "user",
+            content: `Extract booking info from this call transcript:\n\n${transcript}`,
+          },
+        ],
+        response_format: { type: "json_object" },
+      }),
+    });
+
+    if (!res.ok) {
+      logger.warn({ status: res.status }, "Booking extraction failed");
+      return null;
+    }
+
+    const json = (await res.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const raw = json.choices?.[0]?.message?.content || "{}";
+    const fields = JSON.parse(raw) as Record<string, unknown>;
+    return Object.keys(fields).length > 0 ? fields : null;
+  } catch (err) {
+    logger.warn({ err }, "Booking extraction error");
+    return null;
+  }
+}
+
 // ── Whisper transcription ───────────────────────────────────────────────────
 
 async function transcribeWav(wav: Buffer): Promise<string> {
@@ -129,6 +207,17 @@ async function flushAudio(force = false) {
     fullTranscript = (fullTranscript + " " + text).trim();
     broadcast({ type: "transcript", chunk: text, full: fullTranscript });
     logger.info({ chars: text.length }, "Transcription chunk broadcast");
+
+    // Run AI extraction and broadcast results — fire-and-forget so audio pipeline isn't blocked
+    const transcriptSnapshot = fullTranscript;
+    extractBookingFields(transcriptSnapshot)
+      .then((fields) => {
+        if (fields) {
+          broadcast({ type: "extracted_fields", fields });
+          logger.info({ fieldCount: Object.keys(fields).length }, "Extracted booking fields broadcast");
+        }
+      })
+      .catch(() => {});
   }
 }
 

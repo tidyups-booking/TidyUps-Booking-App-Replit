@@ -74,6 +74,8 @@ export function LiveCallPanel({ onFieldsExtracted, baseUrl }: LiveCallPanelProps
 
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Ref so SSE handler always sees current lastExtracted without stale closure
+  const lastExtractedRef = useRef<ExtractedFields>({});
 
   const webhookUrl = `${window.location.origin}/api/twilio/voice`;
 
@@ -118,12 +120,19 @@ export function LiveCallPanel({ onFieldsExtracted, baseUrl }: LiveCallPanelProps
     [lastExtracted, onFieldsExtracted, baseUrl],
   );
 
+  // Keep the ref in sync so SSE handler always has the latest value
   useEffect(() => {
+    lastExtractedRef.current = lastExtracted;
+  }, [lastExtracted]);
+
+  // Auto-extract on transcript changes — only for mic mode; phone mode gets fields via SSE
+  useEffect(() => {
+    if (mode === "phone") return;
     if (!transcript.trim()) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => extractFromTranscript(transcript), 1400);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [transcript, extractFromTranscript]);
+  }, [transcript, extractFromTranscript, mode]);
 
   // ── SSE connection for Twilio mode ──────────────────────────────────────────
 
@@ -139,6 +148,7 @@ export function LiveCallPanel({ onFieldsExtracted, baseUrl }: LiveCallPanelProps
           full?: string;
           active?: boolean;
           transcript?: string;
+          fields?: ExtractedFields;
         };
 
         if (msg.type === "state") {
@@ -150,12 +160,30 @@ export function LiveCallPanel({ onFieldsExtracted, baseUrl }: LiveCallPanelProps
           setCallStatus("active");
           setTranscript("");
           setLastExtracted({});
+          lastExtractedRef.current = {};
           setFilledCount(0);
         } else if (msg.type === "transcript") {
           if (msg.full) setTranscript(msg.full);
         } else if (msg.type === "call_ended") {
           setCallStatus("ended");
           if (msg.full) setTranscript(msg.full);
+        } else if (msg.type === "extracted_fields" && msg.fields) {
+          const fields = msg.fields;
+          const prev = lastExtractedRef.current;
+          const newKeys = Object.keys(fields).filter((k) => {
+            const prevVal = (prev as Record<string, unknown>)[k];
+            const currVal = (fields as Record<string, unknown>)[k];
+            if (Array.isArray(currVal)) {
+              return currVal.length > 0 && JSON.stringify(currVal) !== JSON.stringify(prevVal);
+            }
+            return currVal !== undefined && currVal !== "" && currVal !== prevVal;
+          });
+          if (newKeys.length > 0) {
+            lastExtractedRef.current = fields;
+            setLastExtracted(fields);
+            setFilledCount((n) => n + newKeys.length);
+            onFieldsExtracted(fields, newKeys);
+          }
         }
       } catch {
         // ignore
