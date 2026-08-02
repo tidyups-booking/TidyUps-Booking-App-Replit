@@ -22,7 +22,7 @@ import {
   User
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { JobberSyncCard } from "@/components/jobber-sync-card";
+import { JobberSyncCard, type JobberSyncStatus } from "@/components/jobber-sync-card";
 
 function getBaseUrl() {
   const base = import.meta.env.BASE_URL ?? "/";
@@ -36,15 +36,21 @@ export default function BookingDetail() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [jobberJobId, setJobberJobId] = useState<string | null | undefined>(undefined);
+  const [jobberSyncStatus, setJobberSyncStatus] = useState<JobberSyncStatus | null | undefined>(undefined);
+  const [jobberSyncError, setJobberSyncError] = useState<string | null | undefined>(undefined);
 
   const { data: booking, isLoading, isError } = useGetBooking(id, {
     query: {
       enabled: !!id,
       queryKey: getGetBookingQueryKey(id),
       select: (data: any) => {
-        // Sync jobberJobId into local state on first load
+        // Sync jobber fields into local state on first load
         if (jobberJobId === undefined && data?.jobberJobId !== undefined) {
           setJobberJobId(data.jobberJobId);
+        }
+        if (jobberSyncStatus === undefined && data?.jobberSyncStatus !== undefined) {
+          setJobberSyncStatus(data.jobberSyncStatus as JobberSyncStatus);
+          setJobberSyncError(data.jobberSyncError ?? null);
         }
         return data;
       }
@@ -255,7 +261,19 @@ export default function BookingDetail() {
           <JobberSyncCard
             bookingId={id}
             jobberJobId={jobberJobId ?? booking?.jobberJobId}
-            onSynced={(jid) => setJobberJobId(jid)}
+            jobberSyncStatus={
+              (jobberSyncStatus ?? (booking as any)?.jobberSyncStatus) as JobberSyncStatus | null | undefined
+            }
+            jobberSyncError={jobberSyncError ?? (booking as any)?.jobberSyncError}
+            onSynced={(jid) => {
+              setJobberJobId(jid);
+              setJobberSyncStatus("synced");
+              setJobberSyncError(null);
+            }}
+            onStatusChange={(status, error) => {
+              setJobberSyncStatus(status);
+              setJobberSyncError(error ?? null);
+            }}
             baseUrl={getBaseUrl()}
           />
 
@@ -279,7 +297,7 @@ export default function BookingDetail() {
                 <div className="pt-4 border-t">
                   <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Included Extras</h4>
                   <div className="flex flex-wrap gap-2">
-                    {booking.extras.map(extra => (
+                    {booking.extras.map((extra: string) => (
                       <span key={extra} className="bg-secondary/10 text-secondary border border-secondary/20 px-2.5 py-1 rounded-full text-xs font-bold">
                         {extra}
                       </span>

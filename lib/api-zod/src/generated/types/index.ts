@@ -12,6 +12,7 @@ export * from './bookingInput';
 export * from './bookingInputFrequency';
 export * from './bookingInputServiceType';
 export * from './bookingInputStatus';
+export * from './bookingJobberSyncStatus';
 export * from './bookingServiceType';
 export * from './bookingStats';
 export * from './bookingStatus';

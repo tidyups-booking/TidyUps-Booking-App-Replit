@@ -53,6 +53,8 @@ export const ListBookingsResponseItem = zod.object({
   "notes": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']),
   "jobberJobId": zod.string().nullish(),
+  "jobberSyncStatus": zod.enum(['not_started', 'pending', 'synced', 'failed']).optional().describe('Jobber sync state. not_started = never attempted, pending = in progress, synced = succeeded, failed = error (see jobberSyncError).\n'),
+  "jobberSyncError": zod.string().nullish().describe('Error message from the last failed Jobber sync attempt.'),
   "createdAt": zod.coerce.date()
 })
 export const ListBookingsResponse = zod.array(ListBookingsResponseItem)
@@ -120,6 +122,8 @@ export const CreateBookingResponse = zod.object({
   "notes": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']),
   "jobberJobId": zod.string().nullish(),
+  "jobberSyncStatus": zod.enum(['not_started', 'pending', 'synced', 'failed']).optional().describe('Jobber sync state. not_started = never attempted, pending = in progress, synced = succeeded, failed = error (see jobberSyncError).\n'),
+  "jobberSyncError": zod.string().nullish().describe('Error message from the last failed Jobber sync attempt.'),
   "createdAt": zod.coerce.date()
 })
 
@@ -164,6 +168,8 @@ export const GetUpcomingBookingsResponseItem = zod.object({
   "notes": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']),
   "jobberJobId": zod.string().nullish(),
+  "jobberSyncStatus": zod.enum(['not_started', 'pending', 'synced', 'failed']).optional().describe('Jobber sync state. not_started = never attempted, pending = in progress, synced = succeeded, failed = error (see jobberSyncError).\n'),
+  "jobberSyncError": zod.string().nullish().describe('Error message from the last failed Jobber sync attempt.'),
   "createdAt": zod.coerce.date()
 })
 export const GetUpcomingBookingsResponse = zod.array(GetUpcomingBookingsResponseItem)
@@ -198,6 +204,8 @@ export const GetBookingResponse = zod.object({
   "notes": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']),
   "jobberJobId": zod.string().nullish(),
+  "jobberSyncStatus": zod.enum(['not_started', 'pending', 'synced', 'failed']).optional().describe('Jobber sync state. not_started = never attempted, pending = in progress, synced = succeeded, failed = error (see jobberSyncError).\n'),
+  "jobberSyncError": zod.string().nullish().describe('Error message from the last failed Jobber sync attempt.'),
   "createdAt": zod.coerce.date()
 })
 
@@ -254,6 +262,8 @@ export const UpdateBookingResponse = zod.object({
   "notes": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']),
   "jobberJobId": zod.string().nullish(),
+  "jobberSyncStatus": zod.enum(['not_started', 'pending', 'synced', 'failed']).optional().describe('Jobber sync state. not_started = never attempted, pending = in progress, synced = succeeded, failed = error (see jobberSyncError).\n'),
+  "jobberSyncError": zod.string().nullish().describe('Error message from the last failed Jobber sync attempt.'),
   "createdAt": zod.coerce.date()
 })
 
@@ -369,6 +379,8 @@ export const GetStaffScheduleResponseItem = zod.object({
   "notes": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']),
   "jobberJobId": zod.string().nullish(),
+  "jobberSyncStatus": zod.enum(['not_started', 'pending', 'synced', 'failed']).optional().describe('Jobber sync state. not_started = never attempted, pending = in progress, synced = succeeded, failed = error (see jobberSyncError).\n'),
+  "jobberSyncError": zod.string().nullish().describe('Error message from the last failed Jobber sync attempt.'),
   "createdAt": zod.coerce.date()
 })
 export const GetStaffScheduleResponse = zod.array(GetStaffScheduleResponseItem)
@@ -412,6 +424,8 @@ export const GetDayScheduleResponseItem = zod.object({
   "notes": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']),
   "jobberJobId": zod.string().nullish(),
+  "jobberSyncStatus": zod.enum(['not_started', 'pending', 'synced', 'failed']).optional().describe('Jobber sync state. not_started = never attempted, pending = in progress, synced = succeeded, failed = error (see jobberSyncError).\n'),
+  "jobberSyncError": zod.string().nullish().describe('Error message from the last failed Jobber sync attempt.'),
   "createdAt": zod.coerce.date()
 }))
 })

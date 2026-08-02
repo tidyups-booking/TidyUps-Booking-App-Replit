@@ -44,6 +44,19 @@ export const BookingStatus = {
   cancelled: 'cancelled',
 } as const;
 
+/**
+ * Jobber sync state. not_started = never attempted, pending = in progress, synced = succeeded, failed = error (see jobberSyncError).
+ */
+export type BookingJobberSyncStatus = typeof BookingJobberSyncStatus[keyof typeof BookingJobberSyncStatus];
+
+
+export const BookingJobberSyncStatus = {
+  not_started: 'not_started',
+  pending: 'pending',
+  synced: 'synced',
+  failed: 'failed',
+} as const;
+
 export interface Booking {
   id: number;
   /** @nullable */
@@ -74,6 +87,13 @@ export interface Booking {
   status: BookingStatus;
   /** @nullable */
   jobberJobId?: string | null;
+  /** Jobber sync state. not_started = never attempted, pending = in progress, synced = succeeded, failed = error (see jobberSyncError). */
+  jobberSyncStatus?: BookingJobberSyncStatus;
+  /**
+     * Error message from the last failed Jobber sync attempt.
+     * @nullable
+     */
+  jobberSyncError?: string | null;
   createdAt: string;
 }
 

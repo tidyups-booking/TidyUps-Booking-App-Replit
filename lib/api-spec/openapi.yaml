@@ -418,6 +418,15 @@ components:
           enum: [pending, confirmed, in_progress, completed, cancelled]
         jobberJobId:
           type: ["string", "null"]
+        jobberSyncStatus:
+          type: string
+          enum: [not_started, pending, synced, failed]
+          description: >
+            Jobber sync state. not_started = never attempted, pending = in
+            progress, synced = succeeded, failed = error (see jobberSyncError).
+        jobberSyncError:
+          type: ["string", "null"]
+          description: Error message from the last failed Jobber sync attempt.
         createdAt:
           type: string
           format: date-time

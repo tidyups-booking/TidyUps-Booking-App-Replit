@@ -57,6 +57,10 @@ export const bookingsTable = pgTable("bookings", {
   }),
   status: bookingStatusEnum("status").notNull().default("pending"),
   jobberJobId: text("jobber_job_id"),
+  jobberSyncStatus: text("jobber_sync_status")
+    .notNull()
+    .default("not_started"),
+  jobberSyncError: text("jobber_sync_error"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

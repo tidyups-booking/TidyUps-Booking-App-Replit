@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { BookingFrequency } from './bookingFrequency';
+import type { BookingJobberSyncStatus } from './bookingJobberSyncStatus';
 import type { BookingServiceType } from './bookingServiceType';
 import type { BookingStatus } from './bookingStatus';
 
@@ -39,5 +40,12 @@ export interface Booking {
   status: BookingStatus;
   /** @nullable */
   jobberJobId?: string | null;
+  /** Jobber sync state. not_started = never attempted, pending = in progress, synced = succeeded, failed = error (see jobberSyncError). */
+  jobberSyncStatus?: BookingJobberSyncStatus;
+  /**
+     * Error message from the last failed Jobber sync attempt.
+     * @nullable
+     */
+  jobberSyncError?: string | null;
   createdAt: Date;
 }

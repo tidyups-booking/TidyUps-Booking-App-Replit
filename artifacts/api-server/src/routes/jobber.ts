@@ -130,18 +130,30 @@ router.post("/jobber/sync/:bookingId", async (req, res) => {
     return;
   }
 
+  // Mark as pending before attempting
+  await db
+    .update(bookingsTable)
+    .set({ jobberSyncStatus: "pending", jobberSyncError: null })
+    .where(eq(bookingsTable.id, bookingId));
+
   try {
     const jobberRequestId = await syncBookingToJobber(booking);
 
-    // Store the Jobber ID back on the booking
+    // Store the Jobber ID and mark as synced
     await db
       .update(bookingsTable)
-      .set({ jobberJobId: jobberRequestId })
+      .set({ jobberJobId: jobberRequestId, jobberSyncStatus: "synced", jobberSyncError: null })
       .where(eq(bookingsTable.id, bookingId));
 
     res.json({ success: true, jobberRequestId });
   } catch (err: any) {
-    console.error(`Jobber sync failed for booking ${bookingId}:`, err);
+    // Persist the failure so the UI can surface it
+    await db
+      .update(bookingsTable)
+      .set({ jobberSyncStatus: "failed", jobberSyncError: err.message })
+      .where(eq(bookingsTable.id, bookingId));
+
+    req.log.warn({ bookingId, err: err.message }, "Jobber sync failed");
     res.status(500).json({ error: err.message });
   }
 });
