@@ -82,12 +82,23 @@ export function LiveCallPanel({ onFieldsExtracted, onTranscriptChange, onNewCall
   // Ref so SSE handler always sees current lastExtracted without stale closure
   const lastExtractedRef = useRef<ExtractedFields>({});
 
-  const webhookUrl = `${window.location.origin}/api/twilio/voice`;
+  const [webhookUrl, setWebhookUrl] = useState("");
 
   useEffect(() => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     setMicSupported(!!SR);
   }, []);
+
+  // Fetch the authoritative webhook URL (includes ?sig= token) from the server.
+  // Falls back to the plain URL so the field isn't empty while loading.
+  useEffect(() => {
+    fetch(`${baseUrl}api/twilio/webhook-url`, { credentials: "include" })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data?.webhookUrl) setWebhookUrl(data.webhookUrl);
+      })
+      .catch(() => {});
+  }, [baseUrl]);
 
   // ── Extraction ──────────────────────────────────────────────────────────────
 
