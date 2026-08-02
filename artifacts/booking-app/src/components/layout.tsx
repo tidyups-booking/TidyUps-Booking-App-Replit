@@ -1,7 +1,7 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, CalendarPlus, List, Menu, CalendarDays, Users } from "lucide-react";
+import { LayoutDashboard, CalendarPlus, List, Menu, CalendarDays, Users, Map } from "lucide-react";
 import logoImg from "@assets/833tidyups-logo.png";
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -11,6 +11,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const navItems = [
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
     { href: "/new", label: "New Booking", icon: CalendarPlus, primary: true },
+    { href: "/map", label: "Live Map", icon: Map },
     { href: "/schedule", label: "Schedule", icon: CalendarDays },
     { href: "/bookings", label: "All Bookings", icon: List },
     { href: "/staff", label: "Staff", icon: Users },

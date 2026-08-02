@@ -1,0 +1,1 @@
+- [Live Cleaner Map](live-map.md) — GPS tracking 8AM–8PM, Leaflet+OSM map, no zod in api-server routes (use plain JS or @workspace/api-zod)

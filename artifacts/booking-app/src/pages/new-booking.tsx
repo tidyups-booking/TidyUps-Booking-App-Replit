@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -11,7 +11,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Phone, User, Home, MapPin, CalendarClock, DollarSign, CheckCircle2, Users } from "lucide-react";
+import { Phone, User, Home, MapPin, CalendarClock, DollarSign, CheckCircle2, Users, Navigation } from "lucide-react";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { LiveCallPanel } from "@/components/live-call-panel";
@@ -48,6 +48,39 @@ function getBaseUrl() {
   return base.endsWith("/") ? base : base + "/";
 }
 
+// ── Nearest cleaner helper ────────────────────────────────────────────────────
+
+const geocodeCache = new Map<string, [number, number] | null>();
+
+async function geocodeAddress(address: string, city: string): Promise<[number, number] | null> {
+  const key = `${address}, ${city}, AB, Canada`;
+  if (geocodeCache.has(key)) return geocodeCache.get(key)!;
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(key)}&format=json&limit=1&countrycodes=ca`;
+    const res = await fetch(url, { headers: { "Accept-Language": "en", "User-Agent": "833TidyupsDispatch/1.0" } });
+    const data = await res.json();
+    if (data.length > 0) {
+      const coord: [number, number] = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+      geocodeCache.set(key, coord);
+      return coord;
+    }
+  } catch { /* ignore */ }
+  geocodeCache.set(key, null);
+  return null;
+}
+
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
 export default function NewBooking() {
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
@@ -55,6 +88,10 @@ export default function NewBooking() {
 
   // Track which fields were auto-filled so we can flash them
   const [highlightedFields, setHighlightedFields] = useState<Set<string>>(new Set());
+
+  // Nearest cleaner suggestion
+  const [nearestCleaner, setNearestCleaner] = useState<{ name: string; km: number; id: number } | null>(null);
+  const geocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const createBooking = useCreateBooking();
 
@@ -84,6 +121,36 @@ export default function NewBooking() {
       staffId: undefined,
     },
   });
+
+  // Watch address + city and suggest nearest cleaner
+  const address = form.watch("address");
+  const city = form.watch("city");
+
+  useEffect(() => {
+    if (!address || address.length < 5 || !city) {
+      setNearestCleaner(null);
+      return;
+    }
+    if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
+    geocodeTimerRef.current = setTimeout(async () => {
+      const coords = await geocodeAddress(address, city);
+      if (!coords) return;
+      // Fetch cleaner locations
+      try {
+        const res = await fetch(`${getBaseUrl()}api/map/data?date=${new Date().toISOString().split("T")[0]}`, { credentials: "include" });
+        if (!res.ok) return;
+        const data = await res.json();
+        let best: { name: string; km: number; id: number } | null = null;
+        for (const s of data.staff) {
+          if (!s.location) continue;
+          const km = haversineKm(coords[0], coords[1], s.location.lat, s.location.lng);
+          if (!best || km < best.km) best = { name: s.name, km, id: s.id };
+        }
+        setNearestCleaner(best);
+      } catch { /* ignore */ }
+    }, 1200);
+    return () => { if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current); };
+  }, [address, city]);
 
   // Called by LiveCallPanel when AI extracts fields
   const handleFieldsExtracted = useCallback(
@@ -387,6 +454,24 @@ export default function NewBooking() {
                         <Users className="w-4 h-4" />
                         Assign Cleaner <span className="text-muted-foreground font-normal">(Optional)</span>
                       </FormLabel>
+                      {nearestCleaner && (
+                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 text-sm">
+                          <Navigation className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
+                          <span className="text-green-700 dark:text-green-400 font-medium">
+                            Closest available: {nearestCleaner.name}
+                          </span>
+                          <span className="text-green-600/70 dark:text-green-500/70">
+                            {nearestCleaner.km.toFixed(1)} km away
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => field.onChange(nearestCleaner.id)}
+                            className="ml-auto text-xs font-semibold text-green-700 dark:text-green-400 hover:underline"
+                          >
+                            Assign →
+                          </button>
+                        </div>
+                      )}
                       <FormControl>
                         <NativeSelect
                           value={field.value ?? ""}
