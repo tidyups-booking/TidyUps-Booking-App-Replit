@@ -14,13 +14,14 @@ const router = Router();
  * → "A call comes in" → Webhook → POST → https://<your-domain>/api/twilio/voice
  */
 router.post("/twilio/voice", (req, res) => {
-  const domain = process.env.REPLIT_DEV_DOMAIN;
-  if (!domain) {
-    res.status(500).send("REPLIT_DEV_DOMAIN not set");
+  // Use the live request host so the WebSocket URL is correct on dev AND production
+  const host = req.get("host") ?? process.env.REPLIT_DEV_DOMAIN;
+  if (!host) {
+    res.status(500).send("Cannot determine host for WebSocket URL");
     return;
   }
 
-  const wsUrl = `wss://${domain}/api/twilio/stream`;
+  const wsUrl = `wss://${host}/api/twilio/stream`;
 
   // TwiML: start the inbound audio stream, then keep the call alive
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
