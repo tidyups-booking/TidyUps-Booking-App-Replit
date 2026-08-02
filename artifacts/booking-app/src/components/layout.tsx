@@ -2,11 +2,14 @@ import React from "react";
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { LayoutDashboard, CalendarPlus, List, Menu, CalendarDays, Users, Map } from "lucide-react";
+import { LiveCallProvider, useLiveCall } from "@/contexts/live-call-context";
+import { CallAlertBanner } from "@/components/call-alert-banner";
 import logoImg from "@assets/833tidyups-logo.png";
 
-export function Layout({ children }: { children: React.ReactNode }) {
+function LayoutInner({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
+  const { bannerVisible } = useLiveCall();
 
   const navItems = [
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -18,7 +21,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   ];
 
   return (
-    <div className="min-h-[100dvh] flex flex-col bg-background">
+    <div className={cn("min-h-[100dvh] flex flex-col bg-background", bannerVisible && "pt-11")}>
       <header className="sticky top-0 z-50 w-full border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/60 shadow-sm">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -105,5 +108,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
         {children}
       </main>
     </div>
+  );
+}
+
+/** Authenticated-only shell — mounts the global SSE call context here so
+ *  unauthenticated routes never open an SSE connection. */
+export function Layout({ children }: { children: React.ReactNode }) {
+  return (
+    <LiveCallProvider>
+      <CallAlertBanner />
+      <LayoutInner>{children}</LayoutInner>
+    </LiveCallProvider>
   );
 }
