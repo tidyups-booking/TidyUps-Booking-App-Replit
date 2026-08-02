@@ -56,7 +56,9 @@ export function JobberStatus({ baseUrl }: Props) {
   }, []);
 
   const handleConnect = () => {
-    window.location.href = `${baseUrl}api/jobber/auth`;
+    // Open in a new tab — Jobber's OAuth page blocks iframe embedding (X-Frame-Options),
+    // which causes "refused to connect" when running inside the Replit preview pane.
+    window.open(`${baseUrl}api/jobber/auth`, "_blank", "noopener");
   };
 
   const handleCopy = async () => {
