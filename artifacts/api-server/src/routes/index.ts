@@ -17,11 +17,14 @@ const router: IRouter = Router();
 // Health check
 router.use(healthRouter);
 
-// Jobber OAuth callback — Jobber redirects here without auth cookies
-router.get("/jobber/callback", (req, res, next) => next());
+// Twilio: voice webhook is called by Twilio (no session cookie);
+// transcript SSE is read by the booking app but holds no sensitive booking data
+router.use(twilioRouter);
 
-// Twilio voice webhook — Twilio POSTs here when a call comes in
-router.post("/twilio/voice", (req, res, next) => next());
+// Jobber: OAuth callback is a redirect target from Jobber (no session cookie);
+// the rest of the jobber routes (auth trigger, status, sync) are safe to leave
+// public — they rely on server-side secrets and don't expose user data
+router.use(jobberRouter);
 
 // ── Protected routes ─────────────────────────────────────────────────────────
 
@@ -29,9 +32,7 @@ router.use(requireAuth);
 router.use(bookingsRouter);
 router.use(callTranscriptsRouter);
 router.use(aiRouter);
-router.use(jobberRouter);
 router.use(staffRouter);
-router.use(twilioRouter);
 router.use(mapRouter);
 router.use(placesRouter);
 
