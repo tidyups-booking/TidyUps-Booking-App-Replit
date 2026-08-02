@@ -13,6 +13,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import type { Response } from "express";
 import { logger } from "../lib/logger.js";
 import { speechToText } from "@workspace/integrations-openai-ai-server/audio";
+import { openai } from "@workspace/integrations-openai-ai-server";
 
 // ── G.711 u-law decode ──────────────────────────────────────────────────────
 
@@ -57,26 +58,17 @@ function buildWav(pcm: Int16Array, sampleRate = 8000): Buffer {
 // ── GPT booking-field extraction ────────────────────────────────────────────
 
 async function extractBookingFields(transcript: string): Promise<Record<string, unknown> | null> {
-  const base = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL?.replace(/\/$/, "");
-  const key = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
-  if (!base || !key) return null;
-
   const today = new Date().toISOString().split("T")[0];
 
   try {
-    const res = await fetch(`${base}/v1/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        max_tokens: 512,
-        messages: [
-          {
-            role: "system",
-            content: `You are a booking assistant for 833 Tidyups, an Edmonton home cleaning service.
+    const response = await openai.chat.completions.create({
+      model: "gpt-5-nano",
+      max_completion_tokens: 512,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: `You are a booking assistant for 833 Tidyups, an Edmonton home cleaning service.
 Extract booking information from a phone call transcript and return a JSON object.
 Only include fields you are confident about from what was said. Do not guess or invent details.
 Today's date is ${today}.
@@ -105,25 +97,15 @@ Service type clues:
 - "deep" or "thorough" → deep_clean
 - "moving", "move in", "move out" → move_in_out
 - "construction", "renovation", "builder" → post_construction`,
-          },
-          {
-            role: "user",
-            content: `Extract booking info from this call transcript:\n\n${transcript}`,
-          },
-        ],
-        response_format: { type: "json_object" },
-      }),
+        },
+        {
+          role: "user",
+          content: `Extract booking info from this call transcript:\n\n${transcript}`,
+        },
+      ],
     });
 
-    if (!res.ok) {
-      logger.warn({ status: res.status }, "Booking extraction failed");
-      return null;
-    }
-
-    const json = (await res.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const raw = json.choices?.[0]?.message?.content || "{}";
+    const raw = response.choices?.[0]?.message?.content || "{}";
     const fields = JSON.parse(raw) as Record<string, unknown>;
     return Object.keys(fields).length > 0 ? fields : null;
   } catch (err) {
@@ -198,9 +180,11 @@ async function flushAudio(force = false) {
         if (fields) {
           broadcast({ type: "extracted_fields", fields });
           logger.info({ fieldCount: Object.keys(fields).length }, "Extracted booking fields broadcast");
+        } else {
+          logger.debug("Extraction returned no fields for this chunk");
         }
       })
-      .catch(() => {});
+      .catch((err) => logger.warn({ err }, "Extraction promise rejected"));
   }
 }
 
