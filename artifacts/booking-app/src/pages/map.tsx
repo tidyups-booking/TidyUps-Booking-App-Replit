@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MapPin, Navigation, Users, Home, Clock, Wifi, WifiOff, ChevronLeft, ChevronRight, Calendar } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { format, addDays, subDays, parseISO, isToday as dateFnsIsToday } from "date-fns";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -554,6 +555,80 @@ export default function MapPage() {
       {/* Map */}
       <Card className="overflow-hidden shadow-md">
         <div ref={mapElRef} style={{ height: 520 }} className="w-full" />
+      </Card>
+
+      {/* Cleaner roster — all staff, always visible */}
+      <Card className="shadow-sm">
+        <CardHeader className="pb-2 pt-4 px-4">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Users className="w-4 h-4 text-primary" />
+            All Cleaners
+            <span className="text-muted-foreground font-normal text-xs ml-1">
+              — click to find on map
+            </span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-4 pb-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+            {allStaff.map((s: any) => {
+              const entry = staffData.find(d => d.id === s.id);
+              const hasLive = entry?.position?.source === "live";
+              const hasHome = entry?.position?.source === "home" || (entry?.homeLat != null);
+              const noLocation = !hasLive && !hasHome;
+
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => {
+                    const marker = markersRef.current.get(`cleaner-${s.id}`);
+                    if (marker && mapRef.current) {
+                      mapRef.current.setView(marker.getLatLng(), 14, { animate: true });
+                      marker.openPopup();
+                    }
+                  }}
+                  disabled={noLocation}
+                  className={cn(
+                    "flex items-center gap-2.5 px-3 py-2 rounded-lg border text-left transition-all",
+                    noLocation
+                      ? "opacity-50 cursor-default border-dashed border-muted-foreground/30 bg-muted/20"
+                      : "hover:border-primary/50 hover:bg-primary/5 cursor-pointer border-border"
+                  )}
+                >
+                  <div
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0"
+                    style={{ background: noLocation ? "#9CA3AF" : cleanerColor(s.id) }}
+                  >
+                    {initials(s.name)}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{s.name}</p>
+                    <p className="text-xs flex items-center gap-1">
+                      {hasLive ? (
+                        <><Wifi className="w-3 h-3 text-green-500" /><span className="text-green-600">Live</span></>
+                      ) : hasHome ? (
+                        <><Home className="w-3 h-3 text-blue-400" /><span className="text-blue-500">Home</span></>
+                      ) : (
+                        <><MapPin className="w-3 h-3 text-muted-foreground" /><span className="text-muted-foreground">No location</span></>
+                      )}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          {allStaff.some((s: any) => {
+            const entry = staffData.find(d => d.id === s.id);
+            return !entry?.position;
+          }) && (
+            <p className="text-xs text-muted-foreground mt-3 flex items-center gap-1.5">
+              <MapPin className="w-3.5 h-3.5" />
+              Greyed-out cleaners have no location saved.{" "}
+              <a href="/staff" className="underline font-medium hover:text-primary transition-colors">
+                Add home addresses on the Staff page →
+              </a>
+            </p>
+          )}
+        </CardContent>
       </Card>
 
       {/* Legend */}
