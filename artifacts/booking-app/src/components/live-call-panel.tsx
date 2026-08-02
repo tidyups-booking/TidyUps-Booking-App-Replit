@@ -34,6 +34,10 @@ interface ExtractedFields {
 interface LiveCallPanelProps {
   onFieldsExtracted: (fields: ExtractedFields, newKeys: string[]) => void;
   onTranscriptChange?: (transcript: string) => void;
+  /** Called when a new inbound call starts (phone mode) — parent should clear field locks */
+  onNewCall?: () => void;
+  /** Called when the dispatcher clears the transcript — parent should clear field locks */
+  onClear?: () => void;
   baseUrl: string;
 }
 
@@ -58,7 +62,7 @@ const FIELD_LABELS: Record<string, string> = {
 type Mode = "mic" | "phone";
 type CallStatus = "idle" | "active" | "ended";
 
-export function LiveCallPanel({ onFieldsExtracted, onTranscriptChange, baseUrl }: LiveCallPanelProps) {
+export function LiveCallPanel({ onFieldsExtracted, onTranscriptChange, onNewCall, onClear, baseUrl }: LiveCallPanelProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [mode, setMode] = useState<Mode>("phone");
   const [transcript, setTranscript] = useState("");
@@ -168,6 +172,7 @@ export function LiveCallPanel({ onFieldsExtracted, onTranscriptChange, baseUrl }
           setLastExtracted({});
           lastExtractedRef.current = {};
           setFilledCount(0);
+          onNewCall?.();
         } else if (msg.type === "transcript") {
           if (msg.full) setTranscript(msg.full);
         } else if (msg.type === "call_ended") {
@@ -201,7 +206,7 @@ export function LiveCallPanel({ onFieldsExtracted, onTranscriptChange, baseUrl }
     };
 
     sseRef.current = es;
-  }, [baseUrl]);
+  }, [baseUrl, onNewCall, onFieldsExtracted]);
 
   const disconnectSse = useCallback(() => {
     sseRef.current?.close();
@@ -258,6 +263,7 @@ export function LiveCallPanel({ onFieldsExtracted, onTranscriptChange, baseUrl }
     setLastExtracted({});
     setFilledCount(0);
     setCallStatus("idle");
+    onClear?.();
   };
 
   const copyWebhook = () => {

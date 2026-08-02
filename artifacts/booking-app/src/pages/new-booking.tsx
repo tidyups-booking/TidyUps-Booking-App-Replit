@@ -11,7 +11,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Phone, User, Home, MapPin, CalendarClock, DollarSign, CheckCircle2, Users, Navigation } from "lucide-react";
+import { Phone, User, Home, MapPin, CalendarClock, DollarSign, CheckCircle2, Users, Navigation, Lock } from "lucide-react";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { LiveCallPanel } from "@/components/live-call-panel";
@@ -91,8 +91,15 @@ export default function NewBooking() {
 
   // Track which fields were auto-filled so we can flash them (2s green pulse)
   const [highlightedFields, setHighlightedFields] = useState<Set<string>>(new Set());
-  // Track AI-filled fields persistently — amber ring clears when dispatcher edits manually
+  // Track AI-filled fields persistently — amber ring clears when dispatcher edits manually (task #19)
   const [aiFilledFields, setAiFilledFields] = useState<Set<string>>(new Set());
+
+  // Track fields the dispatcher has manually corrected after AI fill — locked from AI overwrite (task #20)
+  const [lockedFields, setLockedFields] = useState<Set<string>>(new Set());
+  // Tracks which fields AI has ever filled (used by form.watch to detect subsequent manual edits)
+  const aiFilledFieldsRef = useRef<Set<string>>(new Set());
+  // True while handleFieldsExtracted is writing values — prevents watch from locking those changes
+  const isAiFillingRef = useRef(false);
 
   // Track the live-call transcript so it can be saved with the booking
   const [callTranscript, setCallTranscript] = useState("");
@@ -130,6 +137,23 @@ export default function NewBooking() {
     },
   });
 
+  // Subscribe to form changes to detect when dispatcher manually edits an AI-filled field → lock it
+  useEffect(() => {
+    const { unsubscribe } = form.watch((_values, { name, type }) => {
+      if (!name || type !== "change") return;
+      if (isAiFillingRef.current) return; // skip AI-triggered writes
+      if (aiFilledFieldsRef.current.has(name)) {
+        setLockedFields((prev) => {
+          if (prev.has(name)) return prev;
+          const next = new Set(prev);
+          next.add(name);
+          return next;
+        });
+      }
+    });
+    return () => unsubscribe();
+  }, [form]);
+
   // Watch address + city and suggest nearest cleaner
   const address = form.watch("address");
   const city = form.watch("city");
@@ -163,29 +187,39 @@ export default function NewBooking() {
   // Called by LiveCallPanel when AI extracts fields
   const handleFieldsExtracted = useCallback(
     async (fields: Record<string, any>, newKeys: string[]) => {
-      // Fill each extracted field into the form
-      for (const key of Object.keys(fields)) {
-        const val = fields[key];
-        if (val === undefined || val === null || val === "") continue;
-        if (Array.isArray(val) && val.length === 0) continue;
-        form.setValue(key as any, val, { shouldValidate: false, shouldDirty: true });
+      isAiFillingRef.current = true;
+      try {
+        for (const key of Object.keys(fields)) {
+          // Skip fields the dispatcher has already manually corrected
+          if (lockedFields.has(key)) continue;
+          const val = fields[key];
+          if (val === undefined || val === null || val === "") continue;
+          if (Array.isArray(val) && val.length === 0) continue;
+          form.setValue(key as any, val, { shouldValidate: false, shouldDirty: true });
+          aiFilledFieldsRef.current.add(key);
+        }
+      } finally {
+        isAiFillingRef.current = false;
       }
 
-      // Persist amber AI-filled indicator for newly filled fields
-      setAiFilledFields((prev) => {
-        const next = new Set(prev);
-        newKeys.forEach((k) => next.add(k));
-        return next;
-      });
+      // Only operate on keys that weren't locked
+      const effectiveNewKeys = newKeys.filter((k) => !lockedFields.has(k));
+      if (effectiveNewKeys.length > 0) {
+        // Persist amber AI-filled indicator for newly filled fields
+        setAiFilledFields((prev) => {
+          const next = new Set(prev);
+          effectiveNewKeys.forEach((k) => next.add(k));
+          return next;
+        });
+        // Flash-highlight newly filled fields for 2 s (green pulse)
+        setHighlightedFields(new Set(effectiveNewKeys));
+        setTimeout(() => setHighlightedFields(new Set()), 2000);
+      }
 
-      // Flash-highlight newly filled fields for 2 s (green pulse)
-      setHighlightedFields(new Set(newKeys));
-      setTimeout(() => setHighlightedFields(new Set()), 2000);
-
-      // When AI fills an address, run it through Google Places to get
+      // When AI fills an address, run it through Places API to get
       // city, province, postal code, and coordinates automatically.
-      // Only fills fields the AI didn't already provide.
-      if (newKeys.includes("address") && fields.address) {
+      // Only fills fields the AI didn't already provide, and respects locks.
+      if (effectiveNewKeys.includes("address") && fields.address) {
         try {
           const base = getBaseUrl();
           const query = fields.city
@@ -208,11 +242,11 @@ export default function NewBooking() {
                   postalCode?: string; lat?: number; lng?: number;
                 };
                 // Prefer the Places-formatted street address (fixes abbreviations)
-                if (place.address) form.setValue("address", place.address, { shouldValidate: true });
-                // Only fill city/postal/province if AI didn't already extract them
-                if (place.city && !fields.city) form.setValue("city", place.city, { shouldValidate: true });
-                if (place.province && !fields.province) form.setValue("province", place.province);
-                if (place.postalCode && !fields.postalCode) form.setValue("postalCode", place.postalCode, { shouldValidate: true });
+                if (place.address && !lockedFields.has("address")) form.setValue("address", place.address, { shouldValidate: true });
+                // Only fill city/postal/province if AI didn't extract them and they aren't locked
+                if (place.city && !fields.city && !lockedFields.has("city")) form.setValue("city", place.city, { shouldValidate: true });
+                if (place.province && !fields.province && !lockedFields.has("province")) form.setValue("province", place.province);
+                if (place.postalCode && !fields.postalCode && !lockedFields.has("postalCode")) form.setValue("postalCode", place.postalCode, { shouldValidate: true });
                 // Always fill coordinates — AI never provides these
                 if (place.lat && place.lng) {
                   form.setValue("addressLat", place.lat);
@@ -224,10 +258,10 @@ export default function NewBooking() {
         } catch { /* fail silently — plain address string is still in the form */ }
       }
     },
-    [form]
+    [form, lockedFields]
   );
 
-  // Clears the AI indicator for a field when the dispatcher edits it manually
+  // Clears the AI indicator for a field when the dispatcher edits it manually (visual only)
   const markEdited = useCallback((name: string) => {
     setAiFilledFields((prev) => {
       if (!prev.has(name)) return prev;
@@ -235,6 +269,19 @@ export default function NewBooking() {
       next.delete(name);
       return next;
     });
+  }, []);
+
+  // Clear field locks and AI indicators when a new call starts or transcript is cleared
+  const handleNewCall = useCallback(() => {
+    setLockedFields(new Set());
+    setAiFilledFields(new Set());
+    aiFilledFieldsRef.current = new Set();
+  }, []);
+
+  const handleCallClear = useCallback(() => {
+    setLockedFields(new Set());
+    setAiFilledFields(new Set());
+    aiFilledFieldsRef.current = new Set();
   }, []);
 
   const onSubmit = (data: BookingFormValues) => {
@@ -259,15 +306,28 @@ export default function NewBooking() {
     });
   };
 
-  // Helper: CSS class to highlight auto-filled fields
-  // Priority: green flash (2 s after AI fill) > amber ring (persistent until manual edit)
+  // Helper: CSS class to highlight auto-filled or dispatcher-locked fields
+  // Priority: green flash (2s after AI fill) > locked amber > AI-filled amber
   const fieldClass = (name: string) =>
     cn(
       "bg-muted/30 focus:bg-background transition-all duration-300",
       highlightedFields.has(name)
         ? "ring-2 ring-green-400 bg-green-50 dark:bg-green-950/30"
-        : aiFilledFields.has(name) && "ring-2 ring-amber-400 bg-amber-50 dark:bg-amber-950/30"
+        : (lockedFields.has(name) || aiFilledFields.has(name))
+          && "ring-2 ring-amber-400 bg-amber-50 dark:bg-amber-950/30"
     );
+
+  // Helper: renders a lock badge next to a field label when locked
+  const LockedBadge = ({ name }: { name: string }) =>
+    lockedFields.has(name) ? (
+      <span
+        title="You edited this field — AI won't overwrite it"
+        className="inline-flex items-center gap-0.5 ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400 border border-amber-300 dark:border-amber-700"
+      >
+        <Lock className="w-2.5 h-2.5" />
+        locked
+      </span>
+    ) : null;
 
   return (
     <div className="max-w-4xl mx-auto animate-in slide-in-from-bottom-4 duration-500 pb-24">
@@ -281,6 +341,8 @@ export default function NewBooking() {
         <LiveCallPanel
           onFieldsExtracted={handleFieldsExtracted}
           onTranscriptChange={setCallTranscript}
+          onNewCall={handleNewCall}
+          onClear={handleCallClear}
           baseUrl={getBaseUrl()}
         />
       </div>
@@ -298,7 +360,7 @@ export default function NewBooking() {
                 <div className="grid grid-cols-2 gap-4">
                   <FormField control={form.control} name="firstName" render={({ field }) => (
                     <FormItem>
-                      <FormLabel>First Name</FormLabel>
+                      <FormLabel>First Name<LockedBadge name="firstName" /></FormLabel>
                       <FormControl>
                         <Input placeholder="Jane" {...field} onChange={(e) => { markEdited("firstName"); field.onChange(e); }} className={fieldClass("firstName")} />
                       </FormControl>
@@ -307,7 +369,7 @@ export default function NewBooking() {
                   )} />
                   <FormField control={form.control} name="lastName" render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Last Name</FormLabel>
+                      <FormLabel>Last Name<LockedBadge name="lastName" /></FormLabel>
                       <FormControl>
                         <Input placeholder="Doe" {...field} onChange={(e) => { markEdited("lastName"); field.onChange(e); }} className={fieldClass("lastName")} />
                       </FormControl>
@@ -318,7 +380,7 @@ export default function NewBooking() {
                 <div className="grid grid-cols-2 gap-4">
                   <FormField control={form.control} name="phone" render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Phone Number</FormLabel>
+                      <FormLabel>Phone Number<LockedBadge name="phone" /></FormLabel>
                       <FormControl>
                         <div className="relative">
                           <Phone className="w-4 h-4 absolute left-3 top-3.5 text-muted-foreground" />
@@ -330,7 +392,7 @@ export default function NewBooking() {
                   )} />
                   <FormField control={form.control} name="email" render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Email <span className="text-muted-foreground font-normal">(Optional)</span></FormLabel>
+                      <FormLabel>Email<LockedBadge name="email" /> <span className="text-muted-foreground font-normal">(Optional)</span></FormLabel>
                       <FormControl>
                         <Input type="email" placeholder="jane@example.com" className={fieldClass("email")} {...field} onChange={(e) => { markEdited("email"); field.onChange(e); }} />
                       </FormControl>
@@ -349,7 +411,7 @@ export default function NewBooking() {
               <CardContent className="space-y-4">
                 <FormField control={form.control} name="address" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Street Address</FormLabel>
+                    <FormLabel>Street Address<LockedBadge name="address" /></FormLabel>
                     <FormControl>
                       <AddressAutocomplete
                         value={field.value}
@@ -375,7 +437,7 @@ export default function NewBooking() {
                 <div className="grid grid-cols-[2fr_1fr_1fr] gap-4">
                   <FormField control={form.control} name="city" render={({ field }) => (
                     <FormItem>
-                      <FormLabel>City</FormLabel>
+                      <FormLabel>City<LockedBadge name="city" /></FormLabel>
                       <FormControl>
                         <Input placeholder="Edmonton" className={fieldClass("city")} {...field} onChange={(e) => { markEdited("city"); field.onChange(e); }} />
                       </FormControl>
@@ -398,7 +460,7 @@ export default function NewBooking() {
                   )} />
                   <FormField control={form.control} name="postalCode" render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Postal</FormLabel>
+                      <FormLabel>Postal<LockedBadge name="postalCode" /></FormLabel>
                       <FormControl>
                         <Input placeholder="T5J" className={cn(fieldClass("postalCode"), "uppercase")} {...field} onChange={(e) => { markEdited("postalCode"); field.onChange(e); }} />
                       </FormControl>
@@ -419,17 +481,12 @@ export default function NewBooking() {
               <CardContent className="space-y-4 pt-4">
                 <FormField control={form.control} name="serviceType" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Service Type</FormLabel>
+                    <FormLabel>Service Type<LockedBadge name="serviceType" /></FormLabel>
                     <FormControl>
                       <NativeSelect
                         {...field}
                         onChange={(e) => { markEdited("serviceType"); field.onChange(e); }}
-                        className={cn(
-                          "h-12 text-base font-medium",
-                          highlightedFields.has("serviceType")
-                            ? "ring-2 ring-green-400 bg-green-50 dark:bg-green-950/30"
-                            : aiFilledFields.has("serviceType") && "ring-2 ring-amber-400 bg-amber-50 dark:bg-amber-950/30"
-                        )}
+                        className={cn("h-12 text-base font-medium", fieldClass("serviceType"))}
                       >
                         <option value="standard_clean">Standard Clean</option>
                         <option value="deep_clean">Deep Clean</option>
@@ -444,7 +501,7 @@ export default function NewBooking() {
                 <div className="grid grid-cols-2 gap-4">
                   <FormField control={form.control} name="bedrooms" render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Bedrooms</FormLabel>
+                      <FormLabel>Bedrooms<LockedBadge name="bedrooms" /></FormLabel>
                       <FormControl>
                         <Input type="number" min="0" max="10" className={cn("text-center font-bold text-lg", fieldClass("bedrooms"))} {...field} onChange={(e) => { markEdited("bedrooms"); field.onChange(e); }} />
                       </FormControl>
@@ -453,7 +510,7 @@ export default function NewBooking() {
                   )} />
                   <FormField control={form.control} name="bathrooms" render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Bathrooms</FormLabel>
+                      <FormLabel>Bathrooms<LockedBadge name="bathrooms" /></FormLabel>
                       <FormControl>
                         <Input type="number" min="1" max="10" step="0.5" className={cn("text-center font-bold text-lg", fieldClass("bathrooms"))} {...field} onChange={(e) => { markEdited("bathrooms"); field.onChange(e); }} />
                       </FormControl>
@@ -464,13 +521,14 @@ export default function NewBooking() {
 
                 <FormField control={form.control} name="extras" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Extras</FormLabel>
+                    <FormLabel>Extras<LockedBadge name="extras" /></FormLabel>
                     <FormControl>
                       <div className={cn(
                           "flex flex-wrap gap-2 pt-1 rounded-lg transition-all duration-300 p-1",
                           highlightedFields.has("extras")
                             ? "ring-2 ring-green-400 bg-green-50 dark:bg-green-950/30"
-                            : aiFilledFields.has("extras") && "ring-2 ring-amber-400 bg-amber-50 dark:bg-amber-950/30"
+                            : (lockedFields.has("extras") || aiFilledFields.has("extras"))
+                              && "ring-2 ring-amber-400 bg-amber-50 dark:bg-amber-950/30"
                         )}>
                         {EXTRAS_OPTIONS.map(extra => {
                           const isSelected = field.value.includes(extra);
@@ -514,7 +572,7 @@ export default function NewBooking() {
                   <div className="grid grid-cols-2 gap-4">
                     <FormField control={form.control} name="scheduledDate" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Date</FormLabel>
+                        <FormLabel>Date<LockedBadge name="scheduledDate" /></FormLabel>
                         <FormControl>
                           <Input type="date" className={cn("font-medium", fieldClass("scheduledDate"))} {...field} onChange={(e) => { markEdited("scheduledDate"); field.onChange(e); }} />
                         </FormControl>
@@ -523,7 +581,7 @@ export default function NewBooking() {
                     )} />
                     <FormField control={form.control} name="scheduledTime" render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Time</FormLabel>
+                        <FormLabel>Time<LockedBadge name="scheduledTime" /></FormLabel>
                         <FormControl>
                           <Input type="time" className={cn("font-medium", fieldClass("scheduledTime"))} {...field} onChange={(e) => { markEdited("scheduledTime"); field.onChange(e); }} />
                         </FormControl>
@@ -534,16 +592,12 @@ export default function NewBooking() {
 
                   <FormField control={form.control} name="frequency" render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Frequency</FormLabel>
+                      <FormLabel>Frequency<LockedBadge name="frequency" /></FormLabel>
                       <FormControl>
                         <NativeSelect
                           {...field}
                           onChange={(e) => { markEdited("frequency"); field.onChange(e); }}
-                          className={cn(
-                            highlightedFields.has("frequency")
-                              ? "ring-2 ring-green-400 bg-green-50 dark:bg-green-950/30"
-                              : aiFilledFields.has("frequency") && "ring-2 ring-amber-400 bg-amber-50 dark:bg-amber-950/30"
-                          )}
+                          className={cn(fieldClass("frequency"))}
                         >
                           <option value="one_time">One Time</option>
                           <option value="weekly">Weekly</option>
@@ -584,7 +638,7 @@ export default function NewBooking() {
                         <NativeSelect
                           value={field.value ?? ""}
                           onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)}
-                          className={cn(highlightedFields.has("staffId") && "ring-2 ring-green-400 bg-green-50 dark:bg-green-950/30")}
+                          className={cn(fieldClass("staffId"))}
                         >
                           <option value="">Unassigned</option>
                           {staff.map((s) => (
@@ -637,7 +691,7 @@ export default function NewBooking() {
             <CardContent className="p-4">
               <FormField control={form.control} name="notes" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Internal Notes / Entry Instructions</FormLabel>
+                  <FormLabel>Internal Notes / Entry Instructions<LockedBadge name="notes" /></FormLabel>
                   <FormControl>
                     <Textarea
                       placeholder="e.g. Key under mat, dog in backyard..."
