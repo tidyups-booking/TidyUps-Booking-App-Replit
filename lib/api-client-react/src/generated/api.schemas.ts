@@ -95,6 +95,8 @@ export interface Booking {
      */
   jobberSyncError?: string | null;
   createdAt: string;
+  /** True when at least one call transcript is attached to this booking. */
+  hasTranscript?: boolean;
 }
 
 export type BookingInputServiceType = typeof BookingInputServiceType[keyof typeof BookingInputServiceType];
@@ -161,6 +163,12 @@ export interface BookingInput {
   estimatedPrice?: number;
   notes?: string;
   status?: BookingInputStatus;
+  /** Full transcript of the inbound call that generated this booking. */
+  callTranscript?: string;
+  /** Latitude from Google Places autocomplete, stored at booking creation. */
+  addressLat?: number;
+  /** Longitude from Google Places autocomplete, stored at booking creation. */
+  addressLng?: number;
 }
 
 export type BookingUpdateServiceType = typeof BookingUpdateServiceType[keyof typeof BookingUpdateServiceType];

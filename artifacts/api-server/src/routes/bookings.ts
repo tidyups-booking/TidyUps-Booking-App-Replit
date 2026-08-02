@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, gte, lte, and, sql } from "drizzle-orm";
+import { eq, gte, lte, and, sql, inArray } from "drizzle-orm";
 import { db, bookingsTable, callTranscriptsTable } from "@workspace/db";
 import { syncBookingToJobber, getStoredTokens } from "../services/jobber.js";
 import {
@@ -139,7 +139,23 @@ router.get("/bookings", async (req, res): Promise<void> => {
     .limit(limit)
     .offset(offset);
 
-  res.json(rows);
+  // Fetch which booking IDs have at least one transcript in a single query
+  let transcriptBookingIds = new Set<number>();
+  if (rows.length > 0) {
+    const ids = rows.map((r) => r.id);
+    const transcriptRows = await db
+      .selectDistinct({ bookingId: callTranscriptsTable.bookingId })
+      .from(callTranscriptsTable)
+      .where(inArray(callTranscriptsTable.bookingId, ids));
+    transcriptBookingIds = new Set(transcriptRows.map((r) => r.bookingId));
+  }
+
+  const response = rows.map((r) => ({
+    ...r,
+    hasTranscript: transcriptBookingIds.has(r.id),
+  }));
+
+  res.json(response);
 });
 
 // POST /bookings

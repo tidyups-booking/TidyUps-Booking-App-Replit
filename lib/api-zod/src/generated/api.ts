@@ -55,7 +55,8 @@ export const ListBookingsResponseItem = zod.object({
   "jobberJobId": zod.string().nullish(),
   "jobberSyncStatus": zod.enum(['not_started', 'pending', 'synced', 'failed']).optional().describe('Jobber sync state. not_started = never attempted, pending = in progress, synced = succeeded, failed = error (see jobberSyncError).\n'),
   "jobberSyncError": zod.string().nullish().describe('Error message from the last failed Jobber sync attempt.'),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "hasTranscript": zod.boolean().optional().describe('True when at least one call transcript is attached to this booking.')
 })
 export const ListBookingsResponse = zod.array(ListBookingsResponseItem)
 
@@ -98,9 +99,9 @@ export const CreateBookingBody = zod.object({
   "estimatedPrice": zod.number().optional(),
   "notes": zod.string().optional(),
   "status": zod.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']).default(createBookingBodyStatusDefault),
-  "callTranscript": zod.string().optional(),
-  "addressLat": zod.number().optional(),
-  "addressLng": zod.number().optional()
+  "callTranscript": zod.string().optional().describe('Full transcript of the inbound call that generated this booking.'),
+  "addressLat": zod.number().optional().describe('Latitude from Google Places autocomplete, stored at booking creation.'),
+  "addressLng": zod.number().optional().describe('Longitude from Google Places autocomplete, stored at booking creation.')
 })
 
 export const CreateBookingResponse = zod.object({
@@ -127,7 +128,8 @@ export const CreateBookingResponse = zod.object({
   "jobberJobId": zod.string().nullish(),
   "jobberSyncStatus": zod.enum(['not_started', 'pending', 'synced', 'failed']).optional().describe('Jobber sync state. not_started = never attempted, pending = in progress, synced = succeeded, failed = error (see jobberSyncError).\n'),
   "jobberSyncError": zod.string().nullish().describe('Error message from the last failed Jobber sync attempt.'),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "hasTranscript": zod.boolean().optional().describe('True when at least one call transcript is attached to this booking.')
 })
 
 
@@ -173,7 +175,8 @@ export const GetUpcomingBookingsResponseItem = zod.object({
   "jobberJobId": zod.string().nullish(),
   "jobberSyncStatus": zod.enum(['not_started', 'pending', 'synced', 'failed']).optional().describe('Jobber sync state. not_started = never attempted, pending = in progress, synced = succeeded, failed = error (see jobberSyncError).\n'),
   "jobberSyncError": zod.string().nullish().describe('Error message from the last failed Jobber sync attempt.'),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "hasTranscript": zod.boolean().optional().describe('True when at least one call transcript is attached to this booking.')
 })
 export const GetUpcomingBookingsResponse = zod.array(GetUpcomingBookingsResponseItem)
 
@@ -209,7 +212,8 @@ export const GetBookingResponse = zod.object({
   "jobberJobId": zod.string().nullish(),
   "jobberSyncStatus": zod.enum(['not_started', 'pending', 'synced', 'failed']).optional().describe('Jobber sync state. not_started = never attempted, pending = in progress, synced = succeeded, failed = error (see jobberSyncError).\n'),
   "jobberSyncError": zod.string().nullish().describe('Error message from the last failed Jobber sync attempt.'),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "hasTranscript": zod.boolean().optional().describe('True when at least one call transcript is attached to this booking.')
 })
 
 
@@ -267,7 +271,8 @@ export const UpdateBookingResponse = zod.object({
   "jobberJobId": zod.string().nullish(),
   "jobberSyncStatus": zod.enum(['not_started', 'pending', 'synced', 'failed']).optional().describe('Jobber sync state. not_started = never attempted, pending = in progress, synced = succeeded, failed = error (see jobberSyncError).\n'),
   "jobberSyncError": zod.string().nullish().describe('Error message from the last failed Jobber sync attempt.'),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "hasTranscript": zod.boolean().optional().describe('True when at least one call transcript is attached to this booking.')
 })
 
 
@@ -384,7 +389,8 @@ export const GetStaffScheduleResponseItem = zod.object({
   "jobberJobId": zod.string().nullish(),
   "jobberSyncStatus": zod.enum(['not_started', 'pending', 'synced', 'failed']).optional().describe('Jobber sync state. not_started = never attempted, pending = in progress, synced = succeeded, failed = error (see jobberSyncError).\n'),
   "jobberSyncError": zod.string().nullish().describe('Error message from the last failed Jobber sync attempt.'),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "hasTranscript": zod.boolean().optional().describe('True when at least one call transcript is attached to this booking.')
 })
 export const GetStaffScheduleResponse = zod.array(GetStaffScheduleResponseItem)
 
@@ -429,7 +435,8 @@ export const GetDayScheduleResponseItem = zod.object({
   "jobberJobId": zod.string().nullish(),
   "jobberSyncStatus": zod.enum(['not_started', 'pending', 'synced', 'failed']).optional().describe('Jobber sync state. not_started = never attempted, pending = in progress, synced = succeeded, failed = error (see jobberSyncError).\n'),
   "jobberSyncError": zod.string().nullish().describe('Error message from the last failed Jobber sync attempt.'),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "hasTranscript": zod.boolean().optional().describe('True when at least one call transcript is attached to this booking.')
 }))
 })
 export const GetDayScheduleResponse = zod.array(GetDayScheduleResponseItem)

@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { StatusBadge, ServiceTypeBadge } from "@/components/badges";
 import { formatDate, formatTime } from "@/lib/utils";
-import { Search, Loader2 } from "lucide-react";
+import { Search, Loader2, Mic } from "lucide-react";
 
 export default function BookingsList() {
   const [statusFilter, setStatusFilter] = React.useState<ListBookingsStatus | "all">("all");
@@ -88,7 +88,14 @@ export default function BookingsList() {
                     <tr key={booking.id} className="border-b last:border-0 hover:bg-muted/50 transition-colors group">
                       <td className="px-4 py-3">
                         <Link href={`/bookings/${booking.id}`} className="font-semibold text-foreground group-hover:text-primary transition-colors flex flex-col">
-                          <span>{booking.firstName} {booking.lastName}</span>
+                          <span className="flex items-center gap-1.5">
+                            {booking.firstName} {booking.lastName}
+                            {booking.hasTranscript && (
+                              <span title="Call transcript attached" className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-primary/10 text-primary shrink-0">
+                                <Mic className="w-2.5 h-2.5" />
+                              </span>
+                            )}
+                          </span>
                           <span className="text-xs font-normal text-muted-foreground">{booking.phone}</span>
                         </Link>
                       </td>

@@ -430,6 +430,9 @@ components:
         createdAt:
           type: string
           format: date-time
+        hasTranscript:
+          type: boolean
+          description: True when at least one call transcript is attached to this booking.
 
     BookingInput:
       type: object

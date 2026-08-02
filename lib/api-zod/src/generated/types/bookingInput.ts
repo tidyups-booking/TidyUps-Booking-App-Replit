@@ -42,4 +42,10 @@ export interface BookingInput {
   estimatedPrice?: number;
   notes?: string;
   status?: BookingInputStatus;
+  /** Full transcript of the inbound call that generated this booking. */
+  callTranscript?: string;
+  /** Latitude from Google Places autocomplete, stored at booking creation. */
+  addressLat?: number;
+  /** Longitude from Google Places autocomplete, stored at booking creation. */
+  addressLng?: number;
 }

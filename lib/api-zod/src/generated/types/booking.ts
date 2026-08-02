@@ -48,4 +48,6 @@ export interface Booking {
      */
   jobberSyncError?: string | null;
   createdAt: Date;
+  /** True when at least one call transcript is attached to this booking. */
+  hasTranscript?: boolean;
 }
