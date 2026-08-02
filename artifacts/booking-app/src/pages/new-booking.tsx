@@ -89,8 +89,10 @@ export default function NewBooking() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  // Track which fields were auto-filled so we can flash them
+  // Track which fields were auto-filled so we can flash them (2s green pulse)
   const [highlightedFields, setHighlightedFields] = useState<Set<string>>(new Set());
+  // Track AI-filled fields persistently — amber ring clears when dispatcher edits manually
+  const [aiFilledFields, setAiFilledFields] = useState<Set<string>>(new Set());
 
   // Track the live-call transcript so it can be saved with the booking
   const [callTranscript, setCallTranscript] = useState("");
@@ -169,7 +171,14 @@ export default function NewBooking() {
         form.setValue(key as any, val, { shouldValidate: false, shouldDirty: true });
       }
 
-      // Flash-highlight newly filled fields
+      // Persist amber AI-filled indicator for newly filled fields
+      setAiFilledFields((prev) => {
+        const next = new Set(prev);
+        newKeys.forEach((k) => next.add(k));
+        return next;
+      });
+
+      // Flash-highlight newly filled fields for 2 s (green pulse)
       setHighlightedFields(new Set(newKeys));
       setTimeout(() => setHighlightedFields(new Set()), 2000);
 
@@ -218,6 +227,16 @@ export default function NewBooking() {
     [form]
   );
 
+  // Clears the AI indicator for a field when the dispatcher edits it manually
+  const markEdited = useCallback((name: string) => {
+    setAiFilledFields((prev) => {
+      if (!prev.has(name)) return prev;
+      const next = new Set(prev);
+      next.delete(name);
+      return next;
+    });
+  }, []);
+
   const onSubmit = (data: BookingFormValues) => {
     const submitData: Record<string, any> = { ...data };
     if (isNaN(submitData.estimatedPrice as any)) submitData.estimatedPrice = undefined;
@@ -241,10 +260,13 @@ export default function NewBooking() {
   };
 
   // Helper: CSS class to highlight auto-filled fields
+  // Priority: green flash (2 s after AI fill) > amber ring (persistent until manual edit)
   const fieldClass = (name: string) =>
     cn(
       "bg-muted/30 focus:bg-background transition-all duration-300",
-      highlightedFields.has(name) && "ring-2 ring-green-400 bg-green-50 dark:bg-green-950/30"
+      highlightedFields.has(name)
+        ? "ring-2 ring-green-400 bg-green-50 dark:bg-green-950/30"
+        : aiFilledFields.has(name) && "ring-2 ring-amber-400 bg-amber-50 dark:bg-amber-950/30"
     );
 
   return (
@@ -278,7 +300,7 @@ export default function NewBooking() {
                     <FormItem>
                       <FormLabel>First Name</FormLabel>
                       <FormControl>
-                        <Input placeholder="Jane" {...field} className={fieldClass("firstName")} />
+                        <Input placeholder="Jane" {...field} onChange={(e) => { markEdited("firstName"); field.onChange(e); }} className={fieldClass("firstName")} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -287,7 +309,7 @@ export default function NewBooking() {
                     <FormItem>
                       <FormLabel>Last Name</FormLabel>
                       <FormControl>
-                        <Input placeholder="Doe" {...field} className={fieldClass("lastName")} />
+                        <Input placeholder="Doe" {...field} onChange={(e) => { markEdited("lastName"); field.onChange(e); }} className={fieldClass("lastName")} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -300,7 +322,7 @@ export default function NewBooking() {
                       <FormControl>
                         <div className="relative">
                           <Phone className="w-4 h-4 absolute left-3 top-3.5 text-muted-foreground" />
-                          <Input type="tel" placeholder="(780) 555-1234" className={cn("pl-9", fieldClass("phone"))} {...field} />
+                          <Input type="tel" placeholder="(780) 555-1234" className={cn("pl-9", fieldClass("phone"))} {...field} onChange={(e) => { markEdited("phone"); field.onChange(e); }} />
                         </div>
                       </FormControl>
                       <FormMessage />
@@ -310,7 +332,7 @@ export default function NewBooking() {
                     <FormItem>
                       <FormLabel>Email <span className="text-muted-foreground font-normal">(Optional)</span></FormLabel>
                       <FormControl>
-                        <Input type="email" placeholder="jane@example.com" className={fieldClass("email")} {...field} />
+                        <Input type="email" placeholder="jane@example.com" className={fieldClass("email")} {...field} onChange={(e) => { markEdited("email"); field.onChange(e); }} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -332,6 +354,7 @@ export default function NewBooking() {
                       <AddressAutocomplete
                         value={field.value}
                         onChange={field.onChange}
+                        onManualChange={() => markEdited("address")}
                         onPlaceSelect={(place) => {
                           form.setValue("address", place.address, { shouldValidate: true });
                           if (place.city) form.setValue("city", place.city, { shouldValidate: true });
@@ -354,7 +377,7 @@ export default function NewBooking() {
                     <FormItem>
                       <FormLabel>City</FormLabel>
                       <FormControl>
-                        <Input placeholder="Edmonton" className={fieldClass("city")} {...field} />
+                        <Input placeholder="Edmonton" className={fieldClass("city")} {...field} onChange={(e) => { markEdited("city"); field.onChange(e); }} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -377,7 +400,7 @@ export default function NewBooking() {
                     <FormItem>
                       <FormLabel>Postal</FormLabel>
                       <FormControl>
-                        <Input placeholder="T5J" className={cn(fieldClass("postalCode"), "uppercase")} {...field} />
+                        <Input placeholder="T5J" className={cn(fieldClass("postalCode"), "uppercase")} {...field} onChange={(e) => { markEdited("postalCode"); field.onChange(e); }} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -400,7 +423,13 @@ export default function NewBooking() {
                     <FormControl>
                       <NativeSelect
                         {...field}
-                        className={cn("h-12 text-base font-medium", highlightedFields.has("serviceType") && "ring-2 ring-green-400 bg-green-50 dark:bg-green-950/30")}
+                        onChange={(e) => { markEdited("serviceType"); field.onChange(e); }}
+                        className={cn(
+                          "h-12 text-base font-medium",
+                          highlightedFields.has("serviceType")
+                            ? "ring-2 ring-green-400 bg-green-50 dark:bg-green-950/30"
+                            : aiFilledFields.has("serviceType") && "ring-2 ring-amber-400 bg-amber-50 dark:bg-amber-950/30"
+                        )}
                       >
                         <option value="standard_clean">Standard Clean</option>
                         <option value="deep_clean">Deep Clean</option>
@@ -417,7 +446,7 @@ export default function NewBooking() {
                     <FormItem>
                       <FormLabel>Bedrooms</FormLabel>
                       <FormControl>
-                        <Input type="number" min="0" max="10" className={cn("text-center font-bold text-lg", fieldClass("bedrooms"))} {...field} />
+                        <Input type="number" min="0" max="10" className={cn("text-center font-bold text-lg", fieldClass("bedrooms"))} {...field} onChange={(e) => { markEdited("bedrooms"); field.onChange(e); }} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -426,7 +455,7 @@ export default function NewBooking() {
                     <FormItem>
                       <FormLabel>Bathrooms</FormLabel>
                       <FormControl>
-                        <Input type="number" min="1" max="10" step="0.5" className={cn("text-center font-bold text-lg", fieldClass("bathrooms"))} {...field} />
+                        <Input type="number" min="1" max="10" step="0.5" className={cn("text-center font-bold text-lg", fieldClass("bathrooms"))} {...field} onChange={(e) => { markEdited("bathrooms"); field.onChange(e); }} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -437,7 +466,12 @@ export default function NewBooking() {
                   <FormItem>
                     <FormLabel>Extras</FormLabel>
                     <FormControl>
-                      <div className={cn("flex flex-wrap gap-2 pt-1 rounded-lg transition-all duration-300 p-1", highlightedFields.has("extras") && "ring-2 ring-green-400 bg-green-50 dark:bg-green-950/30")}>
+                      <div className={cn(
+                          "flex flex-wrap gap-2 pt-1 rounded-lg transition-all duration-300 p-1",
+                          highlightedFields.has("extras")
+                            ? "ring-2 ring-green-400 bg-green-50 dark:bg-green-950/30"
+                            : aiFilledFields.has("extras") && "ring-2 ring-amber-400 bg-amber-50 dark:bg-amber-950/30"
+                        )}>
                         {EXTRAS_OPTIONS.map(extra => {
                           const isSelected = field.value.includes(extra);
                           return (
@@ -445,6 +479,7 @@ export default function NewBooking() {
                               type="button"
                               key={extra}
                               onClick={() => {
+                                markEdited("extras");
                                 const newValue = isSelected
                                   ? field.value.filter(v => v !== extra)
                                   : [...field.value, extra];
@@ -481,7 +516,7 @@ export default function NewBooking() {
                       <FormItem>
                         <FormLabel>Date</FormLabel>
                         <FormControl>
-                          <Input type="date" className={cn("font-medium", fieldClass("scheduledDate"))} {...field} />
+                          <Input type="date" className={cn("font-medium", fieldClass("scheduledDate"))} {...field} onChange={(e) => { markEdited("scheduledDate"); field.onChange(e); }} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -490,7 +525,7 @@ export default function NewBooking() {
                       <FormItem>
                         <FormLabel>Time</FormLabel>
                         <FormControl>
-                          <Input type="time" className={cn("font-medium", fieldClass("scheduledTime"))} {...field} />
+                          <Input type="time" className={cn("font-medium", fieldClass("scheduledTime"))} {...field} onChange={(e) => { markEdited("scheduledTime"); field.onChange(e); }} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -503,7 +538,12 @@ export default function NewBooking() {
                       <FormControl>
                         <NativeSelect
                           {...field}
-                          className={cn(highlightedFields.has("frequency") && "ring-2 ring-green-400 bg-green-50 dark:bg-green-950/30")}
+                          onChange={(e) => { markEdited("frequency"); field.onChange(e); }}
+                          className={cn(
+                            highlightedFields.has("frequency")
+                              ? "ring-2 ring-green-400 bg-green-50 dark:bg-green-950/30"
+                              : aiFilledFields.has("frequency") && "ring-2 ring-amber-400 bg-amber-50 dark:bg-amber-950/30"
+                          )}
                         >
                           <option value="one_time">One Time</option>
                           <option value="weekly">Weekly</option>
@@ -603,6 +643,7 @@ export default function NewBooking() {
                       placeholder="e.g. Key under mat, dog in backyard..."
                       className={cn("min-h-[100px]", fieldClass("notes"))}
                       {...field}
+                      onChange={(e) => { markEdited("notes"); field.onChange(e); }}
                     />
                   </FormControl>
                   <FormMessage />
