@@ -160,7 +160,7 @@ export default function NewBooking() {
 
   // Called by LiveCallPanel when AI extracts fields
   const handleFieldsExtracted = useCallback(
-    (fields: Record<string, any>, newKeys: string[]) => {
+    async (fields: Record<string, any>, newKeys: string[]) => {
       // Fill each extracted field into the form
       for (const key of Object.keys(fields)) {
         const val = fields[key];
@@ -172,6 +172,48 @@ export default function NewBooking() {
       // Flash-highlight newly filled fields
       setHighlightedFields(new Set(newKeys));
       setTimeout(() => setHighlightedFields(new Set()), 2000);
+
+      // When AI fills an address, run it through Google Places to get
+      // city, province, postal code, and coordinates automatically.
+      // Only fills fields the AI didn't already provide.
+      if (newKeys.includes("address") && fields.address) {
+        try {
+          const base = getBaseUrl();
+          const query = fields.city
+            ? `${fields.address}, ${fields.city}, AB`
+            : fields.address;
+          const acRes = await fetch(
+            `${base}api/places/autocomplete?input=${encodeURIComponent(query)}`,
+            { credentials: "include" }
+          );
+          if (acRes.ok) {
+            const { predictions } = await acRes.json() as { predictions?: { placeId: string }[] };
+            if (predictions && predictions.length > 0) {
+              const detRes = await fetch(
+                `${base}api/places/details?placeId=${encodeURIComponent(predictions[0].placeId)}`,
+                { credentials: "include" }
+              );
+              if (detRes.ok) {
+                const place = await detRes.json() as {
+                  address?: string; city?: string; province?: string;
+                  postalCode?: string; lat?: number; lng?: number;
+                };
+                // Prefer the Places-formatted street address (fixes abbreviations)
+                if (place.address) form.setValue("address", place.address, { shouldValidate: true });
+                // Only fill city/postal/province if AI didn't already extract them
+                if (place.city && !fields.city) form.setValue("city", place.city, { shouldValidate: true });
+                if (place.province && !fields.province) form.setValue("province", place.province);
+                if (place.postalCode && !fields.postalCode) form.setValue("postalCode", place.postalCode, { shouldValidate: true });
+                // Always fill coordinates — AI never provides these
+                if (place.lat && place.lng) {
+                  form.setValue("addressLat", place.lat);
+                  form.setValue("addressLng", place.lng);
+                }
+              }
+            }
+          }
+        } catch { /* fail silently — plain address string is still in the form */ }
+      }
     },
     [form]
   );
