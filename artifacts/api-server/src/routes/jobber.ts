@@ -14,6 +14,16 @@ const router = Router();
 
 const JOBBER_AUTH_URL = "https://api.getjobber.com/api/oauth/authorize";
 
+// GET /jobber/redirect-uri — returns the current OAuth callback URL so the
+// frontend can display it for copy-paste into the Jobber developer portal
+router.get("/jobber/redirect-uri", (req, res) => {
+  try {
+    res.json({ redirectUri: getCallbackUrl() });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /jobber/status — is Jobber connected?
 router.get("/jobber/status", async (req, res) => {
   try {
