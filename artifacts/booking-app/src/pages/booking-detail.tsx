@@ -49,6 +49,9 @@ export default function BookingDetail() {
 
   const [transcripts, setTranscripts] = useState<CallTranscriptRow[]>([]);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const [addNoteOpen, setAddNoteOpen] = useState(false);
+  const [noteText, setNoteText] = useState("");
+  const [savingNote, setSavingNote] = useState(false);
 
   const { data: booking, isLoading, isError } = useGetBooking(id, {
     query: {
@@ -79,6 +82,30 @@ export default function BookingDetail() {
       .then((rows: CallTranscriptRow[]) => setTranscripts(rows))
       .catch(() => {});
   }, [id]);
+
+  const handleSaveNote = async () => {
+    if (!noteText.trim()) return;
+    setSavingNote(true);
+    try {
+      const res = await fetch(`${getBaseUrl()}api/call-transcripts/${id}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript: noteText.trim() }),
+      });
+      if (!res.ok) throw new Error("Failed to save note");
+      const newRow: CallTranscriptRow = await res.json();
+      setTranscripts((prev) => [...prev, newRow]);
+      setNoteText("");
+      setAddNoteOpen(false);
+      setTranscriptOpen(true);
+      toast({ title: "Note saved", description: "Call note added to this booking." });
+    } catch {
+      toast({ title: "Error", description: "Failed to save call note.", variant: "destructive" });
+    } finally {
+      setSavingNote(false);
+    }
+  };
 
   if (isError) {
     return (
@@ -245,44 +272,91 @@ export default function BookingDetail() {
           )}
 
           {/* Call Transcript Card */}
-          {transcripts.length > 0 && (
-            <Card className="shadow-sm border-purple-200 dark:border-purple-900/40">
-              <button
-                type="button"
-                className="w-full text-left"
-                onClick={() => setTranscriptOpen((v) => !v)}
-              >
-                <CardHeader className="pb-3 bg-purple-50/60 dark:bg-purple-950/20 rounded-t-xl border-b border-purple-100 dark:border-purple-900/30">
-                  <CardTitle className="text-base flex items-center justify-between gap-2 text-purple-800 dark:text-purple-400">
-                    <span className="flex items-center gap-2">
-                      <Mic className="w-4 h-4" />
-                      Call Transcript
-                      <span className="text-xs font-normal text-purple-600 dark:text-purple-500 ml-1">
-                        {new Date(transcripts[0].createdAt).toLocaleDateString()}
-                      </span>
+          <Card className="shadow-sm border-purple-200 dark:border-purple-900/40">
+            <CardHeader className="pb-3 bg-purple-50/60 dark:bg-purple-950/20 rounded-t-xl border-b border-purple-100 dark:border-purple-900/30">
+              <CardTitle className="text-base flex items-center justify-between gap-2 text-purple-800 dark:text-purple-400">
+                <button
+                  type="button"
+                  className="flex items-center gap-2 flex-1 text-left"
+                  onClick={() => transcripts.length > 0 && setTranscriptOpen((v) => !v)}
+                >
+                  <Mic className="w-4 h-4" />
+                  Call Notes
+                  {transcripts.length > 0 && (
+                    <span className="text-xs font-normal bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 px-1.5 py-0.5 rounded-full">
+                      {transcripts.length}
                     </span>
-                    {transcriptOpen ? (
+                  )}
+                  {transcripts.length > 0 && (
+                    transcriptOpen ? (
                       <ChevronUp className="w-4 h-4 text-purple-500 flex-shrink-0" />
                     ) : (
                       <ChevronDown className="w-4 h-4 text-purple-500 flex-shrink-0" />
-                    )}
-                  </CardTitle>
-                </CardHeader>
-              </button>
-              {transcriptOpen && (
-                <CardContent className="pt-4">
-                  {transcripts.map((t) => (
-                    <p
-                      key={t.id}
-                      className="whitespace-pre-wrap text-sm text-muted-foreground leading-relaxed font-mono bg-muted/40 rounded-lg p-4 border"
-                    >
+                    )
+                  )}
+                </button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-purple-700 border-purple-300 hover:bg-purple-100 dark:text-purple-400 dark:border-purple-700 dark:hover:bg-purple-900/30 h-7 px-2.5 text-xs"
+                  onClick={() => setAddNoteOpen((v) => !v)}
+                >
+                  {addNoteOpen ? "Cancel" : "+ Add Note"}
+                </Button>
+              </CardTitle>
+            </CardHeader>
+
+            {addNoteOpen && (
+              <CardContent className="pt-4 pb-4 border-b border-purple-100 dark:border-purple-900/30">
+                <textarea
+                  className="w-full rounded-lg border border-purple-200 dark:border-purple-800 bg-background p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-purple-400 min-h-[100px]"
+                  placeholder="Enter call notes or transcript…"
+                  value={noteText}
+                  onChange={(e) => setNoteText(e.target.value)}
+                  disabled={savingNote}
+                />
+                <div className="flex justify-end gap-2 mt-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => { setAddNoteOpen(false); setNoteText(""); }}
+                    disabled={savingNote}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleSaveNote}
+                    disabled={savingNote || !noteText.trim()}
+                    className="bg-purple-600 hover:bg-purple-700 text-white"
+                  >
+                    {savingNote ? "Saving…" : "Save Note"}
+                  </Button>
+                </div>
+              </CardContent>
+            )}
+
+            {transcripts.length > 0 && transcriptOpen && (
+              <CardContent className="pt-4 space-y-3">
+                {transcripts.map((t) => (
+                  <div key={t.id}>
+                    <div className="text-xs text-purple-500 dark:text-purple-400 mb-1">
+                      {new Date(t.createdAt).toLocaleString()}
+                    </div>
+                    <p className="whitespace-pre-wrap text-sm text-muted-foreground leading-relaxed font-mono bg-muted/40 rounded-lg p-4 border">
                       {t.transcript}
                     </p>
-                  ))}
-                </CardContent>
-              )}
-            </Card>
-          )}
+                  </div>
+                ))}
+              </CardContent>
+            )}
+
+            {transcripts.length === 0 && !addNoteOpen && (
+              <CardContent className="pt-4 pb-4">
+                <p className="text-sm text-muted-foreground text-center py-2">No call notes yet.</p>
+              </CardContent>
+            )}
+          </Card>
         </div>
 
         {/* Sidebar Info */}
