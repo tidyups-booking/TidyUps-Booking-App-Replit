@@ -1,27 +1,16 @@
-import React, { useState, useRef } from "react";
+import React, { useState } from "react";
 import { useListStaff, useCreateStaff, useUpdateStaff } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getListStaffQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { Users, Plus, Phone, Pencil, CheckCircle2, X, MapPin, Loader2 } from "lucide-react";
+import { Users, Plus, Phone, Pencil, CheckCircle2, X, MapPin } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Staff } from "@workspace/api-client-react";
-
-// Geocode a free-text address via Nominatim
-async function geocodeForHome(address: string): Promise<{ lat: number; lng: number } | null> {
-  try {
-    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address + ", Edmonton, AB, Canada")}&format=json&limit=1&countrycodes=ca`;
-    const res = await fetch(url, { headers: { "Accept-Language": "en", "User-Agent": "833TidyupsDispatch/1.0" } });
-    const data = await res.json();
-    if (data.length > 0) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-  } catch { /* ignore */ }
-  return null;
-}
+import { AddressAutocomplete } from "@/components/address-autocomplete";
 
 const ROLE_LABELS: Record<string, string> = {
   cleaner: "Cleaner",
@@ -122,7 +111,6 @@ export default function StaffManagement() {
   const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
   const [form, setForm] = useState<StaffFormData>(EMPTY_FORM);
   const [showInactive, setShowInactive] = useState(false);
-  const [isGeocoding, setIsGeocoding] = useState(false);
 
   // Always fetch all staff so we can show the inactive count without an extra request
   const { data: allStaffData = [], isLoading } = useListStaff({ activeOnly: false });
@@ -295,41 +283,34 @@ export default function StaffManagement() {
                 <MapPin className="w-3.5 h-3.5 text-primary" />
                 Home Address <span className="text-muted-foreground font-normal">(for map when off-duty)</span>
               </label>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="e.g. 456 Jasper Ave NW, Edmonton"
-                  value={form.homeAddress}
-                  onChange={(e) => setForm({ ...form, homeAddress: e.target.value, homeLat: null, homeLng: null })}
-                  className={cn(form.homeLat ? "border-green-400 bg-green-50 dark:bg-green-950/20" : "")}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0 px-3"
-                  disabled={!form.homeAddress.trim() || isGeocoding}
-                  onClick={async () => {
-                    setIsGeocoding(true);
-                    const result = await geocodeForHome(form.homeAddress);
-                    setIsGeocoding(false);
-                    if (result) {
-                      setForm(f => ({ ...f, homeLat: result.lat, homeLng: result.lng }));
-                      toast({ title: "Address found", description: `Coordinates saved (${result.lat.toFixed(4)}, ${result.lng.toFixed(4)})` });
-                    } else {
-                      toast({ title: "Address not found", description: "Try adding the city or postal code.", variant: "destructive" });
-                    }
-                  }}
-                >
-                  {isGeocoding ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
-                </Button>
-              </div>
+              <AddressAutocomplete
+                value={form.homeAddress}
+                onChange={(v) => setForm({ ...form, homeAddress: v, homeLat: null, homeLng: null })}
+                onPlaceSelect={(place) => {
+                  const label = place.address && place.city
+                    ? `${place.address}, ${place.city}`
+                    : place.formattedAddress;
+                  setForm((f) => ({
+                    ...f,
+                    homeAddress: label,
+                    homeLat: place.lat,
+                    homeLng: place.lng,
+                  }));
+                  toast({
+                    title: "Address confirmed",
+                    description: `Coordinates saved (${place.lat.toFixed(4)}, ${place.lng.toFixed(4)})`,
+                  });
+                }}
+                placeholder="e.g. 456 Jasper Ave NW, Edmonton"
+                className={cn(form.homeLat ? "border-green-400 bg-green-50 dark:bg-green-950/20" : "")}
+              />
               {form.homeLat && (
                 <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
                   <CheckCircle2 className="w-3 h-3" /> Coordinates saved — will appear on the map
                 </p>
               )}
               {form.homeAddress && !form.homeLat && (
-                <p className="text-xs text-muted-foreground">Tap the pin button to geocode this address</p>
+                <p className="text-xs text-muted-foreground">Select an address from the suggestions to save coordinates</p>
               )}
             </div>
 

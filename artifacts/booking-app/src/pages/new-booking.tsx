@@ -15,6 +15,7 @@ import { Phone, User, Home, MapPin, CalendarClock, DollarSign, CheckCircle2, Use
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { LiveCallPanel } from "@/components/live-call-panel";
+import { AddressAutocomplete } from "@/components/address-autocomplete";
 
 const bookingSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
@@ -276,7 +277,18 @@ export default function NewBooking() {
                   <FormItem>
                     <FormLabel>Street Address</FormLabel>
                     <FormControl>
-                      <Input placeholder="123 Main St NW" className={fieldClass("address")} {...field} />
+                      <AddressAutocomplete
+                        value={field.value}
+                        onChange={field.onChange}
+                        onPlaceSelect={(place) => {
+                          form.setValue("address", place.address, { shouldValidate: true });
+                          if (place.city) form.setValue("city", place.city, { shouldValidate: true });
+                          if (place.province) form.setValue("province", place.province);
+                          if (place.postalCode) form.setValue("postalCode", place.postalCode, { shouldValidate: true });
+                        }}
+                        placeholder="123 Main St NW"
+                        className={fieldClass("address")}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
