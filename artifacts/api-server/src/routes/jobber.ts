@@ -6,6 +6,7 @@ import {
   syncBookingToJobber,
   jobberGQL,
 } from "../services/jobber.js";
+import { getClerkProxyHost } from "../middlewares/clerkProxyMiddleware.js";
 import { db } from "@workspace/db";
 import { bookingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
@@ -18,7 +19,7 @@ const JOBBER_AUTH_URL = "https://api.getjobber.com/api/oauth/authorize";
 // frontend can display it for copy-paste into the Jobber developer portal
 router.get("/jobber/redirect-uri", (req, res) => {
   try {
-    res.json({ redirectUri: getCallbackUrl(req.get("host")) });
+    res.json({ redirectUri: getCallbackUrl(getClerkProxyHost(req)) });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -55,7 +56,7 @@ router.get("/jobber/auth", (req, res) => {
   let callbackUrl: string;
   try {
     // Use the live request host so this works on dev AND production domains
-    callbackUrl = getCallbackUrl(req.get("host"));
+    callbackUrl = getCallbackUrl(getClerkProxyHost(req));
   } catch (err: any) {
     res.status(500).json({ error: err.message });
     return;
@@ -97,14 +98,14 @@ router.get("/jobber/callback", async (req, res) => {
       <p>Jobber redirected here but did not include an authorization code.</p>
       <p>This usually means the <strong>redirect URI</strong> in your Jobber app doesn't match exactly.</p>
       <p>Make sure your Jobber developer app has this redirect URI registered:</p>
-      <code>${req.protocol}://${req.get("host")}${req.path}</code>
+      <code>https://${getClerkProxyHost(req)}${req.path}</code>
       <p>Raw query params received: <pre>${allParams}</pre></p>
     `);
     return;
   }
 
   try {
-    const redirectUri = getCallbackUrl(req.get("host"));
+    const redirectUri = getCallbackUrl(getClerkProxyHost(req));
     await exchangeCodeForTokens(code, redirectUri);
     // Serve a small page that signals the opener via BroadcastChannel then
     // closes itself, so the original dashboard tab updates without a manual

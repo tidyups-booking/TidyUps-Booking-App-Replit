@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { randomUUID } from "crypto";
 import { addSseClient, removeSseClient, getCallState } from "../services/twilio-stream.js";
+import { getClerkProxyHost } from "../middlewares/clerkProxyMiddleware.js";
 
 const router = Router();
 
@@ -15,7 +16,7 @@ const router = Router();
  */
 router.post("/twilio/voice", (req, res) => {
   // Use the live request host so the WebSocket URL is correct on dev AND production
-  const host = req.get("host") ?? process.env.REPLIT_DEV_DOMAIN;
+  const host = getClerkProxyHost(req) ?? process.env.REPLIT_DEV_DOMAIN;
   if (!host) {
     res.status(500).send("Cannot determine host for WebSocket URL");
     return;
