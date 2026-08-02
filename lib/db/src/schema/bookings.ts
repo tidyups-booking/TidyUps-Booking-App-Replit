@@ -56,6 +56,8 @@ export const bookingsTable = pgTable("bookings", {
     onDelete: "set null",
   }),
   status: bookingStatusEnum("status").notNull().default("pending"),
+  addressLat: real("address_lat"),
+  addressLng: real("address_lng"),
   jobberJobId: text("jobber_job_id"),
   jobberSyncStatus: text("jobber_sync_status")
     .notNull()

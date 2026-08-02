@@ -37,6 +37,8 @@ const bookingSchema = z.object({
   status: z.enum(["pending", "confirmed", "in_progress", "completed", "cancelled"]).default("pending"),
   extras: z.array(z.string()).default([]),
   staffId: z.coerce.number().optional(),
+  addressLat: z.number().optional(),
+  addressLng: z.number().optional(),
 });
 
 type BookingFormValues = z.infer<typeof bookingSchema>;
@@ -293,6 +295,10 @@ export default function NewBooking() {
                           if (place.city) form.setValue("city", place.city, { shouldValidate: true });
                           if (place.province) form.setValue("province", place.province);
                           if (place.postalCode) form.setValue("postalCode", place.postalCode, { shouldValidate: true });
+                          if (place.lat && place.lng) {
+                            form.setValue("addressLat", place.lat);
+                            form.setValue("addressLng", place.lng);
+                          }
                         }}
                         placeholder="123 Main St NW"
                         className={fieldClass("address")}

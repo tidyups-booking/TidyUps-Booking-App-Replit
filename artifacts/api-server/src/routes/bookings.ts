@@ -174,6 +174,8 @@ router.post("/bookings", async (req, res): Promise<void> => {
       notes: data.notes ?? null,
       status: (data.status as typeof bookingsTable.status._.data) ?? "pending",
       staffId: data.staffId ?? null,
+      addressLat: data.addressLat ?? null,
+      addressLng: data.addressLng ?? null,
     })
     .returning();
 

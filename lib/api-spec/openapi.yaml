@@ -507,6 +507,14 @@ components:
         callTranscript:
           type: string
           description: Full transcript of the inbound call that generated this booking.
+        addressLat:
+          type: number
+          format: float
+          description: Latitude from Google Places autocomplete, stored at booking creation.
+        addressLng:
+          type: number
+          format: float
+          description: Longitude from Google Places autocomplete, stored at booking creation.
 
     BookingUpdate:
       type: object

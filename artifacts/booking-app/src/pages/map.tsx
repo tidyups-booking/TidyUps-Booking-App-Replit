@@ -32,6 +32,8 @@ interface BookingEntry {
   city: string;
   scheduledTime: string | null;
   staffId: number | null;
+  addressLat?: number | null;
+  addressLng?: number | null;
   // enriched client-side:
   coords?: [number, number] | null;
   ranking?: { id: number; name: string; km: number }[];
@@ -212,6 +214,8 @@ export default function MapPage() {
           city: b.city,
           scheduledTime: b.scheduledTime,
           staffId: b.staffId,
+          addressLat: b.addressLat ?? null,
+          addressLng: b.addressLng ?? null,
         }))
       );
     } catch { /* ignore */ }
@@ -293,8 +297,14 @@ export default function MapPage() {
     const staffMap = new Map(staffData.map(s => [s.id, s]));
 
     bookings.forEach(async (b, i) => {
-      await new Promise(r => setTimeout(r, i * 350));
-      const coords = await geocodeAddress(b.address, b.city);
+      // Use stored coordinates if available, otherwise fall back to Nominatim geocoding
+      let coords: [number, number] | null = null;
+      if (b.addressLat != null && b.addressLng != null) {
+        coords = [b.addressLat, b.addressLng];
+      } else {
+        await new Promise(r => setTimeout(r, i * 350));
+        coords = await geocodeAddress(b.address, b.city);
+      }
       if (!coords || !mapRef.current) return;
 
       // Compute proximity ranking for all staff that have a position

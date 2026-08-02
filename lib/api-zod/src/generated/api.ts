@@ -98,7 +98,9 @@ export const CreateBookingBody = zod.object({
   "estimatedPrice": zod.number().optional(),
   "notes": zod.string().optional(),
   "status": zod.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']).default(createBookingBodyStatusDefault),
-  "callTranscript": zod.string().optional()
+  "callTranscript": zod.string().optional(),
+  "addressLat": zod.number().optional(),
+  "addressLng": zod.number().optional()
 })
 
 export const CreateBookingResponse = zod.object({
