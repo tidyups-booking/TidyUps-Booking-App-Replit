@@ -22,14 +22,13 @@ router.get("/jobber/status", async (req, res) => {
       res.json({ connected: false });
       return;
     }
-
-    // Verify the token actually works with a lightweight query
-    try {
-      await jobberGQL(`query { account { id name } }`);
-      res.json({ connected: true });
-    } catch {
+    // Token exists — check it hasn't expired
+    const expired = tokens.expiresAt && tokens.expiresAt < new Date();
+    if (expired) {
       res.json({ connected: false, stale: true });
+      return;
     }
+    res.json({ connected: true });
   } catch (err: any) {
     res.json({ connected: false, error: err.message });
   }
@@ -55,6 +54,7 @@ router.get("/jobber/auth", (req, res) => {
     client_id: clientId,
     redirect_uri: callbackUrl,
     response_type: "code",
+    scope: "read_clients write_clients read_jobs write_jobs",
   });
 
   res.redirect(`${JOBBER_AUTH_URL}?${params.toString()}`);
