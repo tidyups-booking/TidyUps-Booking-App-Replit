@@ -63,8 +63,7 @@ async function extractBookingFields(transcript: string): Promise<Record<string, 
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-5-nano",
-      max_completion_tokens: 512,
-      response_format: { type: "json_object" },
+      max_completion_tokens: 2048,
       messages: [
         {
           role: "system",
@@ -106,7 +105,9 @@ Service type clues:
     });
 
     const raw = response.choices?.[0]?.message?.content || "{}";
-    const fields = JSON.parse(raw) as Record<string, unknown>;
+    // Strip markdown code fences if the model wrapped the JSON
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+    const fields = JSON.parse(cleaned) as Record<string, unknown>;
     return Object.keys(fields).length > 0 ? fields : null;
   } catch (err) {
     logger.warn({ err }, "Booking extraction error");
