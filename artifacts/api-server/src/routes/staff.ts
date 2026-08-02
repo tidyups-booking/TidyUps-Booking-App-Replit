@@ -75,6 +75,17 @@ router.patch("/staff/:id", async (req, res): Promise<void> => {
   if (data.phone !== undefined) updateData.phone = data.phone;
   if (data.active !== undefined) updateData.active = data.active;
 
+  // Home address fields (not in generated schema — passed through directly)
+  const raw = req.body as Record<string, unknown>;
+  if (typeof raw.homeAddress === "string") updateData.homeAddress = raw.homeAddress || null;
+  if (typeof raw.homeLat === "number") updateData.homeLat = raw.homeLat;
+  if (typeof raw.homeLng === "number") updateData.homeLng = raw.homeLng;
+  // Clear home coords if address is being cleared
+  if (raw.homeAddress === "" || raw.homeAddress === null) {
+    updateData.homeLat = null;
+    updateData.homeLng = null;
+  }
+
   const [staff] = await db
     .update(staffTable)
     .set(updateData)
