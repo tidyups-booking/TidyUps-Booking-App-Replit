@@ -12,6 +12,7 @@
 import { WebSocketServer, type WebSocket } from "ws";
 import type { Response } from "express";
 import { logger } from "../lib/logger.js";
+import { speechToText } from "@workspace/integrations-openai-ai-server/audio";
 
 // ── G.711 u-law decode ──────────────────────────────────────────────────────
 
@@ -131,32 +132,14 @@ Service type clues:
   }
 }
 
-// ── Whisper transcription ───────────────────────────────────────────────────
+// ── Transcription (gpt-4o-mini-transcribe via Replit OpenAI proxy) ───────────
 
 async function transcribeWav(wav: Buffer): Promise<string> {
-  const base = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL?.replace(/\/$/, "");
-  const key = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
-  if (!base || !key) return "";
-
-  const form = new FormData();
-  form.append("file", new Blob([wav], { type: "audio/wav" }), "call.wav");
-  form.append("model", "whisper-1");
-  form.append("language", "en");
-
   try {
-    const res = await fetch(`${base}/v1/audio/transcriptions`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}` },
-      body: form,
-    });
-    if (!res.ok) {
-      logger.warn({ status: res.status }, "Whisper transcription failed");
-      return "";
-    }
-    const json = (await res.json()) as { text?: string };
-    return json.text?.trim() ?? "";
+    const text = await speechToText(wav, "wav");
+    return text.trim();
   } catch (err) {
-    logger.warn({ err }, "Whisper transcription error");
+    logger.warn({ err }, "Transcription error");
     return "";
   }
 }
