@@ -23,6 +23,8 @@ import Dashboard from "@/pages/dashboard";
 import BookingsList from "@/pages/bookings";
 import NewBooking from "@/pages/new-booking";
 import BookingDetail from "@/pages/booking-detail";
+import Schedule from "@/pages/schedule";
+import StaffManagement from "@/pages/staff";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -257,6 +259,12 @@ function AppRouter() {
             </Route>
             <Route path="/bookings/:id">
               <ProtectedRoute component={BookingDetail} />
+            </Route>
+            <Route path="/schedule">
+              <ProtectedRoute component={Schedule} />
+            </Route>
+            <Route path="/staff">
+              <ProtectedRoute component={StaffManagement} />
             </Route>
             <Route component={NotFound} />
           </Switch>

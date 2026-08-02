@@ -3,11 +3,13 @@ import {
   serial,
   text,
   real,
+  integer,
   timestamp,
   pgEnum,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { staffTable } from "./staff";
 
 export const serviceTypeEnum = pgEnum("service_type", [
   "standard_clean",
@@ -50,6 +52,9 @@ export const bookingsTable = pgTable("bookings", {
   frequency: frequencyEnum("frequency").notNull().default("one_time"),
   estimatedPrice: real("estimated_price"),
   notes: text("notes"),
+  staffId: integer("staff_id").references(() => staffTable.id, {
+    onDelete: "set null",
+  }),
   status: bookingStatusEnum("status").notNull().default("pending"),
   jobberJobId: text("jobber_job_id"),
   createdAt: timestamp("created_at", { withTimezone: true })

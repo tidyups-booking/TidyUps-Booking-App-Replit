@@ -11,6 +11,8 @@ import type { BookingStatus } from './bookingStatus';
 
 export interface Booking {
   id: number;
+  /** @nullable */
+  staffId?: number | null;
   firstName: string;
   lastName: string;
   phone: string;

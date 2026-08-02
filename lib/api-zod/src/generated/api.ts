@@ -25,12 +25,15 @@ export const listBookingsQueryOffsetDefault = 0;
 
 export const ListBookingsQueryParams = zod.object({
   "status": zod.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']).optional(),
+  "staffId": zod.coerce.number().optional(),
+  "date": zod.coerce.string().optional(),
   "limit": zod.coerce.number().default(listBookingsQueryLimitDefault),
   "offset": zod.coerce.number().default(listBookingsQueryOffsetDefault)
 })
 
 export const ListBookingsResponseItem = zod.object({
   "id": zod.number(),
+  "staffId": zod.number().nullish(),
   "firstName": zod.string(),
   "lastName": zod.string(),
   "phone": zod.string(),
@@ -74,6 +77,7 @@ export const createBookingBodyExtrasDefault = [];
 export const createBookingBodyStatusDefault = `pending`;
 
 export const CreateBookingBody = zod.object({
+  "staffId": zod.number().optional(),
   "firstName": zod.string().min(1),
   "lastName": zod.string().min(1),
   "phone": zod.string().min(createBookingBodyPhoneMin),
@@ -96,6 +100,7 @@ export const CreateBookingBody = zod.object({
 
 export const CreateBookingResponse = zod.object({
   "id": zod.number(),
+  "staffId": zod.number().nullish(),
   "firstName": zod.string(),
   "lastName": zod.string(),
   "phone": zod.string(),
@@ -139,6 +144,7 @@ export const GetBookingStatsResponse = zod.object({
  */
 export const GetUpcomingBookingsResponseItem = zod.object({
   "id": zod.number(),
+  "staffId": zod.number().nullish(),
   "firstName": zod.string(),
   "lastName": zod.string(),
   "phone": zod.string(),
@@ -172,6 +178,7 @@ export const GetBookingParams = zod.object({
 
 export const GetBookingResponse = zod.object({
   "id": zod.number(),
+  "staffId": zod.number().nullish(),
   "firstName": zod.string(),
   "lastName": zod.string(),
   "phone": zod.string(),
@@ -203,6 +210,7 @@ export const UpdateBookingParams = zod.object({
 })
 
 export const UpdateBookingBody = zod.object({
+  "staffId": zod.number().optional(),
   "firstName": zod.string().optional(),
   "lastName": zod.string().optional(),
   "phone": zod.string().optional(),
@@ -226,6 +234,7 @@ export const UpdateBookingBody = zod.object({
 
 export const UpdateBookingResponse = zod.object({
   "id": zod.number(),
+  "staffId": zod.number().nullish(),
   "firstName": zod.string(),
   "lastName": zod.string(),
   "phone": zod.string(),
@@ -257,5 +266,155 @@ export const DeleteBookingParams = zod.object({
 })
 
 export const DeleteBookingResponse = zod.void()
+
+
+/**
+ * @summary List all staff members
+ */
+export const listStaffQueryActiveOnlyDefault = true;
+
+export const ListStaffQueryParams = zod.object({
+  "activeOnly": zod.coerce.boolean().default(listStaffQueryActiveOnlyDefault)
+})
+
+export const ListStaffResponseItem = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "role": zod.enum(['cleaner', 'lead_cleaner', 'supervisor']),
+  "phone": zod.string().nullish(),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date()
+})
+export const ListStaffResponse = zod.array(ListStaffResponseItem)
+
+
+/**
+ * @summary Create a new staff member
+ */
+
+export const createStaffBodyRoleDefault = `cleaner`;
+export const createStaffBodyActiveDefault = true;
+
+export const CreateStaffBody = zod.object({
+  "name": zod.string().min(1),
+  "role": zod.enum(['cleaner', 'lead_cleaner', 'supervisor']).default(createStaffBodyRoleDefault),
+  "phone": zod.string().optional(),
+  "active": zod.boolean().default(createStaffBodyActiveDefault)
+})
+
+export const CreateStaffResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "role": zod.enum(['cleaner', 'lead_cleaner', 'supervisor']),
+  "phone": zod.string().nullish(),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Update a staff member
+ */
+export const UpdateStaffParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateStaffBody = zod.object({
+  "name": zod.string().optional(),
+  "role": zod.enum(['cleaner', 'lead_cleaner', 'supervisor']).optional(),
+  "phone": zod.string().optional(),
+  "active": zod.boolean().optional()
+})
+
+export const UpdateStaffResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "role": zod.enum(['cleaner', 'lead_cleaner', 'supervisor']),
+  "phone": zod.string().nullish(),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Get a staff member's bookings for a given date
+ */
+export const GetStaffScheduleParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetStaffScheduleQueryParams = zod.object({
+  "date": zod.coerce.string()
+})
+
+export const GetStaffScheduleResponseItem = zod.object({
+  "id": zod.number(),
+  "staffId": zod.number().nullish(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "phone": zod.string(),
+  "email": zod.string().nullish(),
+  "address": zod.string(),
+  "city": zod.string(),
+  "province": zod.string().optional(),
+  "postalCode": zod.string().nullish(),
+  "serviceType": zod.enum(['standard_clean', 'deep_clean', 'move_in_out', 'post_construction']),
+  "bedrooms": zod.number(),
+  "bathrooms": zod.number(),
+  "extras": zod.array(zod.string()).optional(),
+  "scheduledDate": zod.string().describe('Date in YYYY-MM-DD format'),
+  "scheduledTime": zod.string().describe('Time in HH:MM format'),
+  "frequency": zod.enum(['one_time', 'weekly', 'biweekly', 'monthly']),
+  "estimatedPrice": zod.number().nullish(),
+  "notes": zod.string().nullish(),
+  "status": zod.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']),
+  "jobberJobId": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+})
+export const GetStaffScheduleResponse = zod.array(GetStaffScheduleResponseItem)
+
+
+/**
+ * @summary Get all staff schedules for a given date
+ */
+export const GetDayScheduleQueryParams = zod.object({
+  "date": zod.coerce.string()
+})
+
+export const GetDayScheduleResponseItem = zod.object({
+  "staff": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "role": zod.enum(['cleaner', 'lead_cleaner', 'supervisor']),
+  "phone": zod.string().nullish(),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date()
+}),
+  "bookings": zod.array(zod.object({
+  "id": zod.number(),
+  "staffId": zod.number().nullish(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "phone": zod.string(),
+  "email": zod.string().nullish(),
+  "address": zod.string(),
+  "city": zod.string(),
+  "province": zod.string().optional(),
+  "postalCode": zod.string().nullish(),
+  "serviceType": zod.enum(['standard_clean', 'deep_clean', 'move_in_out', 'post_construction']),
+  "bedrooms": zod.number(),
+  "bathrooms": zod.number(),
+  "extras": zod.array(zod.string()).optional(),
+  "scheduledDate": zod.string().describe('Date in YYYY-MM-DD format'),
+  "scheduledTime": zod.string().describe('Time in HH:MM format'),
+  "frequency": zod.enum(['one_time', 'weekly', 'biweekly', 'monthly']),
+  "estimatedPrice": zod.number().nullish(),
+  "notes": zod.string().nullish(),
+  "status": zod.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']),
+  "jobberJobId": zod.string().nullish(),
+  "createdAt": zod.coerce.date()
+}))
+})
+export const GetDayScheduleResponse = zod.array(GetDayScheduleResponseItem)
 
 

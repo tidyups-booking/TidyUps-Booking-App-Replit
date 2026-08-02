@@ -10,6 +10,7 @@ import type { BookingInputServiceType } from './bookingInputServiceType';
 import type { BookingInputStatus } from './bookingInputStatus';
 
 export interface BookingInput {
+  staffId?: number;
   /** @minLength 1 */
   firstName: string;
   /** @minLength 1 */

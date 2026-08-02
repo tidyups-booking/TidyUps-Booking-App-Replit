@@ -14,6 +14,8 @@ tags:
     description: Booking operations
   - name: stats
     description: Dashboard statistics
+  - name: staff
+    description: Staff management
 
 paths:
   /healthz:
@@ -41,6 +43,15 @@ paths:
           schema:
             type: string
             enum: [pending, confirmed, in_progress, completed, cancelled]
+        - in: query
+          name: staffId
+          schema:
+            type: number
+        - in: query
+          name: date
+          schema:
+            type: string
+            description: Filter by scheduled date (YYYY-MM-DD)
         - in: query
           name: limit
           schema:
@@ -188,6 +199,137 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /staff:
+    get:
+      operationId: listStaff
+      tags: [staff]
+      summary: List all staff members
+      parameters:
+        - in: query
+          name: activeOnly
+          schema:
+            type: boolean
+            default: true
+      responses:
+        "200":
+          description: List of staff members
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Staff"
+
+    post:
+      operationId: createStaff
+      tags: [staff]
+      summary: Create a new staff member
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaffInput"
+      responses:
+        "201":
+          description: Staff member created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Staff"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /staff/{id}:
+    patch:
+      operationId: updateStaff
+      tags: [staff]
+      summary: Update a staff member
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaffUpdate"
+      responses:
+        "200":
+          description: Staff member updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Staff"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /staff/{id}/schedule:
+    get:
+      operationId: getStaffSchedule
+      tags: [staff]
+      summary: Get a staff member's bookings for a given date
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: number
+        - in: query
+          name: date
+          required: true
+          schema:
+            type: string
+            description: Date in YYYY-MM-DD format
+      responses:
+        "200":
+          description: Staff schedule for the date
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Booking"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /schedule:
+    get:
+      operationId: getDaySchedule
+      tags: [staff]
+      summary: Get all staff schedules for a given date
+      parameters:
+        - in: query
+          name: date
+          required: true
+          schema:
+            type: string
+            description: Date in YYYY-MM-DD format
+      responses:
+        "200":
+          description: All staff schedules for the date
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StaffDaySchedule"
+
 components:
   schemas:
     HealthStatus:
@@ -225,6 +367,9 @@ components:
       properties:
         id:
           type: number
+          format: int32
+        staffId:
+          type: ["number", "null"]
           format: int32
         firstName:
           type: string
@@ -292,6 +437,9 @@ components:
         - scheduledTime
         - frequency
       properties:
+        staffId:
+          type: number
+          format: int32
         firstName:
           type: string
           minLength: 1
@@ -351,6 +499,9 @@ components:
     BookingUpdate:
       type: object
       properties:
+        staffId:
+          type: number
+          format: int32
         firstName:
           type: string
         lastName:
@@ -423,3 +574,72 @@ components:
           type: number
         thisMonthCount:
           type: number
+
+    Staff:
+      type: object
+      required:
+        - id
+        - name
+        - role
+        - active
+        - createdAt
+      properties:
+        id:
+          type: number
+          format: int32
+        name:
+          type: string
+        role:
+          type: string
+          enum: [cleaner, lead_cleaner, supervisor]
+        phone:
+          type: ["string", "null"]
+        active:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    StaffInput:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+        role:
+          type: string
+          enum: [cleaner, lead_cleaner, supervisor]
+          default: cleaner
+        phone:
+          type: string
+        active:
+          type: boolean
+          default: true
+
+    StaffUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        role:
+          type: string
+          enum: [cleaner, lead_cleaner, supervisor]
+        phone:
+          type: string
+        active:
+          type: boolean
+
+    StaffDaySchedule:
+      type: object
+      required:
+        - staff
+        - bookings
+      properties:
+        staff:
+          $ref: "#/components/schemas/Staff"
+        bookings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Booking"

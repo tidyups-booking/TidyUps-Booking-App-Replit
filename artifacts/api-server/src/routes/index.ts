@@ -4,6 +4,7 @@ import healthRouter from "./health";
 import bookingsRouter from "./bookings";
 import aiRouter from "./ai";
 import jobberRouter from "./jobber";
+import staffRouter from "./staff";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use(requireAuth);
 router.use(bookingsRouter);
 router.use(aiRouter);
 router.use(jobberRouter);
+router.use(staffRouter);
 
 export default router;

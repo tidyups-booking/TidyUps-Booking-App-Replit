@@ -124,16 +124,17 @@ router.get("/bookings", async (req, res): Promise<void> => {
     return;
   }
 
-  const { status, limit = 50, offset = 0 } = parsed.data;
+  const { status, staffId, date, limit = 50, offset = 0 } = parsed.data;
+
+  const conditions = [];
+  if (status) conditions.push(eq(bookingsTable.status, status as typeof bookingsTable.status._.data));
+  if (staffId !== undefined) conditions.push(eq(bookingsTable.staffId, staffId));
+  if (date) conditions.push(eq(bookingsTable.scheduledDate, date));
 
   const rows = await db
     .select()
     .from(bookingsTable)
-    .where(
-      status
-        ? eq(bookingsTable.status, status as typeof bookingsTable.status._.data)
-        : undefined,
-    )
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(bookingsTable.scheduledDate, bookingsTable.scheduledTime)
     .limit(limit)
     .offset(offset);
@@ -172,6 +173,7 @@ router.post("/bookings", async (req, res): Promise<void> => {
       estimatedPrice: data.estimatedPrice ?? null,
       notes: data.notes ?? null,
       status: (data.status as typeof bookingsTable.status._.data) ?? "pending",
+      staffId: data.staffId ?? null,
     })
     .returning();
 
@@ -249,6 +251,7 @@ router.patch("/bookings/:id", async (req, res): Promise<void> => {
   if (data.notes !== undefined) updateData.notes = data.notes;
   if (data.status !== undefined) updateData.status = data.status;
   if (data.jobberJobId !== undefined) updateData.jobberJobId = data.jobberJobId;
+  if (data.staffId !== undefined) updateData.staffId = data.staffId;
 
   const [booking] = await db
     .update(bookingsTable)

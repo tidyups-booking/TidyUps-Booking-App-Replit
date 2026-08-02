@@ -10,6 +10,7 @@ import type { BookingUpdateServiceType } from './bookingUpdateServiceType';
 import type { BookingUpdateStatus } from './bookingUpdateStatus';
 
 export interface BookingUpdate {
+  staffId?: number;
   firstName?: string;
   lastName?: string;
   phone?: string;

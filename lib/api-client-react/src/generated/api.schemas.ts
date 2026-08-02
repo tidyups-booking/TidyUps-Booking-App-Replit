@@ -46,6 +46,8 @@ export const BookingStatus = {
 
 export interface Booking {
   id: number;
+  /** @nullable */
+  staffId?: number | null;
   firstName: string;
   lastName: string;
   phone: string;
@@ -107,6 +109,7 @@ export const BookingInputStatus = {
 } as const;
 
 export interface BookingInput {
+  staffId?: number;
   /** @minLength 1 */
   firstName: string;
   /** @minLength 1 */
@@ -172,6 +175,7 @@ export const BookingUpdateStatus = {
 } as const;
 
 export interface BookingUpdate {
+  staffId?: number;
   firstName?: string;
   lastName?: string;
   phone?: string;
@@ -204,8 +208,70 @@ export interface BookingStats {
   thisMonthCount: number;
 }
 
+export type StaffRole = typeof StaffRole[keyof typeof StaffRole];
+
+
+export const StaffRole = {
+  cleaner: 'cleaner',
+  lead_cleaner: 'lead_cleaner',
+  supervisor: 'supervisor',
+} as const;
+
+export interface Staff {
+  id: number;
+  name: string;
+  role: StaffRole;
+  /** @nullable */
+  phone?: string | null;
+  active: boolean;
+  createdAt: string;
+}
+
+export type StaffInputRole = typeof StaffInputRole[keyof typeof StaffInputRole];
+
+
+export const StaffInputRole = {
+  cleaner: 'cleaner',
+  lead_cleaner: 'lead_cleaner',
+  supervisor: 'supervisor',
+} as const;
+
+export interface StaffInput {
+  /** @minLength 1 */
+  name: string;
+  role?: StaffInputRole;
+  phone?: string;
+  active?: boolean;
+}
+
+export type StaffUpdateRole = typeof StaffUpdateRole[keyof typeof StaffUpdateRole];
+
+
+export const StaffUpdateRole = {
+  cleaner: 'cleaner',
+  lead_cleaner: 'lead_cleaner',
+  supervisor: 'supervisor',
+} as const;
+
+export interface StaffUpdate {
+  name?: string;
+  role?: StaffUpdateRole;
+  phone?: string;
+  active?: boolean;
+}
+
+export interface StaffDaySchedule {
+  staff: Staff;
+  bookings: Booking[];
+}
+
 export type ListBookingsParams = {
 status?: ListBookingsStatus;
+staffId?: number;
+/**
+ * Filter by scheduled date (YYYY-MM-DD)
+ */
+date?: string;
 limit?: number;
 offset?: number;
 };
@@ -220,4 +286,22 @@ export const ListBookingsStatus = {
   completed: 'completed',
   cancelled: 'cancelled',
 } as const;
+
+export type ListStaffParams = {
+activeOnly?: boolean;
+};
+
+export type GetStaffScheduleParams = {
+/**
+ * Date in YYYY-MM-DD format
+ */
+date: string;
+};
+
+export type GetDayScheduleParams = {
+/**
+ * Date in YYYY-MM-DD format
+ */
+date: string;
+};
 

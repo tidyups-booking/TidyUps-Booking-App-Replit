@@ -9,6 +9,11 @@ import type { ListBookingsStatus } from './listBookingsStatus';
 
 export type ListBookingsParams = {
 status?: ListBookingsStatus;
+staffId?: number;
+/**
+ * Filter by scheduled date (YYYY-MM-DD)
+ */
+date?: string;
 limit?: number;
 offset?: number;
 };

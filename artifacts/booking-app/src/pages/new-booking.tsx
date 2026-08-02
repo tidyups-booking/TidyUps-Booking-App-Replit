@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { useCreateBooking, getListBookingsQueryKey, getGetUpcomingBookingsQueryKey, getGetBookingStatsQueryKey } from "@workspace/api-client-react";
+import { useCreateBooking, useListStaff, getListBookingsQueryKey, getGetUpcomingBookingsQueryKey, getGetBookingStatsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Phone, User, Home, MapPin, CalendarClock, DollarSign, CheckCircle2 } from "lucide-react";
+import { Phone, User, Home, MapPin, CalendarClock, DollarSign, CheckCircle2, Users } from "lucide-react";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { LiveCallPanel } from "@/components/live-call-panel";
@@ -35,6 +35,7 @@ const bookingSchema = z.object({
   notes: z.string().optional(),
   status: z.enum(["pending", "confirmed", "in_progress", "completed", "cancelled"]).default("pending"),
   extras: z.array(z.string()).default([]),
+  staffId: z.coerce.number().optional(),
 });
 
 type BookingFormValues = z.infer<typeof bookingSchema>;
@@ -57,6 +58,9 @@ export default function NewBooking() {
 
   const createBooking = useCreateBooking();
 
+  // Fetch active cleaners for assignment dropdown
+  const { data: staff = [] } = useListStaff({ activeOnly: true });
+
   const form = useForm<BookingFormValues>({
     resolver: zodResolver(bookingSchema),
     defaultValues: {
@@ -77,6 +81,7 @@ export default function NewBooking() {
       status: "pending",
       extras: [],
       notes: "",
+      staffId: undefined,
     },
   });
 
@@ -103,6 +108,7 @@ export default function NewBooking() {
     if (isNaN(submitData.estimatedPrice as any)) submitData.estimatedPrice = undefined;
     if (submitData.email === "") submitData.email = undefined;
     if (submitData.postalCode === "") submitData.postalCode = undefined;
+    if (!submitData.staffId) submitData.staffId = undefined;
 
     createBooking.mutate({ data: submitData as any }, {
       onSuccess: () => {
@@ -368,6 +374,31 @@ export default function NewBooking() {
                           <option value="weekly">Weekly</option>
                           <option value="biweekly">Bi-Weekly</option>
                           <option value="monthly">Monthly</option>
+                        </NativeSelect>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+
+                  {/* Cleaner assignment */}
+                  <FormField control={form.control} name="staffId" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="flex items-center gap-1.5">
+                        <Users className="w-4 h-4" />
+                        Assign Cleaner <span className="text-muted-foreground font-normal">(Optional)</span>
+                      </FormLabel>
+                      <FormControl>
+                        <NativeSelect
+                          value={field.value ?? ""}
+                          onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)}
+                          className={cn(highlightedFields.has("staffId") && "ring-2 ring-green-400 bg-green-50 dark:bg-green-950/30")}
+                        >
+                          <option value="">Unassigned</option>
+                          {staff.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name} ({s.role === "lead_cleaner" ? "Lead" : s.role === "supervisor" ? "Supervisor" : "Cleaner"})
+                            </option>
+                          ))}
                         </NativeSelect>
                       </FormControl>
                       <FormMessage />
