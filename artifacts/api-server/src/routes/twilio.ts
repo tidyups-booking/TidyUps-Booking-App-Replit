@@ -22,15 +22,21 @@ router.post("/twilio/voice", (req, res) => {
   }
 
   const wsUrl = `wss://${host}/api/twilio/stream`;
+  const businessPhone = process.env.BUSINESS_PHONE_NUMBER;
 
-  // TwiML: start the inbound audio stream, then keep the call alive
+  if (!businessPhone) {
+    res.status(500).send("BUSINESS_PHONE_NUMBER not configured");
+    return;
+  }
+
+  // TwiML: start the media stream for transcription, then dial the business.
+  // <Start> is non-blocking so audio is captured while the real call rings through.
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Start>
     <Stream url="${wsUrl}" track="inbound_track" />
   </Start>
-  <Say voice="alice">Thank you for calling 833 Tidyups. Please hold while we connect you.</Say>
-  <Pause length="120"/>
+  <Dial>${businessPhone}</Dial>
 </Response>`;
 
   res.type("text/xml").send(twiml);
