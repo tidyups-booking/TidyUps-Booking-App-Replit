@@ -1,6 +1,7 @@
 export * from "./bookings";
 export * from "./call-transcripts";
 export * from "./contact-messages";
+export * from "./contact-throttle";
 export * from "./cleaner-locations";
 export * from "./dispatcher-allowlist";
 export * from "./jobber";

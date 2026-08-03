@@ -3,9 +3,12 @@ import { db, contactMessagesTable } from "@workspace/db";
 import {
   SubmitContactMessageBody,
   SubmitContactMessageResponse,
+  ListContactMessagesResponse,
+  UpdateContactMessageBody,
+  UpdateContactMessageResponse,
 } from "@workspace/api-zod";
 import { logger } from "../lib/logger.js";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { guardDispatcher } from "../lib/callerRole.js";
 
 const router: IRouter = Router();
@@ -13,34 +16,50 @@ const router: IRouter = Router();
 export const contactMessagesRouter: IRouter = Router();
 
 // --- Per-IP rate limiting for the public contact form -----------------------
-// Simple in-memory sliding window: max MAX_SUBMISSIONS per WINDOW_MS per IP.
-// In-memory is fine here — worst case a restart resets the counters.
-const WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+// Sliding window backed by the contact_form_throttle table: max
+// MAX_SUBMISSIONS per WINDOW_MINUTES per IP. Storing attempts in Postgres
+// keeps the limit consistent across restarts and multiple server instances.
+const WINDOW_MINUTES = 10;
 const MAX_SUBMISSIONS = 5;
-const submissionsByIp = new Map<string, number[]>();
 
-function isRateLimited(ip: string): boolean {
-  const now = Date.now();
-  const cutoff = now - WINDOW_MS;
-  const timestamps = (submissionsByIp.get(ip) ?? []).filter((t) => t > cutoff);
-  if (timestamps.length >= MAX_SUBMISSIONS) {
-    submissionsByIp.set(ip, timestamps);
-    return true;
-  }
-  timestamps.push(now);
-  submissionsByIp.set(ip, timestamps);
-  return false;
+/**
+ * Checks the sliding window and records this attempt.
+ * A per-IP advisory transaction lock serializes concurrent admissions for the
+ * same IP (even across server instances), so a burst of parallel requests
+ * cannot slip past the limit via a check-then-insert race. The lock is
+ * released automatically when the transaction commits or rolls back.
+ * Returns true when the request should be rejected with 429.
+ */
+async function isRateLimited(ip: string): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended('contact_form_throttle:' || ${ip}, 0))`,
+    );
+    const counted = await tx.execute(sql`
+      SELECT count(*)::int AS c
+      FROM contact_form_throttle
+      WHERE ip = ${ip}
+        AND submitted_at > now() - make_interval(mins => ${WINDOW_MINUTES})
+    `);
+    const recent = Number((counted.rows[0] as { c: number }).c);
+    if (recent >= MAX_SUBMISSIONS) return true;
+    await tx.execute(
+      sql`INSERT INTO contact_form_throttle (ip) VALUES (${ip})`,
+    );
+    return false;
+  });
 }
 
-// Periodically prune stale IP entries so the map can't grow unbounded.
+// Periodically prune throttle rows older than the window so the table can't
+// grow unbounded. Multiple instances running this concurrently is harmless.
 setInterval(
   () => {
-    const cutoff = Date.now() - WINDOW_MS;
-    for (const [ip, timestamps] of submissionsByIp) {
-      const recent = timestamps.filter((t) => t > cutoff);
-      if (recent.length === 0) submissionsByIp.delete(ip);
-      else submissionsByIp.set(ip, recent);
-    }
+    db.execute(
+      sql`DELETE FROM contact_form_throttle
+          WHERE submitted_at < now() - make_interval(mins => ${WINDOW_MINUTES})`,
+    ).catch((err) => {
+      logger.warn({ err }, "failed to prune contact_form_throttle");
+    });
   },
   5 * 60 * 1000,
 ).unref();
@@ -49,7 +68,7 @@ setInterval(
 // Messages are captured server-side only; no email delivery for now.
 router.post("/contact", async (req, res): Promise<void> => {
   const ip = req.ip ?? "unknown";
-  if (isRateLimited(ip)) {
+  if (await isRateLimited(ip)) {
     res.status(429).json({
       error:
         "Too many messages sent from this connection. Please wait a few minutes and try again, or call us directly.",
@@ -98,5 +117,81 @@ router.post("/contact", async (req, res): Promise<void> => {
 
   res.status(201).json(SubmitContactMessageResponse.parse(row));
 });
+
+// --- Dispatcher inbox routes (authenticated) ---------------------------------
+
+// GET /contact/messages — list all contact messages, newest first.
+contactMessagesRouter.get(
+  "/contact/messages",
+  async (req, res): Promise<void> => {
+    if (await guardDispatcher(req, res)) return;
+
+    const rows = await db
+      .select()
+      .from(contactMessagesTable)
+      .orderBy(desc(contactMessagesTable.createdAt), desc(contactMessagesTable.id));
+
+    res.json(ListContactMessagesResponse.parse(rows));
+  },
+);
+
+// PATCH /contact/messages/:id — mark a message handled or unhandled.
+contactMessagesRouter.patch(
+  "/contact/messages/:id",
+  async (req, res): Promise<void> => {
+    if (await guardDispatcher(req, res)) return;
+
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: "Invalid message id" });
+      return;
+    }
+
+    const parsed = UpdateContactMessageBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.message });
+      return;
+    }
+
+    const [row] = await db
+      .update(contactMessagesTable)
+      .set({ handledAt: parsed.data.handled ? new Date() : null })
+      .where(eq(contactMessagesTable.id, id))
+      .returning();
+
+    if (!row) {
+      res.status(404).json({ error: "Message not found" });
+      return;
+    }
+
+    res.json(UpdateContactMessageResponse.parse(row));
+  },
+);
+
+// DELETE /contact/messages/:id — remove a message.
+contactMessagesRouter.delete(
+  "/contact/messages/:id",
+  async (req, res): Promise<void> => {
+    if (await guardDispatcher(req, res)) return;
+
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: "Invalid message id" });
+      return;
+    }
+
+    const [row] = await db
+      .delete(contactMessagesTable)
+      .where(eq(contactMessagesTable.id, id))
+      .returning({ id: contactMessagesTable.id });
+
+    if (!row) {
+      res.status(404).json({ error: "Message not found" });
+      return;
+    }
+
+    res.status(204).end();
+  },
+);
 
 export default router;

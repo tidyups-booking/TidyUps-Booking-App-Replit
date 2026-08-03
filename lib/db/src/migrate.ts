@@ -29,6 +29,7 @@ const RENAMED_MIGRATIONS: { oldName: string; newName: string }[] = [
   { oldName: "006_add_contact_message_handled_at", newName: "007_add_contact_message_handled_at" },
 ];
 
+// hint: Logic changed on both sides. Requires understanding intent of each change.
 const MIGRATIONS: { name: string; sql: string }[] = [
   {
     // Baseline: all tables that exist before any incremental migrations.
@@ -228,6 +229,23 @@ const MIGRATIONS: { name: string; sql: string }[] = [
     name: "007_add_contact_message_handled_at",
     sql: `
       ALTER TABLE contact_messages ADD COLUMN IF NOT EXISTS handled_at TIMESTAMPTZ;
+    `,
+  },
+  {
+    // Per-IP throttle ledger for the public contact form rate limiter, so
+    // limits survive restarts and are shared across instances.
+    // Mirrors lib/db/migrations/008_add_contact_form_throttle.sql.
+    // (Renumbered from 007 during rebase: main added 007_add_contact_message_handled_at.)
+    name: "008_add_contact_form_throttle",
+    sql: `
+      CREATE TABLE IF NOT EXISTS contact_form_throttle (
+        id           BIGSERIAL PRIMARY KEY,
+        ip           TEXT NOT NULL,
+        submitted_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+
+      CREATE INDEX IF NOT EXISTS contact_form_throttle_ip_submitted_at_idx
+        ON contact_form_throttle (ip, submitted_at);
     `,
   },
 ];
