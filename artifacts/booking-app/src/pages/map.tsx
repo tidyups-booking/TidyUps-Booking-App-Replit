@@ -1,6 +1,4 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
-import "leaflet/dist/leaflet.css";
-import L from "leaflet";
 import { useListStaff } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -53,7 +51,30 @@ function initials(name: string) {
   return name.split(" ").map(p => p[0]).join("").toUpperCase().slice(0, 2);
 }
 
-// ── Leaflet DivIcons ─────────────────────────────────────────────────────────
+// ── Google Maps loader ───────────────────────────────────────────────────────
+
+let gmapsPromise: Promise<void> | null = null;
+function loadGoogleMaps(apiKey: string): Promise<void> {
+  if ((window as any).google?.maps?.marker) return Promise.resolve();
+  if (gmapsPromise) return gmapsPromise;
+  gmapsPromise = new Promise((resolve, reject) => {
+    (window as any).__gmapsReady = () => resolve();
+    const s = document.createElement("script");
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly&libraries=marker&loading=async&callback=__gmapsReady`;
+    s.async = true;
+    s.onerror = () => { gmapsPromise = null; reject(new Error("Failed to load Google Maps")); };
+    document.head.appendChild(s);
+  });
+  return gmapsPromise;
+}
+
+function htmlToEl(html: string): HTMLElement {
+  const d = document.createElement("div");
+  d.innerHTML = html.trim();
+  return d.firstElementChild as HTMLElement;
+}
+
+// ── Marker HTML (used as AdvancedMarkerElement content) ─────────────────────
 
 function makeCleanerIcon(s: StaffEntry, isStale: boolean) {
   const color = cleanerColor(s.id);
@@ -76,7 +97,7 @@ function makeCleanerIcon(s: StaffEntry, isStale: boolean) {
         border-left:5px solid transparent;border-right:5px solid transparent;
         border-top:7px solid ${color};margin-top:-1px;"></div>
     </div>`;
-  return L.divIcon({ html, className: "", iconSize: [44, 52], iconAnchor: [22, 52], popupAnchor: [0, -54] });
+  return html;
 }
 
 /** Small house pin — always-on home address marker for each staff member. */
@@ -97,7 +118,7 @@ function makeHomeIcon(s: StaffEntry) {
         border-left:4px solid transparent;border-right:4px solid transparent;
         border-top:6px solid ${color};margin-top:-1px;opacity:0.6;"></div>
     </div>`;
-  return L.divIcon({ html, className: "", iconSize: [36, 44], iconAnchor: [18, 44], popupAnchor: [0, -46] });
+  return html;
 }
 
 // One-time CSS for the "jumped to this day" pulse highlight on job pins
@@ -129,7 +150,7 @@ function makeJobIcon(borderColor: string, isNearest: boolean, highlight = false)
         border-left:4px solid transparent;border-right:4px solid transparent;
         border-top:6px solid ${borderColor};margin-top:-1px;"></div>
     </div>`;
-  return L.divIcon({ html, className: "", iconSize: [34, 40], iconAnchor: [17, 40], popupAnchor: [0, -42] });
+  return html;
 }
 
 // ── Geocode (Nominatim) ───────────────────────────────────────────────────────
@@ -214,10 +235,13 @@ function buildJobPopup(b: BookingEntry, staffMap: Map<number, StaffEntry>) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function MapPage() {
-  const mapRef = useRef<L.Map | null>(null);
+  const mapRef = useRef<any>(null);
   const mapElRef = useRef<HTMLDivElement | null>(null);
   const mapCardRef = useRef<HTMLDivElement | null>(null);
-  const markersRef = useRef<Map<string, L.Marker>>(new Map());
+  const markersRef = useRef<Map<string, any>>(new Map());
+  const infoWindowRef = useRef<any>(null);
+  const [mapReady, setMapReady] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
 
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split("T")[0]);
   const [staffData, setStaffData] = useState<StaffEntry[]>([]);
@@ -389,27 +413,71 @@ export default function MapPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [calendarView, selectedDate]);
 
-  // ── Init Leaflet ─────────────────────────────────────────────────────────────
+  // ── Init Google Map ──────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!mapElRef.current || mapRef.current) return;
-    const map = L.map(mapElRef.current, {
-      center: [53.5461, -113.4938],
-      zoom: 11,
-      // Smoother, Google-Maps-like zoom feel
-      zoomSnap: 0.25,
-      zoomDelta: 0.5,
-      wheelPxPerZoomLevel: 120,
-      zoomAnimation: true,
-      fadeAnimation: true,
+    let cancelled = false;
+    (window as any).gm_authFailure = () => {
+      setMapError("Google rejected the Maps API key — 'Maps JavaScript API' needs to be enabled for this key in Google Cloud.");
+    };
+    (async () => {
+      if (!mapElRef.current || mapRef.current) return;
+      try {
+        const res = await fetch(`${baseUrl}/api/map/maps-key`, { credentials: "include" });
+        if (!res.ok) throw new Error("Could not load the map key");
+        const { apiKey } = await res.json();
+        await loadGoogleMaps(apiKey);
+        if (cancelled || !mapElRef.current || mapRef.current) return;
+        const g = (window as any).google.maps;
+        const map = new g.Map(mapElRef.current, {
+          center: { lat: 53.5461, lng: -113.4938 },
+          zoom: 11,
+          mapId: "DEMO_MAP_ID",
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: true,
+          gestureHandling: "greedy",
+          clickableIcons: false,
+        });
+        infoWindowRef.current = new g.InfoWindow();
+        mapRef.current = map;
+        setMapReady(true);
+      } catch (e: any) {
+        if (!cancelled) setMapError(e?.message ?? "Failed to load Google Maps");
+      }
+    })();
+    return () => {
+      cancelled = true;
+      markersRef.current.forEach(m => { m.map = null; });
+      markersRef.current.clear();
+      mapRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Create or update an AdvancedMarkerElement with HTML content + popup
+  const upsertMarker = useCallback((key: string, lat: number, lng: number, html: string, popupHtml: string) => {
+    const map = mapRef.current;
+    if (!map) return null;
+    const existing = markersRef.current.get(key);
+    if (existing) {
+      existing.position = { lat, lng };
+      existing.content = htmlToEl(html);
+      existing.__popup = popupHtml;
+      return existing;
+    }
+    const g = (window as any).google.maps;
+    const m = new g.marker.AdvancedMarkerElement({
+      map,
+      position: { lat, lng },
+      content: htmlToEl(html),
     });
-    // CARTO Voyager — clean, pastel, Google-Maps-style basemap with retina tiles
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
-      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/attributions">CARTO</a>',
-      subdomains: "abcd",
-      maxZoom: 20,
-    }).addTo(map);
-    mapRef.current = map;
-    return () => { map.remove(); mapRef.current = null; };
+    m.__popup = popupHtml;
+    m.addListener("click", () => {
+      infoWindowRef.current?.setContent(m.__popup);
+      infoWindowRef.current?.open({ map: mapRef.current, anchor: m });
+    });
+    markersRef.current.set(key, m);
+    return m;
   }, []);
 
   // ── Update staff markers ─────────────────────────────────────────────────────
@@ -439,17 +507,7 @@ export default function MapPage() {
             <span style="font-size:12px;">🏠 Home address</span>
             ${s.homeAddress ? `<br/><span style="font-size:11px;color:#aaa;">📍 ${s.homeAddress}</span>` : ""}
           </div>`;
-        const homeIcon = makeHomeIcon(s);
-        const existingHome = markersRef.current.get(homeKey);
-        if (existingHome) {
-          existingHome.setLatLng([s.homeLat, s.homeLng]);
-          existingHome.setIcon(homeIcon);
-          existingHome.setPopupContent(homePopup);
-        } else {
-          const m = L.marker([s.homeLat, s.homeLng], { icon: homeIcon })
-            .addTo(map).bindPopup(homePopup);
-          markersRef.current.set(homeKey, m);
-        }
+        upsertMarker(homeKey, s.homeLat, s.homeLng, makeHomeIcon(s), homePopup);
       }
 
       // ── Live pin (only when actively sharing) ────────────────────────────────
@@ -465,34 +523,30 @@ export default function MapPage() {
             <span style="font-size:12px;">📡 Live · updated ${formatAgo(s.liveLocation.updatedAt)}</span>
             ${s.homeAddress ? `<br/><span style="font-size:11px;color:#aaa;">📍 ${s.homeAddress}</span>` : ""}
           </div>`;
-        const existingLive = markersRef.current.get(liveKey);
-        if (existingLive) {
-          existingLive.setLatLng([s.liveLocation.lat, s.liveLocation.lng]);
-          existingLive.setIcon(liveIcon);
-          existingLive.setPopupContent(livePopup);
-        } else {
-          const m = L.marker([s.liveLocation.lat, s.liveLocation.lng], { icon: liveIcon })
-            .addTo(map).bindPopup(livePopup);
-          markersRef.current.set(liveKey, m);
-        }
+        upsertMarker(liveKey, s.liveLocation.lat, s.liveLocation.lng, liveIcon, livePopup);
       }
     });
 
     // Remove markers for staff no longer in the dataset
     markersRef.current.forEach((m, key) => {
-      if (key.startsWith("home-") && !seenHome.has(key)) { m.remove(); markersRef.current.delete(key); }
-      if (key.startsWith("live-") && !seenLive.has(key)) { m.remove(); markersRef.current.delete(key); }
+      if (key.startsWith("home-") && !seenHome.has(key)) { m.map = null; markersRef.current.delete(key); }
+      if (key.startsWith("live-") && !seenLive.has(key)) { m.map = null; markersRef.current.delete(key); }
     });
-  }, [staffData]);
+  }, [staffData, mapReady, upsertMarker]);
 
   // ── Geocode bookings + compute proximity + render job markers ───────────────
+  const jobRenderGenRef = useRef(0);
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
+    // Generation token: invalidates async marker work from earlier renders so a
+    // slow geocode can't resurrect pins for a previously selected date.
+    const gen = ++jobRenderGenRef.current;
+
     // Remove stale job markers when date changes
     markersRef.current.forEach((m, key) => {
-      if (key.startsWith("job-")) { m.remove(); markersRef.current.delete(key); }
+      if (key.startsWith("job-")) { m.map = null; markersRef.current.delete(key); }
     });
 
     const staffMap = new Map(staffData.map(s => [s.id, s]));
@@ -508,7 +562,7 @@ export default function MapPage() {
         await new Promise(r => setTimeout(r, i * 350));
         coords = await geocodeAddress(b.address, b.city);
       }
-      if (!coords || !mapRef.current) return;
+      if (gen !== jobRenderGenRef.current || !coords || !mapRef.current) return;
 
       // Compute proximity ranking — always uses home address coords so the
       // distance reflects how far each cleaner's home is from the job site,
@@ -533,15 +587,7 @@ export default function MapPage() {
       const popup = buildJobPopup(enriched, staffMap);
 
       const key = `job-${b.id}`;
-      const existing = markersRef.current.get(key);
-      if (existing) {
-        existing.setLatLng(coords);
-        existing.setIcon(icon);
-        existing.setPopupContent(popup);
-      } else {
-        const m = L.marker(coords, { icon }).addTo(mapRef.current).bindPopup(popup);
-        markersRef.current.set(key, m);
-      }
+      upsertMarker(key, coords[0], coords[1], icon, popup);
 
       // Auto-fit the map to include all of the day's job pins after a
       // Month → Day jump. Markers appear asynchronously (some geocode),
@@ -550,18 +596,27 @@ export default function MapPage() {
         coordsForFit.push(coords);
         if (fitTimerRef.current) clearTimeout(fitTimerRef.current);
         fitTimerRef.current = setTimeout(() => {
+          if (gen !== jobRenderGenRef.current) return;
           if (coordsForFit.length > 0 && mapRef.current) {
-            mapRef.current.fitBounds(L.latLngBounds(coordsForFit), {
-              padding: [60, 60],
-              maxZoom: 14,
-              animate: true,
+            const g = (window as any).google.maps;
+            const bounds = new g.LatLngBounds();
+            coordsForFit.forEach(([la, ln]) => bounds.extend({ lat: la, lng: ln }));
+            mapRef.current.fitBounds(bounds, 60);
+            g.event.addListenerOnce(mapRef.current, "idle", () => {
+              if (mapRef.current && mapRef.current.getZoom() > 14) mapRef.current.setZoom(14);
             });
           }
         }, 400);
       }
     });
+
+    return () => {
+      // Invalidate in-flight async marker work and pending fit
+      jobRenderGenRef.current++;
+      if (fitTimerRef.current) { clearTimeout(fitTimerRef.current); fitTimerRef.current = null; }
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookings, jumpHighlight, selectedDate]);
+  }, [bookings, jumpHighlight, selectedDate, mapReady]);
 
   // Clear the jump highlight after the pulse animation finishes
   useEffect(() => {
@@ -866,6 +921,11 @@ export default function MapPage() {
 
       {/* Map */}
       <Card ref={mapCardRef} className="overflow-hidden shadow-md">
+        {mapError && (
+          <div className="px-4 py-3 bg-amber-50 border-b border-amber-200 text-sm text-amber-700 font-medium">
+            ⚠ {mapError}
+          </div>
+        )}
         <div ref={mapElRef} style={{ height: 520 }} className="w-full" />
       </Card>
 
@@ -896,8 +956,10 @@ export default function MapPage() {
                     const marker = markersRef.current.get(`live-${s.id}`)
                       ?? markersRef.current.get(`home-${s.id}`);
                     if (marker && mapRef.current) {
-                      mapRef.current.setView(marker.getLatLng(), 14, { animate: true });
-                      marker.openPopup();
+                      mapRef.current.panTo(marker.position);
+                      mapRef.current.setZoom(14);
+                      infoWindowRef.current?.setContent(marker.__popup);
+                      infoWindowRef.current?.open({ map: mapRef.current, anchor: marker });
                     }
                   }}
                   disabled={noLocation}

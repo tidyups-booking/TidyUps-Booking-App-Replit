@@ -85,6 +85,18 @@ router.post("/staff/:id/location", async (req, res): Promise<void> => {
   res.json({ ok: true });
 });
 
+// GET /map/maps-key — dispatcher only. Returns the Google Maps browser key so
+// the frontend can load the Maps JavaScript API.
+router.get("/map/maps-key", async (req, res): Promise<void> => {
+  if (await guardDispatcher(req, res)) return;
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) {
+    res.status(500).json({ error: "GOOGLE_MAPS_API_KEY not configured" });
+    return;
+  }
+  res.json({ apiKey });
+});
+
 // GET /map/data?date=YYYY-MM-DD — dispatcher only
 // Returns staff with their effective position for the given date:
 //   - Today: live GPS (if recent <5 min) else home coords

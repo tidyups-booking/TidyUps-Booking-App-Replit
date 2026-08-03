@@ -76,9 +76,6 @@
   },
   "dependencies": {
     "@clerk/react": "^6.12.10",
-    "@clerk/themes": "^2.4.57",
-    "@types/leaflet": "^1.9.22",
-    "leaflet": "^1.9.4",
-    "react-leaflet": "^5.0.0"
+    "@clerk/themes": "^2.4.57"
   }
 }
