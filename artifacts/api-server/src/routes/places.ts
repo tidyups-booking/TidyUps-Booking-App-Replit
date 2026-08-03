@@ -1,17 +1,19 @@
-import { Router } from "express";
+import { Router, type IRouter } from "express";
 
-const router = Router();
+const router: IRouter = Router();
 
 const GOOGLE_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
 
 // GET /api/places/autocomplete?input=...
-router.get("/places/autocomplete", async (req, res) => {
+router.get("/places/autocomplete", async (req, res): Promise<void> => {
   const input = (req.query.input as string) ?? "";
   if (input.length < 3) {
-    return res.json({ predictions: [] });
+    res.json({ predictions: [] });
+    return;
   }
   if (!GOOGLE_API_KEY) {
-    return res.status(500).json({ error: "Google Maps API key not configured" });
+    res.status(500).json({ error: "Google Maps API key not configured" });
+    return;
   }
   try {
     const params = new URLSearchParams({
@@ -26,7 +28,8 @@ router.get("/places/autocomplete", async (req, res) => {
     const data = await response.json() as any;
     if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
       console.error("Places autocomplete API error:", data.status, data.error_message);
-      return res.status(502).json({ error: data.status });
+      res.status(502).json({ error: data.status });
+      return;
     }
     const predictions = ((data.predictions ?? []) as any[]).map((p) => ({
       placeId: p.place_id,
@@ -42,13 +45,15 @@ router.get("/places/autocomplete", async (req, res) => {
 });
 
 // GET /api/places/details?placeId=...
-router.get("/places/details", async (req, res) => {
+router.get("/places/details", async (req, res): Promise<void> => {
   const placeId = (req.query.placeId as string) ?? "";
   if (!placeId) {
-    return res.status(400).json({ error: "placeId required" });
+    res.status(400).json({ error: "placeId required" });
+    return;
   }
   if (!GOOGLE_API_KEY) {
-    return res.status(500).json({ error: "Google Maps API key not configured" });
+    res.status(500).json({ error: "Google Maps API key not configured" });
+    return;
   }
   try {
     const params = new URLSearchParams({
@@ -62,7 +67,8 @@ router.get("/places/details", async (req, res) => {
     const data = await response.json() as any;
     if (data.status !== "OK") {
       console.error("Place details API error:", data.status);
-      return res.status(502).json({ error: data.status });
+      res.status(502).json({ error: data.status });
+      return;
     }
     const result = data.result;
     // Build a flat map of component type → short_name / long_name

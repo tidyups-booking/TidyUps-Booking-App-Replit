@@ -17,8 +17,8 @@ const router: IRouter = Router();
 // Health check
 router.use(healthRouter);
 
-// Twilio: voice webhook is called by Twilio (no session cookie);
-// transcript SSE is read by the booking app but holds no sensitive booking data
+// Twilio: voice webhook is called by Twilio (no session cookie) — must stay public.
+// All other Twilio routes (webhook-url, transcript SSE) require dispatcher auth inline.
 router.use(twilioRouter);
 
 // Jobber: OAuth callback is a redirect target from Jobber (no session cookie);

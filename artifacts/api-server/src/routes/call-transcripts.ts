@@ -1,11 +1,14 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, callTranscriptsTable } from "@workspace/db";
+import { guardDispatcher } from "../lib/callerRole.js";
 
 const router: IRouter = Router();
 
-// GET /call-transcripts/:bookingId
+// GET /call-transcripts/:bookingId — dispatcher only
 router.get("/call-transcripts/:bookingId", async (req, res): Promise<void> => {
+  if (await guardDispatcher(req, res)) return;
+
   const bookingId = Number(req.params.bookingId);
   if (isNaN(bookingId) || bookingId <= 0) {
     res.status(400).json({ error: "Invalid bookingId" });
@@ -21,8 +24,10 @@ router.get("/call-transcripts/:bookingId", async (req, res): Promise<void> => {
   res.json(rows);
 });
 
-// POST /call-transcripts/:bookingId
+// POST /call-transcripts/:bookingId — dispatcher only
 router.post("/call-transcripts/:bookingId", async (req, res): Promise<void> => {
+  if (await guardDispatcher(req, res)) return;
+
   const bookingId = Number(req.params.bookingId);
   if (isNaN(bookingId) || bookingId <= 0) {
     res.status(400).json({ error: "Invalid bookingId" });

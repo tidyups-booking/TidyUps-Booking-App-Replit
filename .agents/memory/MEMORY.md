@@ -1,1 +1,2 @@
 - [Live Cleaner Map](live-map.md) — GPS tracking 8AM–8PM, Leaflet+OSM map, no zod in api-server routes (use plain JS or @workspace/api-zod)
+- [Cleaner App Auth](cleaner-app-auth.md) — Clerk v4 Expo auth: use @clerk/expo/legacy for useSignIn/useSignUp; useSSO from @clerk/expo; signals API (default export) lacks setActive

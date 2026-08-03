@@ -4,6 +4,7 @@ import app from "./app.js";
 import { logger } from "./lib/logger.js";
 import { createTwilioWss } from "./services/twilio-stream.js";
 import { consumeStreamToken } from "./services/stream-tokens.js";
+import { runMigrations } from "@workspace/db";
 
 const rawPort = process.env["PORT"];
 
@@ -15,6 +16,15 @@ const port = Number(rawPort);
 
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
+}
+
+// Run DB migrations before serving traffic so the schema is always current.
+// Every migration is idempotent — safe on re-deploys and fresh installs alike.
+try {
+  await runMigrations();
+} catch (err) {
+  logger.error({ err }, "Database migration failed — aborting startup");
+  process.exit(1);
 }
 
 // Wrap Express in a plain HTTP server so we can attach the Twilio Media Streams

@@ -27,6 +27,8 @@ export * from './healthStatus';
 export * from './listBookingsParams';
 export * from './listBookingsStatus';
 export * from './listStaffParams';
+export * from './postStaffLocation200';
+export * from './postStaffLocationBody';
 export * from './staff';
 export * from './staffDaySchedule';
 export * from './staffInput';

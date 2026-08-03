@@ -11,11 +11,14 @@ import {
   GetStaffScheduleQueryParams,
   GetDayScheduleQueryParams,
 } from "@workspace/api-zod";
+import { resolveCallerRole, guardDispatcher } from "../lib/callerRole.js";
 
 const router: IRouter = Router();
 
-// GET /staff
+// GET /staff — dispatcher only
 router.get("/staff", async (req, res): Promise<void> => {
+  if (await guardDispatcher(req, res)) return;
+
   const parsed = ListStaffQueryParams.safeParse(req.query);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -33,8 +36,9 @@ router.get("/staff", async (req, res): Promise<void> => {
   res.json(rows);
 });
 
-// POST /staff
+// POST /staff — dispatcher only
 router.post("/staff", async (req, res): Promise<void> => {
+  if (await guardDispatcher(req, res)) return;
   const parsed = CreateStaffBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -56,33 +60,33 @@ router.post("/staff", async (req, res): Promise<void> => {
 });
 
 /**
- * Role model for staff mutations:
+ * Role model — see lib/callerRole.ts for the shared implementation.
  *
- *   DISPATCHER — an authenticated Clerk user whose userId does NOT match any
- *                staff record's clerkUserId. Dispatchers manage the team:
- *                they may update all fields on any staff record including
- *                clerkUserId (which is how a cleaner's account gets linked).
- *
- *   CLEANER    — an authenticated Clerk user whose userId matches exactly one
- *                staff record's clerkUserId. Cleaners may update only their
- *                OWN record, and only a safe subset of fields
- *                (phone, homeAddress, homeLat, homeLng).
- *
- * Self-service claiming is intentionally absent: linking a Clerk account to a
- * staff record is a dispatcher-only operation performed via PATCH clerkUserId.
+ *   DISPATCHER — userId has NO matching staff record. Full access.
+ *   CLEANER    — userId matches a staff record. Restricted to own data.
  */
-async function resolveCallerRole(callerId: string): Promise<{
-  role: "dispatcher" | "cleaner";
-  staffId: number | null;
-}> {
-  const [ownRecord] = await db
-    .select({ id: staffTable.id })
+
+// GET /staff/me — return the staff record linked to the caller's Clerk account
+router.get("/staff/me", async (req, res): Promise<void> => {
+  const auth = getAuth(req);
+  const callerId = auth?.userId;
+  if (!callerId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const [staff] = await db
+    .select()
     .from(staffTable)
     .where(eq(staffTable.clerkUserId, callerId));
-  return ownRecord
-    ? { role: "cleaner", staffId: ownRecord.id }
-    : { role: "dispatcher", staffId: null };
-}
+
+  if (!staff) {
+    res.status(404).json({ error: "No staff record linked to this Clerk account. Ask a dispatcher to link your account." });
+    return;
+  }
+
+  res.json(staff);
+});
 
 // PATCH /staff/:id
 router.patch("/staff/:id", async (req, res): Promise<void> => {
@@ -120,6 +124,12 @@ router.patch("/staff/:id", async (req, res): Promise<void> => {
 
   const raw = req.body as Record<string, unknown>;
 
+  // Deny unlinked/unrecognized accounts
+  if (callerRole.role === "denied") {
+    res.status(403).json({ error: "Forbidden: account not authorized. Contact a dispatcher." });
+    return;
+  }
+
   if (callerRole.role === "cleaner") {
     // Cleaners may only edit their own record …
     if (callerRole.staffId !== existing.id) {
@@ -148,11 +158,13 @@ router.patch("/staff/:id", async (req, res): Promise<void> => {
     if (data.name !== undefined) updateData.name = data.name;
     if (data.role !== undefined) updateData.role = data.role;
     if (data.active !== undefined) updateData.active = data.active;
-    // clerkUserId — how a dispatcher links a cleaner's Clerk account
-    if (typeof raw.clerkUserId === "string") {
-      updateData.clerkUserId = raw.clerkUserId || null;
-    } else if (raw.clerkUserId === null) {
-      updateData.clerkUserId = null;
+    // clerkUserId — how a dispatcher links a cleaner's Clerk account to this staff record
+    if (data.clerkUserId !== undefined) {
+      // null = unlink; empty string treated as null; any other string = link
+      updateData.clerkUserId =
+        data.clerkUserId === null || data.clerkUserId === ""
+          ? null
+          : data.clerkUserId;
     }
   }
 
@@ -186,6 +198,7 @@ router.patch("/staff/:id", async (req, res): Promise<void> => {
 });
 
 // GET /staff/:id/schedule?date=YYYY-MM-DD
+// Cleaners may only fetch their OWN schedule.
 router.get("/staff/:id/schedule", async (req, res): Promise<void> => {
   const params = GetStaffScheduleParams.safeParse(req.params);
   if (!params.success) {
@@ -196,6 +209,24 @@ router.get("/staff/:id/schedule", async (req, res): Promise<void> => {
   const query = GetStaffScheduleQueryParams.safeParse(req.query);
   if (!query.success) {
     res.status(400).json({ error: query.error.message });
+    return;
+  }
+
+  // Require authentication — this endpoint is cleaner-facing (called by the mobile app)
+  const auth = getAuth(req);
+  const callerId = auth?.userId;
+  if (!callerId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const callerRole = await resolveCallerRole(callerId);
+  if (callerRole.role === "denied") {
+    res.status(403).json({ error: "Forbidden: account not authorized. Contact a dispatcher." });
+    return;
+  }
+  if (callerRole.role === "cleaner" && callerRole.staffId !== params.data.id) {
+    res.status(403).json({ error: "Forbidden: cannot access another staff member's schedule" });
     return;
   }
 
@@ -224,8 +255,10 @@ router.get("/staff/:id/schedule", async (req, res): Promise<void> => {
   res.json(bookings);
 });
 
-// GET /schedule?date=YYYY-MM-DD — all staff schedules for a given day
+// GET /schedule?date=YYYY-MM-DD — all staff schedules for a given day (dispatcher only)
 router.get("/schedule", async (req, res): Promise<void> => {
+  if (await guardDispatcher(req, res)) return;
+
   const query = GetDayScheduleQueryParams.safeParse(req.query);
   if (!query.success) {
     res.status(400).json({ error: query.error.message });

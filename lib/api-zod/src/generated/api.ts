@@ -331,6 +331,19 @@ export const CreateStaffResponse = zod.object({
 
 
 /**
+ * @summary Get the staff record linked to the authenticated Clerk account
+ */
+export const GetStaffMeResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "role": zod.enum(['cleaner', 'lead_cleaner', 'supervisor']),
+  "phone": zod.string().nullish(),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
  * @summary Update a staff member
  */
 export const UpdateStaffParams = zod.object({
@@ -341,7 +354,11 @@ export const UpdateStaffBody = zod.object({
   "name": zod.string().optional(),
   "role": zod.enum(['cleaner', 'lead_cleaner', 'supervisor']).optional(),
   "phone": zod.string().optional(),
-  "active": zod.boolean().optional()
+  "active": zod.boolean().optional(),
+  "clerkUserId": zod.string().nullish().describe('Clerk user ID to link to this staff record. Dispatcher-only field. Set to null to unlink. When set, the staff member can sign in to the cleaner app and their schedule will load automatically.\n'),
+  "homeAddress": zod.string().nullish().describe('Street address for the cleaner\'s home base (used for map proximity).'),
+  "homeLat": zod.number().nullish().describe('Latitude of the home address.'),
+  "homeLng": zod.number().nullish().describe('Longitude of the home address.')
 })
 
 export const UpdateStaffResponse = zod.object({
@@ -393,6 +410,24 @@ export const GetStaffScheduleResponseItem = zod.object({
   "hasTranscript": zod.boolean().optional().describe('True when at least one call transcript is attached to this booking.')
 })
 export const GetStaffScheduleResponse = zod.array(GetStaffScheduleResponseItem)
+
+
+/**
+ * @summary Post cleaner's live GPS location
+ */
+export const PostStaffLocationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const PostStaffLocationBody = zod.object({
+  "lat": zod.number(),
+  "lng": zod.number(),
+  "accuracy": zod.number().optional()
+})
+
+export const PostStaffLocationResponse = zod.object({
+  "ok": zod.boolean().optional()
+})
 
 
 /**

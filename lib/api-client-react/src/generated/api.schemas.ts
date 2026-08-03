@@ -286,6 +286,14 @@ export interface StaffUpdate {
   role?: StaffUpdateRole;
   phone?: string;
   active?: boolean;
+  /** Clerk user ID to link to this staff record. Dispatcher-only field. Set to null to unlink. When set, the staff member can sign in to the cleaner app and their schedule will load automatically. */
+  clerkUserId?: string | null;
+  /** Street address for the cleaner's home base (used for map proximity). */
+  homeAddress?: string | null;
+  /** Latitude of the home address. */
+  homeLat?: number | null;
+  /** Longitude of the home address. */
+  homeLng?: number | null;
 }
 
 export interface StaffDaySchedule {
@@ -324,6 +332,16 @@ export type GetStaffScheduleParams = {
  * Date in YYYY-MM-DD format
  */
 date: string;
+};
+
+export type PostStaffLocationBody = {
+  lat: number;
+  lng: number;
+  accuracy?: number;
+};
+
+export type PostStaffLocation200 = {
+  ok?: boolean;
 };
 
 export type GetDayScheduleParams = {

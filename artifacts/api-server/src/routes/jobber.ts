@@ -11,24 +11,19 @@ import { requireAuth } from "../app.js";
 import { db } from "@workspace/db";
 import { bookingsTable } from "@workspace/db";
 import { eq, inArray, sql } from "drizzle-orm";
+import { requireDispatcherAuth } from "../lib/callerRole.js";
+import { randomBytes } from "crypto";
 
 const router = Router();
 
 const JOBBER_AUTH_URL = "https://api.getjobber.com/api/oauth/authorize";
 
-// GET /jobber/redirect-uri — returns the current OAuth callback URL so the
-// frontend can display it for copy-paste into the Jobber developer portal
-router.get("/jobber/redirect-uri", (req, res) => {
-  try {
-    res.json({ redirectUri: getCallbackUrl(getClerkProxyHost(req)) });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// GET /jobber/status — is Jobber connected?
-router.get("/jobber/status", async (req, res) => {
-  try {
+/**
+ * Short-lived in-memory store of valid OAuth state nonces.
+ * Each entry expires after 10 minutes — more than enough for the OAuth handshake.
+ * Using a module-level Map keeps this simple without requiring an extra DB table.
+ */
+const pendingOAuthStates = new Map<string, number>(); // state → expiry timestamp (ms)
     const tokens = await getStoredTokens();
     if (!tokens) {
       res.json({ connected: false });
@@ -46,8 +41,9 @@ router.get("/jobber/status", async (req, res) => {
   }
 });
 
-// GET /jobber/auth — kick off OAuth
-router.get("/jobber/auth", (req, res) => {
+// GET /jobber/auth — dispatcher only
+router.get("/jobber/auth", async (req, res) => {
+  if (await requireDispatcherAuth(req, res)) return;
   const clientId = process.env.JOBBER_CLIENT_ID;
   if (!clientId) {
     res.status(500).json({ error: "JOBBER_CLIENT_ID not configured" });
@@ -55,36 +51,22 @@ router.get("/jobber/auth", (req, res) => {
   }
 
   let callbackUrl: string;
-  try {
-    // Use the live request host so this works on dev AND production domains
-    callbackUrl = getCallbackUrl(getClerkProxyHost(req));
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-    return;
-  }
 
+  const state = generateOAuthState();
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: callbackUrl,
     response_type: "code",
     scope: "read_clients write_clients read_jobs write_jobs",
+    state,
   });
 
-  res.redirect(`${JOBBER_AUTH_URL}?${params.toString()}`);
-});
-
-// GET /jobber/callback — Jobber redirects here with ?code=
-router.get("/jobber/callback", async (req, res) => {
-  // Log everything Jobber sends so we can debug
-  req.log.info({ query: req.query }, "Jobber OAuth callback received");
-
-  const { code, error, error_description } = req.query as {
+  const { code, error, error_description, state } = req.query as {
     code?: string;
     error?: string;
     error_description?: string;
+    state?: string;
   };
-
-  if (error) {
     const reason = error_description ? `${error}: ${error_description}` : error;
     req.log.warn({ error, error_description }, "Jobber OAuth error");
     res.redirect(`/?jobber=error&reason=${encodeURIComponent(reason)}`);
@@ -176,8 +158,9 @@ router.get("/jobber/callback", async (req, res) => {
   }
 });
 
-// POST /jobber/sync/:bookingId — manually sync one booking to Jobber
+// POST /jobber/sync/:bookingId — manually sync one booking to Jobber (dispatcher only)
 router.post("/jobber/sync/:bookingId", async (req, res) => {
+  if (await requireDispatcherAuth(req, res)) return;
   const bookingId = Number(req.params.bookingId);
   if (isNaN(bookingId)) {
     res.status(400).json({ error: "Invalid booking ID" });
@@ -543,3 +526,23 @@ router.post("/jobber/sync-calendar", requireAuth, async (req, res) => {
 });
 
 export default router;
+
+function consumeOAuthState(state: string): boolean {
+  const expiry = pendingOAuthStates.get(state);
+  if (expiry === undefined) return false;
+  pendingOAuthStates.delete(state);
+  return Date.now() < expiry;
+}
+
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1_000; // 10 minutes
+
+function generateOAuthState(): string {
+  const state = randomBytes(24).toString("hex");
+  pendingOAuthStates.set(state, Date.now() + OAUTH_STATE_TTL_MS);
+  // Prune any expired entries while we're here
+  const now = Date.now();
+  for (const [k, exp] of pendingOAuthStates) {
+    if (exp < now) pendingOAuthStates.delete(k);
+  }
+  return state;
+}

@@ -4,3 +4,4 @@ export * from "./generated/types";
 // Orval generates both a Zod schema (api.ts) and a TypeScript type (types/) with the
 // same name for path/query param objects; prefer the Zod schema version.
 export { GetStaffScheduleParams } from "./generated/api";
+export { PostStaffLocationBody } from "./generated/api";

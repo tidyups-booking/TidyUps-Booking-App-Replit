@@ -1,0 +1,24 @@
+kind = "mobile"
+previewPath = "/cleaner-app/"
+title = "833 Tidyups — Cleaner"
+description = "A mobile app for 833 Tidyups cleaners to view their daily job schedule, get directions to each job site, mark jobs as started or complete, and automatically share their GPS location during work hours so dispatchers can track field activity in real time."
+version = "1.0.0"
+id = "artifacts/cleaner-app"
+router = "expo-domain"
+
+[[services]]
+name = "expo"
+ensurePreviewReachable = "/status"
+paths = [ "/cleaner-app/" ]
+localPort = 22790
+
+[services.development]
+run = "pnpm --filter @workspace/cleaner-app run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/cleaner-app", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/cleaner-app", "run", "serve" ]
+
+[services.env]
+PORT = "22790"
+BASE_PATH = "/cleaner-app/"

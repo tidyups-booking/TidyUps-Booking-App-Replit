@@ -3,6 +3,7 @@ import { eq, and, gte, lte } from "drizzle-orm";
 import { getAuth } from "@clerk/express";
 import { db, staffTable, bookingsTable, cleanerLocationsTable } from "@workspace/db";
 import { requireAuth } from "../app.js";
+import { guardDispatcher } from "../lib/callerRole.js";
 
 const router: IRouter = Router();
 
@@ -51,7 +52,11 @@ router.post("/staff/:id/location", async (req, res): Promise<void> => {
 
   const auth = getAuth(req);
   const callerId = auth?.userId;
-  if (!callerId || callerId !== staff.clerkUserId) {
+  if (!callerId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  if (callerId !== staff.clerkUserId) {
     res.status(403).json({ error: "Forbidden: cannot update another staff member's location" });
     return;
   }
@@ -80,12 +85,13 @@ router.post("/staff/:id/location", async (req, res): Promise<void> => {
   res.json({ ok: true });
 });
 
-// GET /map/data?date=YYYY-MM-DD
+// GET /map/data?date=YYYY-MM-DD — dispatcher only
 // Returns staff with their effective position for the given date:
 //   - Today: live GPS (if recent <5 min) else home coords
 //   - Future/past: home coords only
 // Also returns bookings for that date, each with a proximity ranking of all staff.
 router.get("/map/data", async (req, res): Promise<void> => {
+  if (await guardDispatcher(req, res)) return;
   const date =
     typeof req.query.date === "string"
       ? req.query.date
@@ -184,12 +190,13 @@ router.get("/map/counts", requireAuth, async (req, res): Promise<void> => {
   const end = endDate as string;
 
   const rows = await db
-    .select({ scheduledDate: bookingsTable.scheduledDate })
+    .select()
     .from(bookingsTable)
     .where(and(
-      gte(bookingsTable.scheduledDate, start),
-      lte(bookingsTable.scheduledDate, end),
-    ));
+      gte(bookingsTable.scheduledDate, start2),
+      lte(bookingsTable.scheduledDate, end2),
+    ))
+    .orderBy(bookingsTable.scheduledDate, bookingsTable.scheduledTime);
 
   const counts: Record<string, number> = {};
   for (const row of rows) {

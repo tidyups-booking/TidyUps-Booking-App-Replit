@@ -30,6 +30,8 @@ import type {
   HealthStatus,
   ListBookingsParams,
   ListStaffParams,
+  PostStaffLocation200,
+  PostStaffLocationBody,
   Staff,
   StaffDaySchedule,
   StaffInput,
@@ -825,6 +827,83 @@ export const useCreateStaff = <TError = ErrorType<ErrorResponse>,
       return useMutation(getCreateStaffMutationOptions(options));
     }
 
+export const getGetStaffMeUrl = () => {
+
+
+
+
+  return `/api/staff/me`
+}
+
+/**
+ * @summary Get the staff record linked to the authenticated Clerk account
+ */
+export const getStaffMe = async ( options?: Parameters<typeof customFetch>[1]): Promise<Staff> => {
+
+  return customFetch<Staff>(getGetStaffMeUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetStaffMeQueryKey = () => {
+    return [
+    `/api/staff/me`
+    ] as const;
+    }
+
+
+export const getGetStaffMeQueryOptions = <TData = Awaited<ReturnType<typeof getStaffMe>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStaffMe>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetStaffMeQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getStaffMe>>> = ({ signal }) => getStaffMe({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getStaffMe>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetStaffMeQueryResult = NonNullable<Awaited<ReturnType<typeof getStaffMe>>>
+export type GetStaffMeQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get the staff record linked to the authenticated Clerk account
+ */
+
+export function useGetStaffMe<TData = Awaited<ReturnType<typeof getStaffMe>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStaffMe>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetStaffMeQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getUpdateStaffUrl = (id: number,) => {
 
 
@@ -985,6 +1064,78 @@ export function useGetStaffSchedule<TData = Awaited<ReturnType<typeof getStaffSc
 
 
 
+
+export const getPostStaffLocationUrl = (id: number,) => {
+
+
+
+
+  return `/api/staff/${id}/location`
+}
+
+/**
+ * @summary Post cleaner's live GPS location
+ */
+export const postStaffLocation = async (id: number,
+    postStaffLocationBody: PostStaffLocationBody, options?: Parameters<typeof customFetch>[1]): Promise<PostStaffLocation200> => {
+
+  return customFetch<PostStaffLocation200>(getPostStaffLocationUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(postStaffLocationBody)
+  }
+);}
+
+
+
+
+
+export const getPostStaffLocationMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postStaffLocation>>, TError,{id: number;data: BodyType<PostStaffLocationBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof postStaffLocation>>, TError,{id: number;data: BodyType<PostStaffLocationBody>}, TContext> => {
+
+const mutationKey = ['postStaffLocation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof postStaffLocation>>, {id: number;data: BodyType<PostStaffLocationBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  postStaffLocation(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PostStaffLocationMutationResult = NonNullable<Awaited<ReturnType<typeof postStaffLocation>>>
+    export type PostStaffLocationMutationBody = BodyType<PostStaffLocationBody>
+    export type PostStaffLocationMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Post cleaner's live GPS location
+ */
+export const usePostStaffLocation = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof postStaffLocation>>, TError,{id: number;data: BodyType<PostStaffLocationBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof postStaffLocation>>,
+        TError,
+        {id: number;data: BodyType<PostStaffLocationBody>},
+        TContext
+      > => {
+      return useMutation(getPostStaffLocationMutationOptions(options));
+    }
 
 export const getGetDayScheduleUrl = (params: GetDayScheduleParams,) => {
   const normalizedParams = new URLSearchParams();

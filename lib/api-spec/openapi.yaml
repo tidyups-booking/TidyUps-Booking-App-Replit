@@ -244,6 +244,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /staff/me:
+    get:
+      operationId: getStaffMe
+      tags: [staff]
+      summary: Get the staff record linked to the authenticated Clerk account
+      responses:
+        "200":
+          description: Staff record for the current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Staff"
+        "404":
+          description: No staff record is linked to this Clerk account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /staff/{id}:
     patch:
       operationId: updateStaff
@@ -303,6 +322,48 @@ paths:
                   $ref: "#/components/schemas/Booking"
         "404":
           description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /staff/{id}/location:
+    post:
+      operationId: postStaffLocation
+      tags: [staff]
+      summary: Post cleaner's live GPS location
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lat, lng]
+              properties:
+                lat:
+                  type: number
+                lng:
+                  type: number
+                accuracy:
+                  type: number
+      responses:
+        "200":
+          description: Location recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        "400":
+          description: Invalid input
           content:
             application/json:
               schema:
@@ -653,6 +714,25 @@ components:
           type: string
         active:
           type: boolean
+        clerkUserId:
+          type: string
+          nullable: true
+          description: >
+            Clerk user ID to link to this staff record. Dispatcher-only field.
+            Set to null to unlink. When set, the staff member can sign in to the
+            cleaner app and their schedule will load automatically.
+        homeAddress:
+          type: string
+          nullable: true
+          description: Street address for the cleaner's home base (used for map proximity).
+        homeLat:
+          type: number
+          nullable: true
+          description: Latitude of the home address.
+        homeLng:
+          type: number
+          nullable: true
+          description: Longitude of the home address.
 
     StaffDaySchedule:
       type: object

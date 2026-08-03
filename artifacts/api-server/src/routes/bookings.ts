@@ -1,7 +1,9 @@
 import { Router, type IRouter } from "express";
 import { eq, gte, lte, and, sql, inArray } from "drizzle-orm";
-import { db, bookingsTable, callTranscriptsTable } from "@workspace/db";
+import { getAuth } from "@clerk/express";
+import { db, bookingsTable, callTranscriptsTable, staffTable } from "@workspace/db";
 import { syncBookingToJobber, getStoredTokens } from "../services/jobber.js";
+import { resolveCallerRole, guardDispatcher } from "../lib/callerRole.js";
 import {
   ListBookingsQueryParams,
   CreateBookingBody,
@@ -18,8 +20,9 @@ import {
 
 const router: IRouter = Router();
 
-// GET /bookings/stats — must be before /:id to avoid route conflict
+// GET /bookings/stats — dispatcher only; must be before /:id to avoid route conflict
 router.get("/bookings/stats", async (req, res): Promise<void> => {
+  if (await guardDispatcher(req, res)) return;
   const now = new Date();
   const todayStr = now.toISOString().split("T")[0];
 
@@ -94,8 +97,9 @@ router.get("/bookings/stats", async (req, res): Promise<void> => {
   res.json(GetBookingStatsResponse.parse(stats));
 });
 
-// GET /bookings/upcoming
+// GET /bookings/upcoming — dispatcher only
 router.get("/bookings/upcoming", async (req, res): Promise<void> => {
+  if (await guardDispatcher(req, res)) return;
   const now = new Date();
   const todayStr = now.toISOString().split("T")[0];
   const twoWeeksOut = new Date(now);
@@ -116,8 +120,9 @@ router.get("/bookings/upcoming", async (req, res): Promise<void> => {
   res.json(GetUpcomingBookingsResponse.parse(bookings));
 });
 
-// GET /bookings
+// GET /bookings — dispatcher only
 router.get("/bookings", async (req, res): Promise<void> => {
+  if (await guardDispatcher(req, res)) return;
   const parsed = ListBookingsQueryParams.safeParse(req.query);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -158,8 +163,9 @@ router.get("/bookings", async (req, res): Promise<void> => {
   res.json(response);
 });
 
-// POST /bookings
+// POST /bookings — dispatcher only
 router.post("/bookings", async (req, res): Promise<void> => {
+  if (await guardDispatcher(req, res)) return;
   const parsed = CreateBookingBody.safeParse(req.body);
   if (!parsed.success) {
     req.log.warn({ errors: parsed.error.message }, "Invalid booking input");
@@ -258,6 +264,7 @@ router.post("/bookings", async (req, res): Promise<void> => {
 });
 
 // GET /bookings/:id
+// Cleaners may only fetch bookings assigned to them.
 router.get("/bookings/:id", async (req, res): Promise<void> => {
   const params = GetBookingParams.safeParse(req.params);
   if (!params.success) {
@@ -275,10 +282,30 @@ router.get("/bookings/:id", async (req, res): Promise<void> => {
     return;
   }
 
+  // Require authentication — this endpoint is cleaner-facing (called by the mobile app)
+  const auth = getAuth(req);
+  const callerId = auth?.userId;
+  if (!callerId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const callerRole = await resolveCallerRole(callerId);
+  if (callerRole.role === "denied") {
+    res.status(403).json({ error: "Forbidden: account not authorized. Contact a dispatcher." });
+    return;
+  }
+  if (callerRole.role === "cleaner" && booking.staffId !== callerRole.staffId) {
+    res.status(403).json({ error: "Forbidden: cannot access another cleaner's booking" });
+    return;
+  }
+
   res.json(GetBookingResponse.parse(booking));
 });
 
 // PATCH /bookings/:id
+// Cleaners may only update their OWN bookings, and only the status field.
+// Dispatchers may update any field on any booking.
 router.patch("/bookings/:id", async (req, res): Promise<void> => {
   const params = UpdateBookingParams.safeParse(req.params);
   if (!params.success) {
@@ -290,6 +317,58 @@ router.patch("/bookings/:id", async (req, res): Promise<void> => {
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
+  }
+
+  // Require authentication — this endpoint is cleaner-facing (called by the mobile app)
+  const auth = getAuth(req);
+  const callerId = auth?.userId;
+  if (!callerId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  {
+    const callerRole = await resolveCallerRole(callerId);
+    if (callerRole.role === "denied") {
+      res.status(403).json({ error: "Forbidden: account not authorized. Contact a dispatcher." });
+      return;
+    }
+    if (callerRole.role === "cleaner") {
+      // Fetch booking to verify ownership
+      const [existing] = await db
+        .select({ staffId: bookingsTable.staffId })
+        .from(bookingsTable)
+        .where(eq(bookingsTable.id, params.data.id));
+
+      if (!existing) {
+        res.status(404).json({ error: "Booking not found" });
+        return;
+      }
+
+      if (existing.staffId !== callerRole.staffId) {
+        res.status(403).json({ error: "Forbidden: cannot update another cleaner's booking" });
+        return;
+      }
+
+      // Cleaners may only change status — reject any other field
+      const raw = req.body as Record<string, unknown>;
+      const forbiddenFields = Object.keys(raw).filter((k) => k !== "status");
+      if (forbiddenFields.length > 0) {
+        res.status(403).json({
+          error: `Forbidden: cleaners may only update status (received: ${forbiddenFields.join(", ")})`,
+        });
+        return;
+      }
+
+      // Cleaners may only transition to in_progress or completed
+      const allowedStatuses = ["in_progress", "completed"];
+      if (typeof raw.status === "string" && !allowedStatuses.includes(raw.status)) {
+        res.status(403).json({
+          error: `Forbidden: cleaners may only set status to ${allowedStatuses.join(" or ")}`,
+        });
+        return;
+      }
+    }
   }
 
   const data = parsed.data;
@@ -329,8 +408,9 @@ router.patch("/bookings/:id", async (req, res): Promise<void> => {
   res.json(UpdateBookingResponse.parse(booking));
 });
 
-// DELETE /bookings/:id
+// DELETE /bookings/:id — dispatcher only
 router.delete("/bookings/:id", async (req, res): Promise<void> => {
+  if (await guardDispatcher(req, res)) return;
   const params = DeleteBookingParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

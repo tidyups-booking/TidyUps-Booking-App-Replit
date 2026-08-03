@@ -1,6 +1,5 @@
 import { Router } from "express";
 import { randomUUID } from "crypto";
-import { getAuth } from "@clerk/express";
 import { addSseClient, removeSseClient, getCallState } from "../services/twilio-stream.js";
 import { issueStreamToken } from "../services/stream-tokens.js";
 import { getClerkProxyHost } from "../middlewares/clerkProxyMiddleware.js";
@@ -8,23 +7,17 @@ import {
   requireTwilioWebhookAuth,
   getVoiceWebhookUrl,
 } from "../middlewares/twilioWebhookAuth.js";
+import { requireDispatcherAuth } from "../lib/callerRole.js";
 
 const router = Router();
 
 /**
- * GET /twilio/webhook-url
+ * GET /twilio/webhook-url — dispatcher only
  * Returns the full voice webhook URL (including the required ?sig= parameter)
  * for pasting into the Twilio Console.
- * Requires a valid Clerk session — do not expose this to unauthenticated callers.
  */
-router.get("/twilio/webhook-url", (req, res) => {
-  // Inline auth check: this route lives in the public router block but must be
-  // accessible only to authenticated users (the sig value is sensitive config).
-  const auth = getAuth(req);
-  if (!auth?.userId) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
+router.get("/twilio/webhook-url", async (req, res) => {
+  if (await requireDispatcherAuth(req, res)) return;
   const url = getVoiceWebhookUrl(req);
   if (!url) {
     res.status(503).json({ error: "SESSION_SECRET is not configured" });
@@ -85,7 +78,8 @@ router.post("/twilio/voice", requireTwilioWebhookAuth, (req, res) => {
  *   { type: "call_ended",  full: "..." }
  *   { type: "state",       active: bool, transcript: "..." }  (on connect)
  */
-router.get("/twilio/transcript", (req, res) => {
+router.get("/twilio/transcript", async (req, res) => {
+  if (await requireDispatcherAuth(req, res)) return;
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");

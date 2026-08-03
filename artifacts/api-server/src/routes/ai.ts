@@ -1,9 +1,13 @@
-import { Router } from "express";
+import { Router, type IRouter } from "express";
 import { openai } from "@workspace/integrations-openai-ai-server";
+import { guardDispatcher } from "../lib/callerRole.js";
 
-const router = Router();
+const router: IRouter = Router();
 
-router.post("/ai/extract-booking", async (req, res) => {
+// POST /ai/extract-booking — dispatcher only
+router.post("/ai/extract-booking", async (req, res): Promise<void> => {
+  if (await guardDispatcher(req, res)) return;
+
   try {
     const { transcript } = req.body as { transcript: string };
 
