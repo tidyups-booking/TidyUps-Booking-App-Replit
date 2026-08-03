@@ -279,6 +279,21 @@ const MIGRATIONS: { name: string; sql: string }[] = [
       ALTER TABLE staff ADD COLUMN IF NOT EXISTS email text;
     `,
   },
+  {
+    // Mirrors lib/db/migrations/011_add_live_call_state.sql.
+    name: "011_add_live_call_state",
+    sql: `
+      CREATE TABLE IF NOT EXISTS live_call_state (
+        id              INTEGER PRIMARY KEY CHECK (id = 1),
+        active_call_sid TEXT,
+        transcript      TEXT NOT NULL DEFAULT '',
+        updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+
+      INSERT INTO live_call_state (id) VALUES (1)
+      ON CONFLICT (id) DO NOTHING;
+    `,
+  },
 ];
 
 /**

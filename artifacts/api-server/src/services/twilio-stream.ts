@@ -11,6 +11,15 @@
 
 import { WebSocketServer, type WebSocket } from "ws";
 import type { Response } from "express";
+import { pool } from "@workspace/db";
+
+// Minimal structural type for a dedicated pg client (avoids a direct dep on "pg").
+interface PoolClient {
+  query(sql: string): Promise<unknown>;
+  on(event: "notification", cb: (msg: { channel: string; payload?: string }) => void): void;
+  on(event: "error", cb: (err: Error) => void): void;
+  release(destroy?: boolean): void;
+}
 import { logger } from "../lib/logger.js";
 import { speechToText } from "@workspace/integrations-openai-ai-server/audio";
 import { openai } from "@workspace/integrations-openai-ai-server";
@@ -145,7 +154,8 @@ export function removeSseClient(client: SseClient) {
   sseClients.delete(client);
 }
 
-function broadcast(event: object) {
+/** Fan an event out to SSE clients connected to THIS instance. */
+function fanOutLocal(event: object) {
   const line = `data: ${JSON.stringify(event)}\n\n`;
   for (const c of sseClients) {
     try {
@@ -156,7 +166,129 @@ function broadcast(event: object) {
   }
 }
 
+// ── Cross-instance pub/sub via Postgres LISTEN/NOTIFY ───────────────────────
+//
+// The production deployment is autoscale: the Twilio webhook/WebSocket and a
+// dispatcher's SSE connection may land on DIFFERENT instances. Call state is
+// therefore persisted in the single-row `live_call_state` table, and events
+// are published with NOTIFY so every instance fans them out to its own SSE
+// clients. The publishing instance does NOT fan out directly — it receives
+// its own NOTIFY like everyone else, so delivery is uniform.
+
+const NOTIFY_CHANNEL = "live_call_events";
+// Postgres NOTIFY payloads are capped at ~8000 bytes; leave headroom.
+const MAX_NOTIFY_PAYLOAD = 7000;
+
+/** Persist call state, then publish the event to all instances. */
+async function publish(event: Record<string, unknown>) {
+  try {
+    let payload = JSON.stringify(event);
+    if (payload.length > MAX_NOTIFY_PAYLOAD) {
+      // Too large for NOTIFY — drop bulky fields; listeners re-hydrate `full`
+      // from live_call_state when it's missing.
+      const { full: _full, chunk: _chunk, ...slim } = event;
+      payload = JSON.stringify({ ...slim, needsHydration: true });
+    }
+    await pool.query("SELECT pg_notify($1, $2)", [NOTIFY_CHANNEL, payload]);
+  } catch (err) {
+    logger.error({ err, type: event.type }, "Failed to publish live-call event");
+    // Fall back to local fan-out so at least same-instance clients see it.
+    fanOutLocal(event);
+  }
+}
+
+async function setDbCallState(activeSid: string | null, transcript: string) {
+  await pool.query(
+    `UPDATE live_call_state SET active_call_sid = $1, transcript = $2, updated_at = now() WHERE id = 1`,
+    [activeSid, transcript],
+  );
+}
+
+/** Read the shared call state (works regardless of which instance owns the call). */
+export async function getCallState(): Promise<{ active: boolean; transcript: string }> {
+  try {
+    const { rows } = await pool.query(
+      `SELECT active_call_sid, transcript FROM live_call_state WHERE id = 1`,
+    );
+    const row = rows[0];
+    return {
+      active: !!row?.active_call_sid,
+      transcript: row?.transcript ?? "",
+    };
+  } catch (err) {
+    logger.warn({ err }, "Failed to read live call state");
+    return { active: false, transcript: "" };
+  }
+}
+
+let listenerClient: PoolClient | null = null;
+let listenerStopped = false;
+
+/**
+ * Start (and keep alive) the dedicated LISTEN connection that receives
+ * live-call events published by any instance and fans them out to this
+ * instance's SSE clients. Reconnects with backoff on connection loss.
+ */
+export function startLiveCallListener() {
+  listenerStopped = false;
+  void connectListener(0);
+}
+
+async function connectListener(attempt: number) {
+  if (listenerStopped) return;
+  try {
+    const client = await pool.connect();
+    listenerClient = client;
+
+    client.on("notification", (msg) => {
+      if (msg.channel !== NOTIFY_CHANNEL || !msg.payload) return;
+      void handleNotification(msg.payload);
+    });
+
+    client.on("error", (err) => {
+      logger.warn({ err }, "Live-call LISTEN connection error — reconnecting");
+      scheduleReconnect(client);
+    });
+
+    await client.query(`LISTEN ${NOTIFY_CHANNEL}`);
+    logger.info("Live-call event listener connected (LISTEN live_call_events)");
+  } catch (err) {
+    logger.warn({ err, attempt }, "Failed to start live-call listener — retrying");
+    setTimeout(() => void connectListener(attempt + 1), Math.min(30_000, 1000 * 2 ** attempt));
+  }
+}
+
+function scheduleReconnect(client: PoolClient) {
+  if (listenerClient !== client) return; // already replaced
+  listenerClient = null;
+  try {
+    client.release(true); // destroy the broken connection
+  } catch {
+    /* already released */
+  }
+  setTimeout(() => void connectListener(0), 1000);
+}
+
+async function handleNotification(payload: string) {
+  try {
+    const event = JSON.parse(payload) as Record<string, unknown> & { needsHydration?: boolean };
+    if (event.needsHydration) {
+      delete event.needsHydration;
+      const state = await getCallState();
+      if (event.type === "transcript" || event.type === "call_ended") {
+        event.full = state.transcript;
+      }
+    }
+    fanOutLocal(event);
+  } catch (err) {
+    logger.warn({ err }, "Failed to handle live-call notification");
+  }
+}
+
 // ── Active call state (one call at a time) ──────────────────────────────────
+// Audio buffering stays local: the Twilio WebSocket is pinned to one instance
+// for the duration of the call. Only the derived state (active SID, running
+// transcript) is shared via Postgres.
 
 let activeCallSid: string | null = null;
 let audioChunks: number[] = [];
@@ -172,7 +304,12 @@ async function flushAudio(force = false) {
   const text = await transcribeWav(wav);
   if (text) {
     fullTranscript = (fullTranscript + " " + text).trim();
-    broadcast({ type: "transcript", chunk: text, full: fullTranscript });
+    try {
+      await setDbCallState(activeCallSid, fullTranscript);
+    } catch (err) {
+      logger.warn({ err }, "Failed to persist live call transcript");
+    }
+    await publish({ type: "transcript", chunk: text, full: fullTranscript });
     logger.info({ chars: text.length }, "Transcription chunk broadcast");
 
     // Run AI extraction and broadcast results — fire-and-forget so audio pipeline isn't blocked
@@ -180,7 +317,7 @@ async function flushAudio(force = false) {
     extractBookingFields(transcriptSnapshot)
       .then((fields) => {
         if (fields) {
-          broadcast({ type: "extracted_fields", fields });
+          void publish({ type: "extracted_fields", fields });
           logger.info({ fieldCount: Object.keys(fields).length }, "Extracted booking fields broadcast");
         } else {
           logger.debug("Extraction returned no fields for this chunk");
@@ -190,8 +327,15 @@ async function flushAudio(force = false) {
   }
 }
 
-export function getCallState() {
-  return { active: activeCallSid !== null, transcript: fullTranscript };
+/** Mark the call over: clear shared state and publish call_ended. */
+async function endCall() {
+  activeCallSid = null;
+  try {
+    await setDbCallState(null, fullTranscript);
+  } catch (err) {
+    logger.warn({ err }, "Failed to persist call end");
+  }
+  await publish({ type: "call_ended", full: fullTranscript });
 }
 
 // ── WebSocket server (attached to the HTTP server via `upgrade` event) ──────
@@ -215,7 +359,12 @@ export function createTwilioWss() {
           activeCallSid = msg.callSid ?? msg.streamSid ?? "unknown";
           audioChunks = [];
           fullTranscript = "";
-          broadcast({ type: "call_started" });
+          try {
+            await setDbCallState(activeCallSid, "");
+          } catch (err) {
+            logger.warn({ err }, "Failed to persist call start");
+          }
+          await publish({ type: "call_started" });
           logger.info({ callSid: activeCallSid }, "Twilio call started");
         } else if (msg.event === "media") {
           const payload = msg.media?.payload;
@@ -225,9 +374,8 @@ export function createTwilioWss() {
           await flushAudio();
         } else if (msg.event === "stop") {
           await flushAudio(true);
-          broadcast({ type: "call_ended", full: fullTranscript });
-          logger.info({ callSid: activeCallSid }, "Twilio call ended");
-          activeCallSid = null;
+          await endCall();
+          logger.info("Twilio call ended");
         }
       } catch (err) {
         logger.warn({ err }, "Error processing Twilio WS message");
@@ -237,8 +385,7 @@ export function createTwilioWss() {
     ws.on("close", async () => {
       if (activeCallSid) {
         await flushAudio(true);
-        broadcast({ type: "call_ended", full: fullTranscript });
-        activeCallSid = null;
+        await endCall();
       }
       logger.info("Twilio Media Stream WebSocket disconnected");
     });

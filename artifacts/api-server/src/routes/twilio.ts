@@ -87,7 +87,8 @@ router.get("/twilio/transcript", async (req, res) => {
   res.flushHeaders();
 
   // Send current call state immediately so late-joining clients sync up
-  const state = getCallState();
+  // (read from the shared store — the call may be owned by another instance)
+  const state = await getCallState();
   res.write(`data: ${JSON.stringify({ type: "state", ...state })}\n\n`);
 
   const client = { id: randomUUID(), res };

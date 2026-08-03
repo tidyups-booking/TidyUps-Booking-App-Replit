@@ -2,7 +2,7 @@ import http from "http";
 import { URL } from "url";
 import app from "./app.js";
 import { logger } from "./lib/logger.js";
-import { createTwilioWss } from "./services/twilio-stream.js";
+import { createTwilioWss, startLiveCallListener } from "./services/twilio-stream.js";
 import { consumeStreamToken } from "./services/stream-tokens.js";
 import { runMigrations } from "@workspace/db";
 import { startJobberAutoSync } from "./services/jobberCalendarSync.js";
@@ -32,6 +32,11 @@ try {
 // WebSocket alongside normal API routes.
 const server = http.createServer(app);
 const twilioWss = createTwilioWss();
+
+// Subscribe to cross-instance live-call events (Postgres LISTEN/NOTIFY) so the
+// call panel works even when the Twilio webhook and a dispatcher's SSE
+// connection land on different autoscale instances.
+startLiveCallListener();
 
 // Route WebSocket upgrades to the Twilio stream handler.
 // Require a valid one-time token issued by POST /api/twilio/voice so that
