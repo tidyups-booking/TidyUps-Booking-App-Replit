@@ -366,6 +366,17 @@ export default function MapPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseUrl, calendarView, calendarMonth, selectedDate, fetchCounts, fetchRange, fetchMapData]);
 
+  // Jump to Day view for a date, highlight its pins, and scroll the map into view
+  const jumpToDay = useCallback((date: string) => {
+    setSelectedDate(date);
+    setCalendarView("day");
+    setJumpHighlight(date);
+    // After React re-renders into Day view, scroll the map into view
+    setTimeout(() => {
+      mapCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
+  }, []);
+
   // Fetch calendar data when view or anchor changes
   useEffect(() => {
     if (calendarView === "month") fetchCounts(calendarMonth);
@@ -689,15 +700,7 @@ export default function MapPage() {
       {calendarView === "month" && (
         <MonthCalendar
           selectedDate={selectedDate}
-          onDateSelect={(date) => {
-            setSelectedDate(date);
-            setCalendarView("day");
-            setJumpHighlight(date);
-            // After React re-renders into Day view, scroll the map into view
-            setTimeout(() => {
-              mapCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-            }, 50);
-          }}
+          onDateSelect={jumpToDay}
           counts={dayCounts}
           currentMonth={calendarMonth}
           onMonthChange={(delta) => setCalendarMonth(m => addMonths(m, delta))}
@@ -708,7 +711,7 @@ export default function MapPage() {
         <ColumnCalendar
           dates={getViewDates()}
           selectedDate={selectedDate}
-          onDateSelect={setSelectedDate}
+          onDateSelect={jumpToDay}
           bookingsByDate={bookingsByDate}
         />
       )}
