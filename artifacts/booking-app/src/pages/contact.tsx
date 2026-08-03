@@ -23,6 +23,8 @@ export default function ContactPage() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [message, setMessage] = useState("");
+  // Honeypot: hidden from humans; bots that auto-fill it get silently dropped.
+  const [website, setWebsite] = useState("");
   const [submitted, setSubmitted] = useState(false);
 
   const mutation = useSubmitContactMessage({
@@ -34,7 +36,17 @@ export default function ContactPage() {
           description: "Thanks for reaching out — we'll get back to you soon.",
         });
       },
-      onError: () => {
+      onError: (error) => {
+        const status = (error as { status?: number } | null)?.status;
+        if (status === 429) {
+          toast({
+            title: "Too many messages",
+            description:
+              "You've sent several messages recently. Please wait a few minutes and try again, or call us directly.",
+            variant: "destructive",
+          });
+          return;
+        }
         toast({
           title: "Something went wrong",
           description:
@@ -69,6 +81,7 @@ export default function ContactPage() {
         email: email.trim(),
         ...(phone.trim() ? { phone: phone.trim() } : {}),
         message: message.trim(),
+        ...(website ? { website } : {}),
       },
     });
   };
@@ -169,6 +182,22 @@ export default function ContactPage() {
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-4">
+                {/* Honeypot — invisible to humans, catches bots that fill every field */}
+                <div
+                  aria-hidden="true"
+                  className="absolute -left-[9999px] top-auto h-px w-px overflow-hidden"
+                >
+                  <label htmlFor="contact-website">Website</label>
+                  <input
+                    id="contact-website"
+                    name="website"
+                    type="text"
+                    value={website}
+                    onChange={(e) => setWebsite(e.target.value)}
+                    tabIndex={-1}
+                    autoComplete="off"
+                  />
+                </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="contact-name">Name *</Label>

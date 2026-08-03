@@ -24,4 +24,9 @@ export interface ContactMessageInput {
      * @maxLength 5000
      */
   message: string;
+  /**
+     * Honeypot field — must be left empty. Bots that fill it are rejected.
+     * @maxLength 200
+     */
+  website?: string;
 }

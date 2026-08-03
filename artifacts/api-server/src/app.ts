@@ -13,6 +13,10 @@ import { logger } from "./lib/logger.js";
 
 const app: Express = express();
 
+// Behind the Replit proxy — trust the first proxy hop so req.ip reflects the
+// real client IP (used for per-IP rate limiting on public endpoints).
+app.set("trust proxy", 1);
+
 app.use(
   pinoHttp({
     logger,

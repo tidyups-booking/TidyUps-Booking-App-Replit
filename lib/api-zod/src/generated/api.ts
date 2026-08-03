@@ -30,12 +30,15 @@ export const submitContactMessageBodyPhoneMax = 40;
 
 export const submitContactMessageBodyMessageMax = 5000;
 
+export const submitContactMessageBodyWebsiteMax = 200;
+
 
 export const SubmitContactMessageBody = zod.object({
   "name": zod.string().min(1).max(submitContactMessageBodyNameMax),
   "email": zod.string().max(submitContactMessageBodyEmailMax).regex(submitContactMessageBodyEmailRegExp),
   "phone": zod.string().max(submitContactMessageBodyPhoneMax).optional(),
-  "message": zod.string().min(1).max(submitContactMessageBodyMessageMax)
+  "message": zod.string().min(1).max(submitContactMessageBodyMessageMax),
+  "website": zod.string().max(submitContactMessageBodyWebsiteMax).optional().describe('Honeypot field — must be left empty. Bots that fill it are rejected.')
 })
 
 export const SubmitContactMessageResponse = zod.object({
