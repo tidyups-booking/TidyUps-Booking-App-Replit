@@ -56,7 +56,16 @@ export const SubmitContactMessageResponse = zod.object({
 /**
  * @summary List contact form messages (dispatcher only), newest first
  */
-export const ListContactMessagesResponseItem = zod.object({
+export const listContactMessagesQueryLimitDefault = 25;
+export const listContactMessagesQueryOffsetDefault = 0;
+
+export const ListContactMessagesQueryParams = zod.object({
+  "limit": zod.coerce.number().default(listContactMessagesQueryLimitDefault),
+  "offset": zod.coerce.number().default(listContactMessagesQueryOffsetDefault)
+})
+
+export const ListContactMessagesResponse = zod.object({
+  "messages": zod.array(zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "email": zod.string(),
@@ -64,8 +73,10 @@ export const ListContactMessagesResponseItem = zod.object({
   "message": zod.string(),
   "createdAt": zod.coerce.date(),
   "handledAt": zod.coerce.date().nullable()
+})),
+  "total": zod.number().describe('Total number of contact messages across all pages'),
+  "newCount": zod.number().describe('Total number of unhandled (new) messages across all pages')
 })
-export const ListContactMessagesResponse = zod.array(ListContactMessagesResponseItem)
 
 
 /**

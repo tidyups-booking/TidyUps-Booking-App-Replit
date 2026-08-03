@@ -121,18 +121,51 @@ router.post("/contact", async (req, res): Promise<void> => {
 
 // --- Dispatcher inbox routes (authenticated) ---------------------------------
 
-// GET /contact/messages — list all contact messages, newest first.
+// GET /contact/messages — paginated list of contact messages, newest first.
+// Returns { messages, total, newCount } so the new-message count stays
+// accurate regardless of which page is loaded.
+const DEFAULT_PAGE_SIZE = 25;
+const MAX_PAGE_SIZE = 100;
+
 contactMessagesRouter.get(
   "/contact/messages",
   async (req, res): Promise<void> => {
     if (await guardDispatcher(req, res)) return;
 
-    const rows = await db
-      .select()
-      .from(contactMessagesTable)
-      .orderBy(desc(contactMessagesTable.createdAt), desc(contactMessagesTable.id));
+    const rawLimit = Number(req.query.limit);
+    const rawOffset = Number(req.query.offset);
+    const limit =
+      Number.isInteger(rawLimit) && rawLimit > 0
+        ? Math.min(rawLimit, MAX_PAGE_SIZE)
+        : DEFAULT_PAGE_SIZE;
+    const offset =
+      Number.isInteger(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
 
-    res.json(ListContactMessagesResponse.parse(rows));
+    const [rows, counts] = await Promise.all([
+      db
+        .select()
+        .from(contactMessagesTable)
+        .orderBy(
+          desc(contactMessagesTable.createdAt),
+          desc(contactMessagesTable.id),
+        )
+        .limit(limit)
+        .offset(offset),
+      db
+        .select({
+          total: sql<number>`count(*)::int`,
+          newCount: sql<number>`count(*) FILTER (WHERE ${contactMessagesTable.handledAt} IS NULL)::int`,
+        })
+        .from(contactMessagesTable),
+    ]);
+
+    res.json(
+      ListContactMessagesResponse.parse({
+        messages: rows,
+        total: counts[0]?.total ?? 0,
+        newCount: counts[0]?.newCount ?? 0,
+      }),
+    );
   },
 );
 

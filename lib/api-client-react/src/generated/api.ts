@@ -27,11 +27,13 @@ import type {
   ContactMessage,
   ContactMessageInput,
   ContactMessageStatusUpdate,
+  ContactMessagesPage,
   ErrorResponse,
   GetDayScheduleParams,
   GetStaffScheduleParams,
   HealthStatus,
   ListBookingsParams,
+  ListContactMessagesParams,
   ListStaffParams,
   PostStaffLocation200,
   PostStaffLocationBody,
@@ -220,20 +222,27 @@ export const useSubmitContactMessage = <TError = ErrorType<ErrorResponse>,
       return useMutation(getSubmitContactMessageMutationOptions(options));
     }
 
-export const getListContactMessagesUrl = () => {
+export const getListContactMessagesUrl = (params?: ListContactMessagesParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/contact/messages`
+  return stringifiedParams.length > 0 ? `/api/contact/messages?${stringifiedParams}` : `/api/contact/messages`
 }
 
 /**
  * @summary List contact form messages (dispatcher only), newest first
  */
-export const listContactMessages = async ( options?: Parameters<typeof customFetch>[1]): Promise<ContactMessage[]> => {
+export const listContactMessages = async (params?: ListContactMessagesParams, options?: Parameters<typeof customFetch>[1]): Promise<ContactMessagesPage> => {
 
-  return customFetch<ContactMessage[]>(getListContactMessagesUrl(),
+  return customFetch<ContactMessagesPage>(getListContactMessagesUrl(params),
   {
     ...options,
     method: 'GET'
@@ -246,23 +255,23 @@ export const listContactMessages = async ( options?: Parameters<typeof customFet
 
 
 
-export const getListContactMessagesQueryKey = () => {
+export const getListContactMessagesQueryKey = (params?: ListContactMessagesParams,) => {
     return [
-    `/api/contact/messages`
+    `/api/contact/messages`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getListContactMessagesQueryOptions = <TData = Awaited<ReturnType<typeof listContactMessages>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listContactMessages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getListContactMessagesQueryOptions = <TData = Awaited<ReturnType<typeof listContactMessages>>, TError = ErrorType<unknown>>(params?: ListContactMessagesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listContactMessages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getListContactMessagesQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getListContactMessagesQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listContactMessages>>> = ({ signal }) => listContactMessages({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listContactMessages>>> = ({ signal }) => listContactMessages(params, { signal, ...requestOptions });
 
 
 
@@ -280,11 +289,11 @@ export type ListContactMessagesQueryError = ErrorType<unknown>
  */
 
 export function useListContactMessages<TData = Awaited<ReturnType<typeof listContactMessages>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listContactMessages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: ListContactMessagesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listContactMessages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getListContactMessagesQueryOptions(options)
+  const queryOptions = getListContactMessagesQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

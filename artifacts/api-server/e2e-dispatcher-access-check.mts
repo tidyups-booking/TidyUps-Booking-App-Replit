@@ -315,10 +315,10 @@ console.log("\nContact messages inbox:");
     const list = await api("GET", "/contact/messages", dispatcherJwt);
     check("dispatcher gets 200 on GET /contact/messages", list.status === 200, `status=${list.status}`);
     if (list.status === 200) {
-      const rows = await list.json();
+      const page = await list.json();
       check(
         "temporary message appears in the list",
-        Array.isArray(rows) && rows.some((r: any) => r.id === msg.id),
+        Array.isArray(page?.messages) && page.messages.some((r: any) => r.id === msg.id),
       );
     }
 

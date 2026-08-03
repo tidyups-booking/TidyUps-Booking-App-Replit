@@ -66,15 +66,24 @@ paths:
       operationId: listContactMessages
       tags: [contact]
       summary: List contact form messages (dispatcher only), newest first
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: number
+            default: 25
+        - in: query
+          name: offset
+          schema:
+            type: number
+            default: 0
       responses:
         "200":
-          description: Contact messages, newest first
+          description: A page of contact messages, newest first, with totals
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/ContactMessage"
+                $ref: "#/components/schemas/ContactMessagesPage"
 
   /contact/messages/{id}:
     patch:
@@ -614,6 +623,21 @@ components:
         handledAt:
           type: ["string", "null"]
           format: date-time
+
+    ContactMessagesPage:
+      type: object
+      required: [messages, total, newCount]
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContactMessage"
+        total:
+          type: number
+          description: Total number of contact messages across all pages
+        newCount:
+          type: number
+          description: Total number of unhandled (new) messages across all pages
 
     ContactMessageStatusUpdate:
       type: object

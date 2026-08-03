@@ -25,6 +25,14 @@ export interface ContactMessage {
   handledAt: string | null;
 }
 
+export interface ContactMessagesPage {
+  messages: ContactMessage[];
+  /** Total number of contact messages across all pages */
+  total: number;
+  /** Total number of unhandled (new) messages across all pages */
+  newCount: number;
+}
+
 export interface ContactMessageStatusUpdate {
   handled: boolean;
 }
@@ -423,6 +431,11 @@ export interface SocialLinkUpdate {
   url?: string;
   sortOrder?: number;
 }
+
+export type ListContactMessagesParams = {
+limit?: number;
+offset?: number;
+};
 
 export type ListBookingsParams = {
 status?: ListBookingsStatus;

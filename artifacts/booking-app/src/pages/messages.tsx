@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   useListContactMessages,
   useUpdateContactMessage,
@@ -5,14 +6,25 @@ import {
   getListContactMessagesQueryKey,
 } from "@workspace/api-client-react";
 import type { ContactMessage } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { Inbox, Mail, Phone, Check, Undo2, Trash2 } from "lucide-react";
+import {
+  Inbox,
+  Mail,
+  Phone,
+  Check,
+  Undo2,
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const PAGE_SIZE = 25;
 
 function formatReceived(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
@@ -28,7 +40,11 @@ function MessageCard({ message }: { message: ContactMessage }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: getListContactMessagesQueryKey() });
+    queryClient.invalidateQueries({
+      queryKey: getListContactMessagesQueryKey(),
+      // Invalidate every page of the list regardless of limit/offset params.
+      exact: false,
+    });
 
   const update = useUpdateContactMessage({
     mutation: {
@@ -137,8 +153,30 @@ function MessageCard({ message }: { message: ContactMessage }) {
 }
 
 export default function MessagesPage() {
-  const { data: messages, isLoading, isError } = useListContactMessages();
-  const newCount = messages?.filter((m) => !m.handledAt).length ?? 0;
+  const [offset, setOffset] = useState(0);
+  const { data, isLoading, isError, isPlaceholderData } = useListContactMessages(
+    { limit: PAGE_SIZE, offset },
+    {
+      query: {
+        queryKey: getListContactMessagesQueryKey({ limit: PAGE_SIZE, offset }),
+        placeholderData: keepPreviousData,
+      },
+    },
+  );
+
+  const messages = data?.messages;
+  const total = data?.total ?? 0;
+  const newCount = data?.newCount ?? 0;
+
+  // If deletions shrink the list below the current offset, snap back.
+  if (data && offset > 0 && offset >= total) {
+    setOffset(Math.max(0, Math.floor((total - 1) / PAGE_SIZE) * PAGE_SIZE));
+  }
+
+  const page = Math.floor(offset / PAGE_SIZE) + 1;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const hasPrev = offset > 0;
+  const hasNext = offset + PAGE_SIZE < total;
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -170,7 +208,7 @@ export default function MessagesPage() {
         </Card>
       )}
 
-      {messages && messages.length === 0 && (
+      {messages && total === 0 && (
         <Card>
           <CardContent className="p-12 flex flex-col items-center gap-3 text-center">
             <Inbox className="w-10 h-10 text-muted-foreground/50" />
@@ -182,9 +220,39 @@ export default function MessagesPage() {
         </Card>
       )}
 
-      <div className="space-y-4">
+      <div
+        className={cn("space-y-4", isPlaceholderData && "opacity-60")}
+      >
         {messages?.map((m) => <MessageCard key={m.id} message={m} />)}
       </div>
+
+      {total > PAGE_SIZE && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            Page {page} of {pageCount} · {total} messages
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!hasPrev || isPlaceholderData}
+              onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+            >
+              <ChevronLeft className="w-4 h-4 mr-1" />
+              Previous
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!hasNext || isPlaceholderData}
+              onClick={() => setOffset(offset + PAGE_SIZE)}
+            >
+              Next
+              <ChevronRight className="w-4 h-4 ml-1" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

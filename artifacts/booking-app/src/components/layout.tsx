@@ -7,6 +7,9 @@ import { CallAlertBanner } from "@/components/call-alert-banner";
 import { SiteFooter } from "@/components/footer";
 import logoImg from "@assets/833tidyups-logo.png";
 import {
+  useListContactMessages,
+  getListContactMessagesQueryKey,
+} from "@workspace/api-client-react";
 
 function LayoutInner({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -14,14 +17,16 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
   const { bannerVisible } = useLiveCall();
   // Poll every 30s so a new public contact submission surfaces in the badge
   // without the dispatcher needing to refocus or navigate.
-  const { data: contactMessages } = useListContactMessages({
+  // Only the counts matter for the badge, so request the smallest page.
+  const badgeParams = { limit: 1, offset: 0 };
+  const { data: contactMessages } = useListContactMessages(badgeParams, {
     query: {
-      queryKey: getListContactMessagesQueryKey(),
+      queryKey: getListContactMessagesQueryKey(badgeParams),
       refetchInterval: 30_000,
       refetchOnWindowFocus: true,
     },
   });
-  const unreadCount = contactMessages?.filter((m) => !m.handledAt).length ?? 0;
+  const unreadCount = contactMessages?.newCount ?? 0;
 
   const navItems = [
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
