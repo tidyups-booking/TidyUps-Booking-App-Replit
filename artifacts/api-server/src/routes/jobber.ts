@@ -25,6 +25,16 @@ const JOBBER_AUTH_URL = "https://api.getjobber.com/api/oauth/authorize";
  */
 const pendingOAuthStates = new Map<string, number>(); // state → expiry timestamp (ms)
 
+// GET /jobber/redirect-uri — returns the current OAuth callback URL so the
+// frontend can display it for copy-paste into the Jobber developer portal
+router.get("/jobber/redirect-uri", (req, res) => {
+  try {
+    res.json({ redirectUri: getCallbackUrl(getClerkProxyHost(req)) });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /jobber/status — check whether Jobber is connected
 router.get("/jobber/status", async (_req, res) => {
   try {
