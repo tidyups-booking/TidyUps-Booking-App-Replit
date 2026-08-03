@@ -373,14 +373,13 @@ router.patch("/bookings/:id", async (req, res): Promise<void> => {
 
   const data = parsed.data;
   const updateData: Record<string, unknown> = {};
+  // Non-nullable fields: only update when explicitly provided
   if (data.firstName !== undefined) updateData.firstName = data.firstName;
   if (data.lastName !== undefined) updateData.lastName = data.lastName;
   if (data.phone !== undefined) updateData.phone = data.phone;
-  if (data.email !== undefined) updateData.email = data.email;
   if (data.address !== undefined) updateData.address = data.address;
   if (data.city !== undefined) updateData.city = data.city;
   if (data.province !== undefined) updateData.province = data.province;
-  if (data.postalCode !== undefined) updateData.postalCode = data.postalCode;
   if (data.serviceType !== undefined) updateData.serviceType = data.serviceType;
   if (data.bedrooms !== undefined) updateData.bedrooms = data.bedrooms;
   if (data.bathrooms !== undefined) updateData.bathrooms = data.bathrooms;
@@ -388,11 +387,16 @@ router.patch("/bookings/:id", async (req, res): Promise<void> => {
   if (data.scheduledDate !== undefined) updateData.scheduledDate = data.scheduledDate;
   if (data.scheduledTime !== undefined) updateData.scheduledTime = data.scheduledTime;
   if (data.frequency !== undefined) updateData.frequency = data.frequency;
-  if (data.estimatedPrice !== undefined) updateData.estimatedPrice = data.estimatedPrice;
-  if (data.notes !== undefined) updateData.notes = data.notes;
   if (data.status !== undefined) updateData.status = data.status;
   if (data.jobberJobId !== undefined) updateData.jobberJobId = data.jobberJobId;
-  if (data.staffId !== undefined) updateData.staffId = data.staffId;
+  // Nullable fields: undefined = no change; null or a value = write it (null clears the column)
+  if (data.email !== undefined) updateData.email = data.email ?? null;
+  if (data.postalCode !== undefined) updateData.postalCode = data.postalCode ?? null;
+  if (data.estimatedPrice !== undefined) updateData.estimatedPrice = data.estimatedPrice ?? null;
+  if (data.notes !== undefined) updateData.notes = data.notes ?? null;
+  if (data.staffId !== undefined) updateData.staffId = data.staffId ?? null;
+  if (data.addressLat !== undefined) updateData.addressLat = data.addressLat ?? null;
+  if (data.addressLng !== undefined) updateData.addressLng = data.addressLng ?? null;
 
   const [booking] = await db
     .update(bookingsTable)

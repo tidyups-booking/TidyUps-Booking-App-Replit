@@ -1,25 +1,36 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useLocation, useParams } from "wouter";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
 import { 
   useGetBooking, 
   useUpdateBooking, 
   useDeleteBooking,
+  useListStaff,
   getGetBookingQueryKey,
   getListBookingsQueryKey,
   getGetUpcomingBookingsQueryKey,
-  getGetBookingStatsQueryKey
+  getGetBookingStatsQueryKey,
+  type BookingUpdate,
+  BookingUpdateServiceType,
+  BookingUpdateFrequency,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { StatusBadge, ServiceTypeBadge } from "@/components/badges";
-import { formatDate, formatTime, formatCurrency } from "@/lib/utils";
+import { formatDate, formatTime, formatCurrency, cn } from "@/lib/utils";
 import { NativeSelect } from "@/components/ui/native-select";
 import { useToast } from "@/hooks/use-toast";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { 
   ArrowLeft, MapPin, Phone, Mail, Home, Clock, Calendar, 
   Edit3, Trash2, CheckCircle2, AlertCircle, FileText, 
-  User, ChevronDown, ChevronUp, Mic
+  User, ChevronDown, ChevronUp, Mic, X, Save, Users
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { JobberSyncCard, type JobberSyncStatus } from "@/components/jobber-sync-card";
@@ -37,6 +48,33 @@ interface CallTranscriptRow {
   createdAt: string;
 }
 
+const EXTRAS_OPTIONS = ["Oven", "Fridge", "Windows", "Laundry", "Garage", "Basement", "Inside Cabinets"];
+
+const editSchema = z.object({
+  firstName: z.string().min(1, "First name is required"),
+  lastName: z.string().min(1, "Last name is required"),
+  phone: z.string().min(7, "Phone number is required"),
+  email: z.string().email("Invalid email").optional().or(z.literal("")),
+  address: z.string().min(1, "Address is required"),
+  city: z.string().min(1, "City is required"),
+  province: z.string().default("AB"),
+  postalCode: z.string().optional().or(z.literal("")),
+  serviceType: z.enum(["standard_clean", "deep_clean", "move_in_out", "post_construction"]),
+  bedrooms: z.coerce.number().min(0).max(10),
+  bathrooms: z.coerce.number().min(1).max(10),
+  scheduledDate: z.string().min(1, "Date is required"),
+  scheduledTime: z.string().min(1, "Time is required"),
+  frequency: z.enum(["one_time", "weekly", "biweekly", "monthly"]),
+  estimatedPrice: z.coerce.number().optional(),
+  notes: z.string().optional(),
+  extras: z.array(z.string()).default([]),
+  staffId: z.coerce.number().optional(),
+  addressLat: z.number().optional(),
+  addressLng: z.number().optional(),
+});
+
+type EditFormValues = z.infer<typeof editSchema>;
+
 export default function BookingDetail() {
   const params = useParams();
   const id = Number(params.id);
@@ -52,6 +90,9 @@ export default function BookingDetail() {
   const [addNoteOpen, setAddNoteOpen] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [savingNote, setSavingNote] = useState(false);
+
+  // Edit mode state
+  const [isEditing, setIsEditing] = useState(false);
 
   const { data: booking, isLoading, isError } = useGetBooking(id, {
     query: {
@@ -73,6 +114,67 @@ export default function BookingDetail() {
 
   const updateBooking = useUpdateBooking();
   const deleteBooking = useDeleteBooking();
+  const { data: staff = [] } = useListStaff({ activeOnly: true });
+
+  // Edit form
+  const form = useForm<EditFormValues>({
+    resolver: zodResolver(editSchema),
+    defaultValues: {
+      firstName: "",
+      lastName: "",
+      phone: "",
+      email: "",
+      address: "",
+      city: "",
+      province: "AB",
+      postalCode: "",
+      serviceType: "standard_clean",
+      bedrooms: 1,
+      bathrooms: 1,
+      scheduledDate: "",
+      scheduledTime: "09:00",
+      frequency: "one_time",
+      extras: [],
+      notes: "",
+      staffId: undefined,
+    },
+  });
+
+  // Populate form when booking loads or edit mode is entered
+  const populateForm = useCallback((b: any) => {
+    form.reset({
+      firstName: b.firstName ?? "",
+      lastName: b.lastName ?? "",
+      phone: b.phone ?? "",
+      email: b.email ?? "",
+      address: b.address ?? "",
+      city: b.city ?? "",
+      province: b.province ?? "AB",
+      postalCode: b.postalCode ?? "",
+      serviceType: b.serviceType ?? "standard_clean",
+      bedrooms: b.bedrooms ?? 1,
+      bathrooms: b.bathrooms ?? 1,
+      scheduledDate: b.scheduledDate ?? "",
+      scheduledTime: b.scheduledTime ?? "09:00",
+      frequency: b.frequency ?? "one_time",
+      estimatedPrice: b.estimatedPrice ?? undefined,
+      notes: b.notes ?? "",
+      extras: b.extras ?? [],
+      staffId: b.staffId ?? undefined,
+      addressLat: b.addressLat ?? undefined,
+      addressLng: b.addressLng ?? undefined,
+    });
+  }, [form]);
+
+  const handleEnterEdit = () => {
+    if (booking) populateForm(booking);
+    setIsEditing(true);
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    form.reset();
+  };
 
   // Fetch call transcript for this booking
   useEffect(() => {
@@ -155,6 +257,47 @@ export default function BookingDetail() {
     }
   };
 
+  const onSaveEdit = (data: EditFormValues) => {
+    const payload: BookingUpdate = {
+      firstName: data.firstName,
+      lastName: data.lastName,
+      phone: data.phone,
+      // Nullable fields — send null to clear, not undefined (which is a no-op)
+      email: data.email?.trim() || null,
+      address: data.address,
+      city: data.city,
+      province: data.province,
+      postalCode: data.postalCode?.trim() || null,
+      serviceType: data.serviceType as (typeof BookingUpdateServiceType)[keyof typeof BookingUpdateServiceType],
+      bedrooms: data.bedrooms,
+      bathrooms: data.bathrooms,
+      extras: data.extras,
+      scheduledDate: data.scheduledDate,
+      scheduledTime: data.scheduledTime,
+      frequency: data.frequency as (typeof BookingUpdateFrequency)[keyof typeof BookingUpdateFrequency],
+      estimatedPrice: (data.estimatedPrice !== undefined && !isNaN(data.estimatedPrice)) ? data.estimatedPrice : null,
+      notes: data.notes?.trim() || null,
+      staffId: data.staffId || null,
+      // Coordinates — send null when no autocomplete selection was made (address text unchanged)
+      addressLat: data.addressLat ?? null,
+      addressLng: data.addressLng ?? null,
+    };
+
+    updateBooking.mutate({ id, data: payload }, {
+      onSuccess: (updated) => {
+        toast({ title: "Booking Updated", description: "All changes have been saved." });
+        queryClient.setQueryData(getGetBookingQueryKey(id), updated);
+        queryClient.invalidateQueries({ queryKey: getListBookingsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetUpcomingBookingsQueryKey() });
+        queryClient.invalidateQueries({ queryKey: getGetBookingStatsQueryKey() });
+        setIsEditing(false);
+      },
+      onError: () => {
+        toast({ title: "Error", description: "Failed to save changes", variant: "destructive" });
+      }
+    });
+  };
+
   if (isLoading || !booking) {
     return (
       <div className="space-y-6">
@@ -164,6 +307,339 @@ export default function BookingDetail() {
     );
   }
 
+  // ── Edit mode ──────────────────────────────────────────────────────────────
+  if (isEditing) {
+    const extras = form.watch("extras") ?? [];
+    const toggleExtra = (extra: string) => {
+      const current = form.getValues("extras") ?? [];
+      form.setValue(
+        "extras",
+        current.includes(extra) ? current.filter((e) => e !== extra) : [...current, extra],
+        { shouldDirty: true }
+      );
+    };
+
+    return (
+      <div className="max-w-5xl mx-auto animate-in slide-in-from-bottom-4 duration-500 pb-10">
+        {/* Edit Header */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+          <Button variant="ghost" onClick={handleCancelEdit} className="gap-2 -ml-4 hover:bg-transparent">
+            <ArrowLeft className="w-4 h-4" /> Cancel
+          </Button>
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium text-muted-foreground">Editing Booking #{id}</span>
+            <Button
+              variant="outline"
+              onClick={handleCancelEdit}
+              disabled={updateBooking.isPending}
+              className="gap-2"
+            >
+              <X className="w-4 h-4" /> Discard
+            </Button>
+            <Button
+              onClick={form.handleSubmit(onSaveEdit)}
+              disabled={updateBooking.isPending}
+              className="gap-2"
+            >
+              <Save className="w-4 h-4" />
+              {updateBooking.isPending ? "Saving…" : "Save Changes"}
+            </Button>
+          </div>
+        </div>
+
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSaveEdit)} className="space-y-6">
+            <div className="grid md:grid-cols-2 gap-6">
+              {/* Customer Info */}
+              <Card className="border-t-4 border-t-primary shadow-md">
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <User className="w-5 h-5 text-primary" /> Customer Info
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField control={form.control} name="firstName" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>First Name</FormLabel>
+                        <FormControl><Input placeholder="Jane" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="lastName" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Last Name</FormLabel>
+                        <FormControl><Input placeholder="Doe" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField control={form.control} name="phone" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Phone Number</FormLabel>
+                        <FormControl>
+                          <div className="relative">
+                            <Phone className="w-4 h-4 absolute left-3 top-3.5 text-muted-foreground" />
+                            <Input type="tel" placeholder="(780) 555-1234" className="pl-9" {...field} />
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="email" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Email <span className="text-muted-foreground font-normal">(Optional)</span></FormLabel>
+                        <FormControl><Input type="email" placeholder="jane@example.com" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Location */}
+              <Card className="border-t-4 border-t-secondary shadow-md">
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <MapPin className="w-5 h-5 text-secondary" /> Location
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <FormField control={form.control} name="address" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Street Address</FormLabel>
+                      <FormControl>
+                        <AddressAutocomplete
+                          value={field.value}
+                          onChange={field.onChange}
+                          onPlaceSelect={(place) => {
+                            form.setValue("address", place.address, { shouldValidate: true });
+                            if (place.city) form.setValue("city", place.city, { shouldValidate: true });
+                            if (place.province) form.setValue("province", place.province);
+                            if (place.postalCode) form.setValue("postalCode", place.postalCode, { shouldValidate: true });
+                            if (place.lat && place.lng) {
+                              form.setValue("addressLat", place.lat);
+                              form.setValue("addressLng", place.lng);
+                            }
+                          }}
+                          placeholder="123 Main St NW"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <div className="grid grid-cols-[2fr_1fr_1fr] gap-4">
+                    <FormField control={form.control} name="city" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>City</FormLabel>
+                        <FormControl><Input placeholder="Edmonton" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="province" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Prov</FormLabel>
+                        <FormControl>
+                          <NativeSelect {...field}>
+                            <option value="AB">AB</option>
+                            <option value="BC">BC</option>
+                            <option value="SK">SK</option>
+                            <option value="ON">ON</option>
+                          </NativeSelect>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="postalCode" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Postal</FormLabel>
+                        <FormControl><Input placeholder="T5J" className="uppercase" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-6">
+              {/* Job Scope */}
+              <Card className="shadow-md">
+                <CardHeader className="pb-4 border-b">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Home className="w-5 h-5" /> Job Scope
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4 pt-4">
+                  <FormField control={form.control} name="serviceType" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Service Type</FormLabel>
+                      <FormControl>
+                        <NativeSelect {...field} className="h-12 text-base font-medium">
+                          <option value="standard_clean">Standard Clean</option>
+                          <option value="deep_clean">Deep Clean</option>
+                          <option value="move_in_out">Move In/Out</option>
+                          <option value="post_construction">Post-Construction</option>
+                        </NativeSelect>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField control={form.control} name="bedrooms" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Bedrooms</FormLabel>
+                        <FormControl><Input type="number" min={0} max={10} {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="bathrooms" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Bathrooms</FormLabel>
+                        <FormControl><Input type="number" min={1} max={10} {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium mb-2">Extras</p>
+                    <div className="flex flex-wrap gap-2">
+                      {EXTRAS_OPTIONS.map((extra) => (
+                        <button
+                          key={extra}
+                          type="button"
+                          onClick={() => toggleExtra(extra)}
+                          className={cn(
+                            "px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors",
+                            extras.includes(extra)
+                              ? "bg-secondary text-secondary-foreground border-secondary"
+                              : "bg-background text-muted-foreground border-muted hover:border-secondary/50"
+                          )}
+                        >
+                          {extra}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <FormField control={form.control} name="estimatedPrice" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Estimated Price ($)</FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          <span className="absolute left-3 top-3 text-muted-foreground text-sm">$</span>
+                          <Input type="number" min={0} step={5} placeholder="150" className="pl-7"
+                            {...field}
+                            value={field.value ?? ""}
+                            onChange={(e) => field.onChange(e.target.value === "" ? undefined : Number(e.target.value))}
+                          />
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </CardContent>
+              </Card>
+
+              {/* Schedule + Assignment */}
+              <Card className="shadow-md">
+                <CardHeader className="pb-4 border-b">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Calendar className="w-5 h-5" /> Schedule & Assignment
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4 pt-4">
+                  <FormField control={form.control} name="scheduledDate" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Date</FormLabel>
+                      <FormControl><Input type="date" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="scheduledTime" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Time</FormLabel>
+                      <FormControl><Input type="time" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="frequency" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Frequency</FormLabel>
+                      <FormControl>
+                        <NativeSelect {...field}>
+                          <option value="one_time">One Time</option>
+                          <option value="weekly">Weekly</option>
+                          <option value="biweekly">Biweekly</option>
+                          <option value="monthly">Monthly</option>
+                        </NativeSelect>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  {staff.length > 0 && (
+                    <FormField control={form.control} name="staffId" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="flex items-center gap-1"><Users className="w-4 h-4" /> Assigned Cleaner</FormLabel>
+                        <FormControl>
+                          <NativeSelect
+                            value={field.value?.toString() ?? ""}
+                            onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)}
+                          >
+                            <option value="">— Unassigned —</option>
+                            {staff.map((s: any) => (
+                              <option key={s.id} value={s.id}>{s.name}</option>
+                            ))}
+                          </NativeSelect>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Notes */}
+            <Card className="shadow-md">
+              <CardHeader className="pb-4 border-b">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <FileText className="w-5 h-5" /> Notes
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4">
+                <FormField control={form.control} name="notes" render={({ field }) => (
+                  <FormItem>
+                    <FormControl>
+                      <Textarea
+                        placeholder="Any important notes about this booking…"
+                        className="min-h-[100px] resize-none"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              </CardContent>
+            </Card>
+
+            {/* Save bar */}
+            <div className="flex justify-end gap-3 pt-2">
+              <Button type="button" variant="outline" onClick={handleCancelEdit} disabled={updateBooking.isPending}>
+                Discard Changes
+              </Button>
+              <Button type="submit" disabled={updateBooking.isPending} className="gap-2 min-w-[140px]">
+                <Save className="w-4 h-4" />
+                {updateBooking.isPending ? "Saving…" : "Save Changes"}
+              </Button>
+            </div>
+          </form>
+        </Form>
+      </div>
+    );
+  }
+
+  // ── Read-only view ─────────────────────────────────────────────────────────
   return (
     <div className="max-w-5xl mx-auto animate-in slide-in-from-bottom-4 duration-500 pb-10">
       
@@ -173,6 +649,9 @@ export default function BookingDetail() {
           <ArrowLeft className="w-4 h-4" /> Back
         </Button>
         <div className="flex items-center gap-3">
+          <Button variant="outline" onClick={handleEnterEdit} className="gap-2">
+            <Edit3 className="w-4 h-4" /> Edit Booking
+          </Button>
           <div className="flex items-center gap-2 bg-muted/50 p-1.5 rounded-lg border">
             <span className="text-sm font-medium text-muted-foreground px-2">Update Status:</span>
             <NativeSelect 

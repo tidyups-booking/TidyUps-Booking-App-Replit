@@ -225,15 +225,15 @@ export const UpdateBookingParams = zod.object({
 })
 
 export const UpdateBookingBody = zod.object({
-  "staffId": zod.number().optional(),
+  "staffId": zod.number().nullish(),
   "firstName": zod.string().optional(),
   "lastName": zod.string().optional(),
   "phone": zod.string().optional(),
-  "email": zod.string().optional(),
+  "email": zod.string().nullish(),
   "address": zod.string().optional(),
   "city": zod.string().optional(),
   "province": zod.string().optional(),
-  "postalCode": zod.string().optional(),
+  "postalCode": zod.string().nullish(),
   "serviceType": zod.enum(['standard_clean', 'deep_clean', 'move_in_out', 'post_construction']).optional(),
   "bedrooms": zod.number().optional(),
   "bathrooms": zod.number().optional(),
@@ -241,10 +241,12 @@ export const UpdateBookingBody = zod.object({
   "scheduledDate": zod.string().optional(),
   "scheduledTime": zod.string().optional(),
   "frequency": zod.enum(['one_time', 'weekly', 'biweekly', 'monthly']).optional(),
-  "estimatedPrice": zod.number().optional(),
-  "notes": zod.string().optional(),
+  "estimatedPrice": zod.number().nullish(),
+  "notes": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']).optional(),
-  "jobberJobId": zod.string().optional()
+  "jobberJobId": zod.string().optional(),
+  "addressLat": zod.number().nullish(),
+  "addressLng": zod.number().nullish()
 })
 
 export const UpdateBookingResponse = zod.object({
