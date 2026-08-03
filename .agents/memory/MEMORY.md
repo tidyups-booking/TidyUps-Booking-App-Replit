@@ -4,6 +4,7 @@
 - [Jobber API quirks](jobber-api.md) — Jobber retires GraphQL versions (404s), filter fields renamed across versions; drizzle `${arr}` becomes a tuple, use `sql.param(arr)` for `ANY(::text[])`
 - [Cleaner App Auth](cleaner-app-auth.md) — Clerk v4 Expo auth: use @clerk/expo/legacy for useSignIn/useSignUp; useSSO from @clerk/expo; signals API (default export) lacks setActive
 - [Clerk dev/prod identity split](clerk-dev-prod-identity.md) — dev & prod Clerk IDs differ; ID-keyed allowlists don't carry to prod (403 everywhere); bridge with verified-email bootstrap (DISPATCHER_EMAILS)
+- [Clerk e2e test users](clerk-e2e-test-users.md) — backend-created emails are auto-verified; users must keep ≥1 verified email; reuse/delete stray test users to avoid email-taken 422s
 - [Orval codegen + zod v3](orval-codegen.md) — never use `format: email` in openapi.yaml (generates zod v4-only `zod.email()`); use a `pattern` regex instead
 - [Booking price-breakdown invariants](price-breakdown-invariants.md) — itemized quote must reconcile end-to-end; loyalty last, refuse over-quote discounts, server validates + auto-clears
 - [TS project references](ts-project-references.md) — api-server typechecks against lib/*/dist .d.ts; rebuild `tsc --build` in lib/db & lib/api-zod after adding schema/types or "missing export" errors break deploys
