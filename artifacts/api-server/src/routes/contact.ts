@@ -100,10 +100,3 @@ router.post("/contact", async (req, res): Promise<void> => {
 });
 
 export default router;
-
-  const id = Number(req.params.id);
-
-  const rows = await db
-    .select()
-    .from(contactMessagesTable)
-    .orderBy(desc(contactMessagesTable.createdAt), desc(contactMessagesTable.id));
