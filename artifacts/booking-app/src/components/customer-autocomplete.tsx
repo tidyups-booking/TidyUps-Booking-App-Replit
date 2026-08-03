@@ -8,6 +8,7 @@ import { History } from "lucide-react";
 // (name, phone, email, address, beds/baths, service) can be pre-filled.
 
 export interface CustomerRecord {
+  bookingCount?: number;
   firstName: string;
   lastName: string;
   phone: string;

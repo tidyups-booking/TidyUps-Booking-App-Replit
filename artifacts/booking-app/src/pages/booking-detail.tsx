@@ -111,6 +111,11 @@ export default function BookingDetail() {
   // Edit mode state
   const [isEditing, setIsEditing] = useState(false);
 
+  // Quick-discount state (mirrors New Booking): loyalty button appears when the
+  // customer has prior bookings besides this one.
+  const [loyaltyEligible, setLoyaltyEligible] = useState(false);
+  const [discountApplied, setDiscountApplied] = useState(false);
+
   const { data: booking, isLoading, isError } = useGetBooking(id, {
     query: {
       enabled: !!id,
@@ -185,6 +190,7 @@ export default function BookingDetail() {
 
   const handleEnterEdit = () => {
     if (booking) populateForm(booking);
+    setDiscountApplied(false);
     setIsEditing(true);
   };
 
@@ -192,6 +198,31 @@ export default function BookingDetail() {
     setIsEditing(false);
     form.reset();
   };
+
+  // Loyalty-discount eligibility: customer has bookings other than this one.
+  // Matches the New Booking returning-customer lookup by phone digits.
+  useEffect(() => {
+    const digits = (booking?.phone ?? "").replace(/\D/g, "");
+    if (digits.length < 7) {
+      setLoyaltyEligible(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${getBaseUrl()}api/bookings/customers/search?q=${encodeURIComponent(digits)}`, { credentials: "include" });
+        if (cancelled || !res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        const match = (data.customers ?? []).find(
+          (c: { phone: string; bookingCount?: number }) => c.phone.replace(/\D/g, "") === digits
+        );
+        // This booking itself counts as one — prior bookings means count > 1
+        setLoyaltyEligible(!!match && (match.bookingCount ?? 1) > 1);
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, [booking?.phone]);
 
   // Fetch call transcript for this booking
   useEffect(() => {
@@ -559,10 +590,52 @@ export default function BookingDetail() {
                           <Input type="number" min={0} step={5} placeholder="150" className="pl-7"
                             {...field}
                             value={field.value ?? ""}
-                            onChange={(e) => field.onChange(e.target.value === "" ? undefined : Number(e.target.value))}
+                            onChange={(e) => { setDiscountApplied(false); field.onChange(e.target.value === "" ? undefined : Number(e.target.value)); }}
                           />
                         </div>
                       </FormControl>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {[10, 20].map((off) => (
+                          <button
+                            key={off}
+                            type="button"
+                            onClick={() => {
+                              const current = parseFloat(String(field.value));
+                              if (!isFinite(current) || current <= 0) {
+                                toast({ title: "Enter a price first", description: "Type the quoted price, then apply the discount." });
+                                return;
+                              }
+                              field.onChange(Math.round(Math.max(0, current - off) * 100) / 100);
+                            }}
+                            className="text-xs font-semibold text-primary border border-primary/30 bg-background rounded-full px-3 py-1 hover:bg-primary/10 transition-colors"
+                          >
+                            −${off} off
+                          </button>
+                        ))}
+                      </div>
+                      {loyaltyEligible && (
+                        discountApplied ? (
+                          <p className="text-xs font-medium text-green-600 dark:text-green-400 flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5" /> 10% loyalty discount applied
+                          </p>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const current = parseFloat(String(field.value));
+                              if (!isFinite(current) || current <= 0) {
+                                toast({ title: "Enter a price first", description: "Type the quoted price, then apply the discount." });
+                                return;
+                              }
+                              field.onChange(Math.round(current * 0.9 * 100) / 100);
+                              setDiscountApplied(true);
+                            }}
+                            className="text-xs font-semibold text-green-700 dark:text-green-400 border border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-950/30 rounded-full px-3 py-1 hover:bg-green-100 dark:hover:bg-green-900/40 transition-colors"
+                          >
+                            Apply 10% loyalty discount
+                          </button>
+                        )
+                      )}
                       <FormMessage />
                     </FormItem>
                   )} />

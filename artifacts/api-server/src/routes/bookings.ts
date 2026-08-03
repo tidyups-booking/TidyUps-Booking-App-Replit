@@ -152,6 +152,13 @@ router.get("/bookings/customers/search", async (req, res): Promise<void> => {
     .limit(50);
 
   // One suggestion per customer — keyed by phone (fallback: name+address)
+  // bookingCount = number of matched bookings for that customer (within the 50-row window),
+  // used by the client to decide loyalty-discount eligibility.
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    const key = r.phone?.replace(/\D/g, "") || `${r.firstName} ${r.lastName} ${r.address}`.toLowerCase();
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
   const seen = new Set<string>();
   const customers: any[] = [];
   for (const r of rows) {
@@ -159,6 +166,7 @@ router.get("/bookings/customers/search", async (req, res): Promise<void> => {
     if (seen.has(key)) continue;
     seen.add(key);
     customers.push({
+      bookingCount: counts.get(key) ?? 1,
       firstName: r.firstName,
       lastName: r.lastName,
       phone: r.phone,
