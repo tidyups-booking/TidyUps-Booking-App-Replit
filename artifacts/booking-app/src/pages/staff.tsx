@@ -8,10 +8,11 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { Users, Plus, Phone, Pencil, CheckCircle2, X, MapPin } from "lucide-react";
+import { Users, Plus, Phone, Pencil, CheckCircle2, X, MapPin, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Staff } from "@workspace/api-client-react";
 import { AddressAutocomplete } from "@/components/address-autocomplete";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const ROLE_LABELS: Record<string, string> = {
   cleaner: "Cleaner",
@@ -26,11 +27,15 @@ function StaffCard({
   staff: Staff;
   onEdit: (staff: Staff) => void;
 }) {
+  const s = staff as any;
+  const hasAddressNoCoords = s.homeAddress && s.homeLat == null;
+
   return (
     <Card
       className={cn(
         "shadow-sm transition-all",
-        !staff.active && "opacity-60 border-dashed"
+        !staff.active && "opacity-60 border-dashed",
+        hasAddressNoCoords && "border-yellow-400/60"
       )}
     >
       <CardContent className="p-4">
@@ -43,14 +48,14 @@ function StaffCard({
           >
             {staff.name
               .split(" ")
-              .map((n) => n[0])
+              .map((n: string) => n[0])
               .join("")
               .toUpperCase()
               .slice(0, 2)}
           </div>
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-sm">{staff.name}</p>
-            <div className="flex items-center gap-2 mt-0.5">
+            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
               <Badge
                 variant="outline"
                 className="text-xs px-1.5 py-0"
@@ -61,6 +66,24 @@ function StaffCard({
                 <Badge variant="outline" className="text-xs px-1.5 py-0 text-muted-foreground border-muted">
                   Inactive
                 </Badge>
+              )}
+              {hasAddressNoCoords && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Badge
+                        variant="outline"
+                        className="text-xs px-1.5 py-0 text-yellow-700 border-yellow-400 bg-yellow-50 dark:bg-yellow-950/30 dark:text-yellow-400 cursor-default gap-1"
+                      >
+                        <AlertTriangle className="w-3 h-3" />
+                        Not geocoded
+                      </Badge>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="max-w-[220px] text-center">
+                      Address saved but no coordinates — pin won't show on map. Edit and pick from the dropdown to fix.
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               )}
             </div>
             {staff.phone && (
@@ -162,6 +185,17 @@ export default function StaffManagement() {
 
     if (!payload.name) {
       toast({ title: "Name required", description: "Please enter the staff member's name.", variant: "destructive" });
+      return;
+    }
+
+    // Warn if address typed but no coordinates selected from dropdown
+    if (payload.homeAddress && !payload.homeLat) {
+      toast({
+        title: "Address not geocoded",
+        description: "Pick an address from the autocomplete suggestions to save coordinates — otherwise this staff member won't appear as a pin on the map.",
+        variant: "destructive",
+        duration: 6000,
+      });
       return;
     }
 
@@ -311,7 +345,10 @@ export default function StaffManagement() {
                 </p>
               )}
               {form.homeAddress && !form.homeLat && (
-                <p className="text-xs text-muted-foreground">Select an address from the suggestions to save coordinates</p>
+                <p className="text-xs text-yellow-700 dark:text-yellow-400 flex items-center gap-1 font-medium">
+                  <AlertTriangle className="w-3 h-3 shrink-0" />
+                  Pick an address from the dropdown — typing won't save coordinates and the pin won't appear on the map.
+                </p>
               )}
             </div>
 
