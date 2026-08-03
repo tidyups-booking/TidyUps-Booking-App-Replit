@@ -412,12 +412,19 @@ export default function NewBooking() {
     if (leadDiscountApplied) price = Math.max(0, price - 10);
     form.setValue("estimatedPrice", price as any);
     setDiscountApplied(false);
+    // Recomputing from hours × rate starts a fresh price — quick discounts are cleared
+    setTenCount(0);
+    setTwentyCount(0);
   };
 
   const handleRateChange = (rate: number) => {
     setHourlyRate(rate);
     recomputePrice(parseFloat(hours), rate);
   };
+
+  // Counters for the quick −$10/−$20 buttons so dispatchers can see and undo taps
+  const [tenCount, setTenCount] = useState(0);
+  const [twentyCount, setTwentyCount] = useState(0);
 
   const adjustPrice = (delta: number) => {
     const current = parseFloat(String(form.getValues("estimatedPrice")));
@@ -927,7 +934,7 @@ export default function NewBooking() {
                                 placeholder="105.00"
                                 className="pl-10 text-xl font-bold border-primary/30 focus-visible:ring-primary"
                                 {...field}
-                                onChange={(e) => { setDiscountApplied(false); field.onChange(e); }}
+                                onChange={(e) => { setDiscountApplied(false); setTenCount(0); setTwentyCount(0); field.onChange(e); }}
                               />
                             </div>
                           </div>
@@ -958,23 +965,50 @@ export default function NewBooking() {
                           )}
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
-                          {[10, 20].map((off) => (
-                            <button
-                              key={off}
-                              type="button"
-                              onClick={() => {
-                                const current = parseFloat(String(field.value));
-                                if (!isFinite(current) || current <= 0) {
-                                  toast({ title: "Enter a price first", description: "Type the quoted price, then apply the discount." });
-                                  return;
-                                }
-                                field.onChange((Math.round(Math.max(0, current - off) * 100) / 100).toString());
-                              }}
-                              className="text-xs font-semibold text-primary border border-primary/30 bg-background rounded-full px-3 py-1 hover:bg-primary/10 transition-colors"
-                            >
-                              −${off} off
-                            </button>
+                          {[{ off: 10, count: tenCount, setCount: setTenCount }, { off: 20, count: twentyCount, setCount: setTwentyCount }].map(({ off, count, setCount }) => (
+                            <div key={off} className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const current = parseFloat(String(field.value));
+                                  if (!isFinite(current) || current <= 0) {
+                                    toast({ title: "Enter a price first", description: "Type the quoted price, then apply the discount." });
+                                    return;
+                                  }
+                                  field.onChange((Math.round(Math.max(0, current - off) * 100) / 100).toString());
+                                  setCount(count + 1);
+                                }}
+                                className={cn(
+                                  "text-xs font-semibold rounded-full px-3 py-1 border transition-colors",
+                                  count > 0
+                                    ? "bg-primary text-white border-primary"
+                                    : "text-primary border-primary/30 bg-background hover:bg-primary/10"
+                                )}
+                              >
+                                −${off} off{count > 0 && ` ×${count}`}
+                              </button>
+                              {count > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const current = parseFloat(String(field.value));
+                                    if (!isFinite(current)) return;
+                                    field.onChange((Math.round((current + off) * 100) / 100).toString());
+                                    setCount(count - 1);
+                                  }}
+                                  className="text-xs text-muted-foreground border border-border rounded-full px-2 py-1 hover:bg-muted transition-colors"
+                                  title={`Undo one −$${off}`}
+                                >
+                                  ↩ undo
+                                </button>
+                              )}
+                            </div>
                           ))}
+                          {(tenCount > 0 || twentyCount > 0) && (
+                            <span className="text-xs font-medium text-green-700 dark:text-green-400">
+                              −${tenCount * 10 + twentyCount * 20} in quick discounts
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 text-sm">
                           <span className="text-muted-foreground">+ Fuel surcharge $</span>
