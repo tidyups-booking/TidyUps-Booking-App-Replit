@@ -833,6 +833,25 @@ export default function NewBooking() {
                             />
                           </div>
                         </FormControl>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {[10, 20].map((off) => (
+                            <button
+                              key={off}
+                              type="button"
+                              onClick={() => {
+                                const current = parseFloat(String(field.value));
+                                if (!isFinite(current) || current <= 0) {
+                                  toast({ title: "Enter a price first", description: "Type the quoted price, then apply the discount." });
+                                  return;
+                                }
+                                field.onChange((Math.round(Math.max(0, current - off) * 100) / 100).toString());
+                              }}
+                              className="text-xs font-semibold text-primary border border-primary/30 bg-background rounded-full px-3 py-1 hover:bg-primary/10 transition-colors"
+                            >
+                              −${off} off
+                            </button>
+                          ))}
+                        </div>
                         {loyaltyEligible && (
                           discountApplied ? (
                             <p className="text-xs font-medium text-green-600 dark:text-green-400 flex items-center gap-1">
