@@ -16,6 +16,15 @@ router.post("/ai/extract-booking", async (req, res): Promise<void> => {
       return;
     }
 
+    // Guard against abnormally large transcripts that would trigger expensive
+    // OpenAI calls. A 30-minute phone call transcript is comfortably under
+    // 50 KB; anything larger is either malformed or an abuse attempt.
+    const MAX_TRANSCRIPT_BYTES = 50 * 1024; // 50 KB
+    if (Buffer.byteLength(transcript, "utf8") > MAX_TRANSCRIPT_BYTES) {
+      res.status(413).json({ error: "Transcript too large" });
+      return;
+    }
+
     const today = new Date().toISOString().split("T")[0];
 
     const response = await openai.chat.completions.create({

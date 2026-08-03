@@ -54,14 +54,7 @@ router.get("/jobber/auth", async (req, res) => {
     return;
   }
 
-  let callbackUrl: string;
-  try {
-    callbackUrl = getCallbackUrl(getClerkProxyHost(req));
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-    return;
-  }
-
+  const callbackUrl = getCallbackUrl(getClerkProxyHost(req));
   const state = generateOAuthState();
   const params = new URLSearchParams({
     client_id: clientId,
@@ -77,7 +70,6 @@ router.get("/jobber/auth", async (req, res) => {
 // GET /jobber/callback — Jobber redirects here with ?code=
 router.get("/jobber/callback", async (req, res) => {
   req.log.info({ query: req.query }, "Jobber OAuth callback received");
-
   const { code, error, error_description, state } = req.query as {
     code?: string;
     error?: string;
@@ -99,6 +91,7 @@ router.get("/jobber/callback", async (req, res) => {
   }
 
   if (!code) {
+    // Show a helpful page instead of blank 400
     const allParams = JSON.stringify(req.query, null, 2);
     res.status(400).send(`
       <h2>Jobber callback — no code received</h2>

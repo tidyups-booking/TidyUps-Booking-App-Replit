@@ -60,8 +60,11 @@ app.use(
     },
   }),
 );
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ extended: true }));
+// 1 MB is well above any legitimate booking API payload (a few KB at most).
+// The largest expected body is a call transcript sent to /ai/extract-booking;
+// even a 30-minute call transcript is comfortably under 100 KB.
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
 // Resolve publishable key from the request host so the same server can
 // serve multiple Clerk custom domains / dev + prod without config changes.
