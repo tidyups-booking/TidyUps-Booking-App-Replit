@@ -50,6 +50,11 @@ function cleanerColor(id: number) { return CLEANER_COLORS[id % CLEANER_COLORS.le
 function initials(name: string) {
   return name.split(" ").map(p => p[0]).join("").toUpperCase().slice(0, 2);
 }
+function esc(s: string) {
+  return s.replace(/[&<>"']/g, c => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!
+  ));
+}
 
 import { loadGoogleMaps, htmlToEl } from "@/lib/google-maps";
 
@@ -57,7 +62,7 @@ import { loadGoogleMaps, htmlToEl } from "@/lib/google-maps";
 
 function makeCleanerIcon(s: StaffEntry, isStale: boolean) {
   const color = cleanerColor(s.id);
-  const ini = initials(s.name);
+  const ini = esc(initials(s.name));
   const isHome = s.position?.source === "home";
   const opacity = isStale ? 0.45 : 1;
   const border = isHome ? `border:2px dashed ${color};` : `border:2.5px solid white;`;
@@ -82,7 +87,7 @@ function makeCleanerIcon(s: StaffEntry, isStale: boolean) {
 /** Small house pin — always-on home address marker for each staff member. */
 function makeHomeIcon(s: StaffEntry) {
   const color = cleanerColor(s.id);
-  const ini = initials(s.name);
+  const ini = esc(initials(s.name));
   const html = `
     <div style="width:36px;height:44px;display:flex;flex-direction:column;align-items:center;">
       <div style="width:32px;height:32px;border-radius:50% 50% 50% 4px;
@@ -190,18 +195,18 @@ function buildJobPopup(b: BookingEntry, staffMap: Map<number, StaffEntry>) {
     const label = i === 0 ? " (closest)" : i === ranking.length - 1 ? " (farthest)" : "";
     return `<div style="display:flex;align-items:center;gap:6px;padding:2px 0;font-size:12px;">
       <span>${medal}</span>
-      <span style="color:${color};font-weight:600;">${r.name}</span>
+      <span style="color:${color};font-weight:600;">${esc(r.name)}</span>
       <span style="color:#888;margin-left:auto;">${r.km.toFixed(1)} km${label}</span>
     </div>`;
   }).join("");
 
   return `
     <div style="font-family:sans-serif;min-width:200px;max-width:260px;">
-      <strong style="font-size:13px;">${b.firstName} ${b.lastName}</strong><br/>
-      ${b.scheduledTime ? `<span style="font-size:12px;color:#555;">⏰ ${b.scheduledTime}</span><br/>` : ""}
-      <span style="font-size:11px;color:#888;">📍 ${b.address}, ${b.city}</span><br/>
+      <strong style="font-size:13px;">${esc(b.firstName)} ${esc(b.lastName)}</strong><br/>
+      ${b.scheduledTime ? `<span style="font-size:12px;color:#555;">⏰ ${esc(b.scheduledTime)}</span><br/>` : ""}
+      <span style="font-size:11px;color:#888;">📍 ${esc(b.address)}, ${esc(b.city)}</span><br/>
       ${assignee
-        ? `<span style="font-size:12px;color:${cleanerColor(assignee.id)};font-weight:600;">👤 Assigned: ${assignee.name}</span>`
+        ? `<span style="font-size:12px;color:${cleanerColor(assignee.id)};font-weight:600;">👤 Assigned: ${esc(assignee.name)}</span>`
         : `<span style="font-size:12px;color:#888;">👤 Unassigned</span>`}
       ${ranking.length > 0 ? `
         <div style="margin-top:8px;border-top:1px solid #eee;padding-top:6px;">
@@ -481,10 +486,10 @@ export default function MapPage() {
         seenHome.add(homeKey);
         const homePopup = `
           <div style="font-family:sans-serif;min-width:150px;">
-            <strong style="color:${color}">${s.name}</strong><br/>
-            <span style="color:#888;font-size:12px;">${s.role.replace("_", " ")}</span><br/>
+            <strong style="color:${color}">${esc(s.name)}</strong><br/>
+            <span style="color:#888;font-size:12px;">${esc(s.role.replace("_", " "))}</span><br/>
             <span style="font-size:12px;">🏠 Home address</span>
-            ${s.homeAddress ? `<br/><span style="font-size:11px;color:#aaa;">📍 ${s.homeAddress}</span>` : ""}
+            ${s.homeAddress ? `<br/><span style="font-size:11px;color:#aaa;">📍 ${esc(s.homeAddress)}</span>` : ""}
           </div>`;
         upsertMarker(homeKey, s.homeLat, s.homeLng, makeHomeIcon(s), homePopup);
       }
@@ -497,10 +502,10 @@ export default function MapPage() {
         const liveIcon = makeCleanerIcon(s, false);
         const livePopup = `
           <div style="font-family:sans-serif;min-width:150px;">
-            <strong style="color:${color}">${s.name}</strong><br/>
-            <span style="color:#888;font-size:12px;">${s.role.replace("_", " ")}</span><br/>
+            <strong style="color:${color}">${esc(s.name)}</strong><br/>
+            <span style="color:#888;font-size:12px;">${esc(s.role.replace("_", " "))}</span><br/>
             <span style="font-size:12px;">📡 Live · updated ${formatAgo(s.liveLocation.updatedAt)}</span>
-            ${s.homeAddress ? `<br/><span style="font-size:11px;color:#aaa;">📍 ${s.homeAddress}</span>` : ""}
+            ${s.homeAddress ? `<br/><span style="font-size:11px;color:#aaa;">📍 ${esc(s.homeAddress)}</span>` : ""}
           </div>`;
         upsertMarker(liveKey, s.liveLocation.lat, s.liveLocation.lng, liveIcon, livePopup);
       }
