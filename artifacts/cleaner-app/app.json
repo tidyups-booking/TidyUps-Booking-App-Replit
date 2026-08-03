@@ -14,6 +14,7 @@
       "backgroundColor": "#FAFAFA"
     },
     "ios": {
+      "bundleIdentifier": "app.book.cleaning",
       "supportsTablet": false,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "833 Tidyups uses your location to share your position with dispatchers during work hours so they can coordinate jobs efficiently.",
