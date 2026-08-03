@@ -20,6 +20,7 @@ import { BookingMiniMap } from "@/components/booking-mini-map";
 import { EmailAutocomplete } from "@/components/email-autocomplete";
 import { CustomerAutocomplete, type CustomerRecord } from "@/components/customer-autocomplete";
 import { buildPriceBreakdown } from "@/lib/price-breakdown";
+import { PriceDiscountButtons } from "@/components/price-discount-buttons";
 
 const bookingSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
@@ -1023,36 +1024,15 @@ export default function NewBooking() {
                         </p>
                       )}
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 mt-2">
-                      {[{ off: 10, count: tenCount, setCount: setTenCount }, { off: 20, count: twentyCount, setCount: setTwentyCount }].map(({ off, count, setCount }) => (
-                        <div key={off} className="flex items-center gap-1">
-                          <button type="button"
-                            onClick={() => {
-                              if (guardLoyaltyLast()) return;
-                              const current = parseFloat(String(field.value));
-                              if (!isFinite(current) || current <= 0) { toast({ title: "Enter a price first", description: "Type the quoted price, then apply the discount." }); return; }
-                              if (current - off < 0) { toast({ title: "Price too low for this discount", description: `The quote must be at least $${off} to apply it.` }); return; }
-                              field.onChange((Math.round((current - off) * 100) / 100).toString());
-                              setCount(count + 1);
-                            }}
-                            className={cn("text-xs font-semibold rounded-full px-3 py-1 border transition-colors",
-                              count > 0 ? "bg-primary text-white border-primary" : "text-primary border-primary/30 bg-background hover:bg-primary/10")}
-                          >−${off} off{count > 0 && ` ×${count}`}</button>
-                          {count > 0 && (
-                            <button type="button"
-                              onClick={() => { if (guardLoyaltyLast()) return; const current = parseFloat(String(field.value)); if (!isFinite(current)) return; field.onChange((Math.round((current + off) * 100) / 100).toString()); setCount(count - 1); }}
-                              className="text-xs text-muted-foreground border border-border rounded-full px-2 py-1 hover:bg-muted transition-colors"
-                              title={`Undo one −$${off}`}
-                            >↩ undo</button>
-                          )}
-                        </div>
-                      ))}
-                      {(tenCount > 0 || twentyCount > 0) && (
-                        <span className="text-xs font-medium text-green-700 dark:text-green-400">
-                          −${tenCount * 10 + twentyCount * 20} in quick discounts
-                        </span>
-                      )}
-                    </div>
+                    <PriceDiscountButtons
+                      value={field.value}
+                      onApply={(p) => field.onChange(p.toString())}
+                      counts={{ ten: tenCount, twenty: twentyCount }}
+                      onCountsChange={(c) => { setTenCount(c.ten); setTwentyCount(c.twenty); }}
+                      loyaltyEligible={loyaltyEligible}
+                      loyalty={{ applied: discountApplied, amount: loyaltyAmount }}
+                      onLoyaltyChange={(l) => { setDiscountApplied(l.applied); setLoyaltyAmount(l.amount); }}
+                    />
                     <div className="flex items-center gap-2 text-sm mt-2">
                       <span className="text-muted-foreground">+ Fuel surcharge $</span>
                       <Input type="number" step="0.01" min="0" value={fuelSurcharge} onChange={(e) => setFuelSurcharge(e.target.value)} className="h-8 w-24 text-sm font-semibold border-primary/30" />
@@ -1064,35 +1044,6 @@ export default function NewBooking() {
                         ) : null;
                       })()}
                     </div>
-                    {loyaltyEligible && (
-                      discountApplied ? (
-                        <p className="text-xs font-medium text-green-600 dark:text-green-400 flex items-center gap-1 mt-2">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> 10% loyalty discount applied (−${loyaltyAmount.toFixed(2)})
-                          <button type="button"
-                            onClick={() => {
-                              const current = parseFloat(String(field.value));
-                              if (isFinite(current)) field.onChange((Math.round((current + loyaltyAmount) * 100) / 100).toString());
-                              setDiscountApplied(false);
-                              setLoyaltyAmount(0);
-                            }}
-                            className="ml-1 text-muted-foreground border border-border rounded-full px-2 py-0.5 hover:bg-muted transition-colors"
-                            title="Remove the loyalty discount"
-                          >↩ remove</button>
-                        </p>
-                      ) : (
-                        <button type="button"
-                          onClick={() => {
-                            const current = parseFloat(String(field.value));
-                            if (!isFinite(current) || current <= 0) { toast({ title: "Enter a price first", description: "Type the quoted price, then apply the discount." }); return; }
-                            const discounted = Math.round(current * 0.9 * 100) / 100;
-                            field.onChange(discounted.toString());
-                            setLoyaltyAmount(Math.round((current - discounted) * 100) / 100);
-                            setDiscountApplied(true);
-                          }}
-                          className="text-xs font-semibold text-green-700 dark:text-green-400 border border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-950/30 rounded-full px-3 py-1 hover:bg-green-100 dark:hover:bg-green-900/40 transition-colors mt-2"
-                        >Apply 10% loyalty discount</button>
-                      )
-                    )}
                     <FormMessage />
                   </FormItem>
                 )} />
