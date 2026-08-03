@@ -60,7 +60,7 @@ const clerkAppearance = {
   options: {
     logoPlacement: "inside" as const,
     logoLinkUrl: basePath || "/",
-    logoImageUrl: `${window.location.origin}${basePath}/logo.svg`,
+    logoImageUrl: `${window.location.origin}${basePath}/logo.png`,
   },
   variables: {
     colorPrimary: "#EE3FCE",
@@ -137,26 +137,39 @@ function SignUpPage() {
 function LandingPage() {
   const [, setLocation] = useLocation();
   return (
-    <div className="flex min-h-[100dvh] flex-col items-center justify-center bg-gradient-to-br from-pink-50 via-white to-purple-50 px-4 gap-8">
-      <img
-        src={`${basePath}/logo.svg`}
-        alt="833 Tidyups"
-        className="h-16 w-auto"
-        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-      />
-      <div className="text-center space-y-2">
-        <h1 className="text-4xl font-bold brand-gradient-text">
-          833 Tidyups
-        </h1>
-        <p className="text-xl font-semibold text-foreground">Dispatch Portal</p>
-        <p className="text-muted-foreground">Staff access only — sign in to continue</p>
+    <div className="relative flex min-h-[100dvh] flex-col items-center justify-center px-4 gap-8 overflow-hidden">
+      {/* Vehicle background */}
+      <div className="absolute inset-0 z-0">
+        <img
+          src={`${basePath}/vehicle.jpg`}
+          alt=""
+          className="w-full h-full object-cover"
+        />
+        <div className="absolute inset-0 bg-gradient-to-br from-pink-900/70 via-purple-900/60 to-black/70" />
       </div>
-      <button
-        onClick={() => setLocation("/sign-in")}
-        className="bg-primary text-white font-semibold px-10 py-4 rounded-xl text-lg hover:bg-primary/90 transition-all shadow-xl shadow-primary/25 hover:shadow-primary/40 hover:-translate-y-0.5"
-      >
-        Sign In to Dispatch
-      </button>
+
+      {/* Content */}
+      <div className="relative z-10 flex flex-col items-center gap-8">
+        <img
+          src={`${basePath}/logo.png`}
+          alt="833 Tidyups"
+          className="h-32 w-32 object-contain rounded-2xl shadow-2xl shadow-black/40"
+          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+        />
+        <div className="text-center space-y-2">
+          <h1 className="text-4xl font-bold text-white drop-shadow-lg">
+            833 Tidyups
+          </h1>
+          <p className="text-xl font-semibold text-pink-200">Dispatch Portal</p>
+          <p className="text-white/70">Staff access only — sign in to continue</p>
+        </div>
+        <button
+          onClick={() => setLocation("/sign-in")}
+          className="bg-primary text-white font-semibold px-10 py-4 rounded-xl text-lg hover:bg-primary/90 transition-all shadow-xl shadow-primary/25 hover:shadow-primary/40 hover:-translate-y-0.5"
+        >
+          Sign In to Dispatch
+        </button>
+      </div>
     </div>
   );
 }
