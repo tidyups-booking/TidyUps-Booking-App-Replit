@@ -392,9 +392,21 @@ export default function MapPage() {
   // ── Init Leaflet ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!mapElRef.current || mapRef.current) return;
-    const map = L.map(mapElRef.current, { center: [53.5461, -113.4938], zoom: 11 });
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "© OpenStreetMap contributors", maxZoom: 19,
+    const map = L.map(mapElRef.current, {
+      center: [53.5461, -113.4938],
+      zoom: 11,
+      // Smoother, Google-Maps-like zoom feel
+      zoomSnap: 0.25,
+      zoomDelta: 0.5,
+      wheelPxPerZoomLevel: 120,
+      zoomAnimation: true,
+      fadeAnimation: true,
+    });
+    // CARTO Voyager — clean, pastel, Google-Maps-style basemap with retina tiles
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/attributions">CARTO</a>',
+      subdomains: "abcd",
+      maxZoom: 20,
     }).addTo(map);
     mapRef.current = map;
     return () => { map.remove(); mapRef.current = null; };
