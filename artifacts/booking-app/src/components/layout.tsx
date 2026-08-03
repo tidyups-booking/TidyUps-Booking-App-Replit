@@ -1,7 +1,7 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, CalendarPlus, List, Menu, CalendarDays, Users, Map, Inbox } from "lucide-react";
+import { LayoutDashboard, CalendarPlus, List, Menu, CalendarDays, Users, Map, Inbox, Settings } from "lucide-react";
 import { LiveCallProvider, useLiveCall } from "@/contexts/live-call-context";
 import { CallAlertBanner } from "@/components/call-alert-banner";
 import { SiteFooter } from "@/components/footer";
@@ -20,6 +20,7 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
     { href: "/bookings", label: "All Bookings", icon: List },
     { href: "/staff", label: "Staff", icon: Users },
     { href: "/messages", label: "Messages", icon: Inbox },
+    { href: "/settings", label: "Settings", icon: Settings },
   ];
 
   return (

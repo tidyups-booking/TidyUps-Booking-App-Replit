@@ -27,6 +27,7 @@ import Schedule from "@/pages/schedule";
 import StaffManagement from "@/pages/staff";
 import MapPage from "@/pages/map";
 import MessagesPage from "@/pages/messages";
+import SettingsPage from "@/pages/settings";
 import SupportPage from "@/pages/support";
 import ContactPage from "@/pages/contact";
 import PrivacyPage from "@/pages/privacy";
@@ -310,6 +311,9 @@ function AppRouter() {
             </Route>
             <Route path="/messages">
               <ProtectedRoute component={MessagesPage} />
+            </Route>
+            <Route path="/settings">
+              <ProtectedRoute component={SettingsPage} />
             </Route>
             <Route component={NotFound} />
           </Switch>

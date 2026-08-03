@@ -33,6 +33,7 @@ export const submitContactMessageBodyMessageMax = 5000;
 export const submitContactMessageBodyWebsiteMax = 200;
 
 
+
 export const SubmitContactMessageBody = zod.object({
   "name": zod.string().min(1).max(submitContactMessageBodyNameMax),
   "email": zod.string().max(submitContactMessageBodyEmailMax).regex(submitContactMessageBodyEmailRegExp),
@@ -51,6 +52,7 @@ export const SubmitContactMessageResponse = zod.object({
   "handledAt": zod.coerce.date().nullable()
 })
 
+
 /**
  * @summary List contact form messages (dispatcher only), newest first
  */
@@ -63,6 +65,111 @@ export const ListContactMessagesResponseItem = zod.object({
   "createdAt": zod.coerce.date(),
   "handledAt": zod.coerce.date().nullable()
 })
+export const ListContactMessagesResponse = zod.array(ListContactMessagesResponseItem)
+
+
+/**
+ * @summary Mark a contact message handled or unhandled (dispatcher only)
+ */
+export const UpdateContactMessageParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateContactMessageBody = zod.object({
+  "handled": zod.boolean()
+})
+
+export const UpdateContactMessageResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "phone": zod.string().nullish(),
+  "message": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "handledAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * @summary Delete a contact message (dispatcher only)
+ */
+export const DeleteContactMessageParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteContactMessageResponse = zod.void()
+
+
+/**
+ * @summary List social media links (public, no auth)
+ */
+export const ListSocialLinksResponseItem = zod.object({
+  "id": zod.number(),
+  "platform": zod.string().describe('Machine key used to pick the icon, e.g. \"facebook\".'),
+  "label": zod.string(),
+  "url": zod.string().describe('Empty string hides the link from the public footer.'),
+  "sortOrder": zod.number()
+})
+export const ListSocialLinksResponse = zod.array(ListSocialLinksResponseItem)
+
+
+/**
+ * @summary Add a social media link (dispatcher only)
+ */
+
+
+
+export const CreateSocialLinkBody = zod.object({
+  "platform": zod.string().optional().describe('Optional machine key; derived from the label when omitted.'),
+  "label": zod.string().min(1),
+  "url": zod.string(),
+  "sortOrder": zod.number().optional()
+})
+
+export const CreateSocialLinkResponse = zod.object({
+  "id": zod.number(),
+  "platform": zod.string().describe('Machine key used to pick the icon, e.g. \"facebook\".'),
+  "label": zod.string(),
+  "url": zod.string().describe('Empty string hides the link from the public footer.'),
+  "sortOrder": zod.number()
+})
+
+
+/**
+ * @summary Update a social media link (dispatcher only)
+ */
+export const UpdateSocialLinkParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+
+
+
+export const UpdateSocialLinkBody = zod.object({
+  "label": zod.string().min(1).optional(),
+  "url": zod.string().optional(),
+  "sortOrder": zod.number().optional()
+})
+
+export const UpdateSocialLinkResponse = zod.object({
+  "id": zod.number(),
+  "platform": zod.string().describe('Machine key used to pick the icon, e.g. \"facebook\".'),
+  "label": zod.string(),
+  "url": zod.string().describe('Empty string hides the link from the public footer.'),
+  "sortOrder": zod.number()
+})
+
+
+/**
+ * @summary Delete a social media link (dispatcher only)
+ */
+export const DeleteSocialLinkParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteSocialLinkResponse = zod.void()
+
+
 /**
  * @summary List all bookings
  */
@@ -128,6 +235,7 @@ export const ListBookingsResponse = zod.array(ListBookingsResponseItem)
 
 
 export const createBookingBodyPhoneMin = 7;
+
 
 
 export const createBookingBodyProvinceDefault = `AB`;
@@ -654,34 +762,4 @@ export const GetDayScheduleResponseItem = zod.object({
 })
 export const GetDayScheduleResponse = zod.array(GetDayScheduleResponseItem)
 
-export const ListContactMessagesResponse = zod.array(ListContactMessagesResponseItem)
 
-/**
- * @summary Delete a contact message (dispatcher only)
- */
-export const DeleteContactMessageParams = zod.object({
-  "id": zod.coerce.number()
-})
-
-export const DeleteContactMessageResponse = zod.void()
-
-export const UpdateContactMessageBody = zod.object({
-  "handled": zod.boolean()
-})
-
-/**
- * @summary Mark a contact message handled or unhandled (dispatcher only)
- */
-export const UpdateContactMessageParams = zod.object({
-  "id": zod.coerce.number()
-})
-
-export const UpdateContactMessageResponse = zod.object({
-  "id": zod.number(),
-  "name": zod.string(),
-  "email": zod.string(),
-  "phone": zod.string().nullish(),
-  "message": zod.string(),
-  "createdAt": zod.coerce.date(),
-  "handledAt": zod.coerce.date().nullable()
-})

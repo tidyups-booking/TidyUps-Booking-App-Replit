@@ -1,6 +1,61 @@
 import { Link } from "wouter";
-import { Phone, Mail, Clock } from "lucide-react";
+import { Phone, Mail, Clock, Globe } from "lucide-react";
+import {
+  FaFacebookF,
+  FaInstagram,
+  FaTiktok,
+  FaYoutube,
+  FaXTwitter,
+  FaLinkedinIn,
+  FaPinterestP,
+  FaSnapchat,
+  FaThreads,
+  FaWhatsapp,
+} from "react-icons/fa6";
+import { useListSocialLinks } from "@workspace/api-client-react";
 import logoImg from "@assets/833tidyups-logo.png";
+
+const SOCIAL_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  facebook: FaFacebookF,
+  instagram: FaInstagram,
+  tiktok: FaTiktok,
+  youtube: FaYoutube,
+  x: FaXTwitter,
+  twitter: FaXTwitter,
+  "x-twitter": FaXTwitter,
+  linkedin: FaLinkedinIn,
+  pinterest: FaPinterestP,
+  snapchat: FaSnapchat,
+  threads: FaThreads,
+  whatsapp: FaWhatsapp,
+};
+
+function SocialIconRow() {
+  const { data: links } = useListSocialLinks();
+  const visible = (links ?? []).filter((l) => l.url.trim() !== "");
+  if (visible.length === 0) return null;
+
+  return (
+    <div className="flex items-center gap-2 pt-1">
+      {visible.map((link) => {
+        const Icon = SOCIAL_ICONS[link.platform] ?? Globe;
+        return (
+          <a
+            key={link.id}
+            href={link.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={link.label}
+            title={link.label}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-muted text-muted-foreground hover:bg-primary hover:text-primary-foreground transition-colors"
+          >
+            <Icon className="h-4 w-4" />
+          </a>
+        );
+      })}
+    </div>
+  );
+}
 
 export const COMPANY_PHONE = "1-833-843-9877";
 export const COMPANY_PHONE_DISPLAY = "1-833-TIDYUPS (843-9877)";
@@ -38,6 +93,7 @@ export function SiteFooter() {
               friendly cleaners, and easy booking.
             </p>
             <span className="block h-1 w-20 brand-gradient rounded-full" />
+            <SocialIconRow />
           </div>
 
           {/* Links */}

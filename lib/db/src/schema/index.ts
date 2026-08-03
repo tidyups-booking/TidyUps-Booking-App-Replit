@@ -5,4 +5,5 @@ export * from "./contact-throttle";
 export * from "./cleaner-locations";
 export * from "./dispatcher-allowlist";
 export * from "./jobber";
+export * from "./social-links";
 export * from "./staff";

@@ -28,6 +28,7 @@ export interface ContactMessage {
 export interface ContactMessageStatusUpdate {
   handled: boolean;
 }
+
 export interface ContactMessageInput {
   /**
      * @minLength 1
@@ -129,6 +130,7 @@ export interface PriceBreakdown {
   /** Final quoted price including the fuel surcharge. */
   total: number;
 }
+
 export interface Booking {
   id: number;
   /** @nullable */
@@ -396,6 +398,32 @@ export interface StaffDaySchedule {
   bookings: Booking[];
 }
 
+export interface SocialLink {
+  id: number;
+  /** Machine key used to pick the icon, e.g. "facebook". */
+  platform: string;
+  label: string;
+  /** Empty string hides the link from the public footer. */
+  url: string;
+  sortOrder: number;
+}
+
+export interface SocialLinkInput {
+  /** Optional machine key; derived from the label when omitted. */
+  platform?: string;
+  /** @minLength 1 */
+  label: string;
+  url: string;
+  sortOrder?: number;
+}
+
+export interface SocialLinkUpdate {
+  /** @minLength 1 */
+  label?: string;
+  url?: string;
+  sortOrder?: number;
+}
+
 export type ListBookingsParams = {
 status?: ListBookingsStatus;
 staffId?: number;
@@ -445,3 +473,4 @@ export type GetDayScheduleParams = {
  */
 date: string;
 };
+

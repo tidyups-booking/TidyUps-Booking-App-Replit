@@ -18,6 +18,8 @@ tags:
     description: Staff management
   - name: contact
     description: Public contact form
+  - name: social
+    description: Social media links shown in the site footer
 
 paths:
   /healthz:
@@ -118,6 +120,96 @@ paths:
       responses:
         "204":
           description: Message deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /social-links:
+    get:
+      operationId: listSocialLinks
+      tags: [social]
+      summary: List social media links (public, no auth)
+      responses:
+        "200":
+          description: Social links ordered for display
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SocialLink"
+
+    post:
+      operationId: createSocialLink
+      tags: [social]
+      summary: Add a social media link (dispatcher only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SocialLinkInput"
+      responses:
+        "201":
+          description: Link created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SocialLink"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /social-links/{id}:
+    patch:
+      operationId: updateSocialLink
+      tags: [social]
+      summary: Update a social media link (dispatcher only)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SocialLinkUpdate"
+      responses:
+        "200":
+          description: Updated link
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SocialLink"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    delete:
+      operationId: deleteSocialLink
+      tags: [social]
+      summary: Delete a social media link (dispatcher only)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: number
+      responses:
+        "204":
+          description: Link deleted
         "404":
           description: Not found
           content:
@@ -975,3 +1067,50 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Booking"
+
+    SocialLink:
+      type: object
+      required: [id, platform, label, url, sortOrder]
+      properties:
+        id:
+          type: number
+          format: int32
+        platform:
+          type: string
+          description: Machine key used to pick the icon, e.g. "facebook".
+        label:
+          type: string
+        url:
+          type: string
+          description: Empty string hides the link from the public footer.
+        sortOrder:
+          type: number
+          format: int32
+
+    SocialLinkInput:
+      type: object
+      required: [label, url]
+      properties:
+        platform:
+          type: string
+          description: Optional machine key; derived from the label when omitted.
+        label:
+          type: string
+          minLength: 1
+        url:
+          type: string
+        sortOrder:
+          type: number
+          format: int32
+
+    SocialLinkUpdate:
+      type: object
+      properties:
+        label:
+          type: string
+          minLength: 1
+        url:
+          type: string
+        sortOrder:
+          type: number
+          format: int32

@@ -248,6 +248,29 @@ const MIGRATIONS: { name: string; sql: string }[] = [
         ON contact_form_throttle (ip, submitted_at);
     `,
   },
+  {
+    // Mirrors lib/db/migrations/009_add_social_links.sql.
+    name: "009_add_social_links",
+    sql: `
+      CREATE TABLE IF NOT EXISTS social_links (
+        id         SERIAL PRIMARY KEY,
+        platform   TEXT NOT NULL,
+        label      TEXT NOT NULL,
+        url        TEXT NOT NULL DEFAULT '',
+        sort_order INTEGER NOT NULL DEFAULT 0
+      );
+
+      INSERT INTO social_links (platform, label, url, sort_order)
+      SELECT v.platform, v.label, '', v.sort_order
+      FROM (VALUES
+        ('facebook',  'Facebook',  0),
+        ('instagram', 'Instagram', 1),
+        ('tiktok',    'TikTok',    2),
+        ('youtube',   'YouTube',   3)
+      ) AS v(platform, label, sort_order)
+      WHERE NOT EXISTS (SELECT 1 FROM social_links);
+    `,
+  },
 ];
 
 /**

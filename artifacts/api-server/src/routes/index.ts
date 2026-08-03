@@ -11,6 +11,7 @@ import mapRouter from "./map";
 import placesRouter from "./places";
 import dispatchersRouter from "./dispatchers";
 import contactRouter, { contactMessagesRouter } from "./contact";
+import socialLinksRouter, { socialLinksAdminRouter } from "./social-links";
 
 const router: IRouter = Router();
 
@@ -31,6 +32,9 @@ router.use(jobberRouter);
 // Contact form: submitted from the public Contact page (no session cookie).
 router.use(contactRouter);
 
+// Social links: read by the footer on public pages (no session cookie).
+router.use(socialLinksRouter);
+
 // ── Protected routes ─────────────────────────────────────────────────────────
 
 router.use(requireAuth);
@@ -42,5 +46,6 @@ router.use(mapRouter);
 router.use(placesRouter);
 router.use(dispatchersRouter);
 router.use(contactMessagesRouter);
+router.use(socialLinksAdminRouter);
 
 export default router;

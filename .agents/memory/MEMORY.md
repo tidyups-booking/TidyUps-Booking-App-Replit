@@ -5,3 +5,4 @@
 - [Cleaner App Auth](cleaner-app-auth.md) — Clerk v4 Expo auth: use @clerk/expo/legacy for useSignIn/useSignUp; useSSO from @clerk/expo; signals API (default export) lacks setActive
 - [Orval codegen + zod v3](orval-codegen.md) — never use `format: email` in openapi.yaml (generates zod v4-only `zod.email()`); use a `pattern` regex instead
 - [Booking price-breakdown invariants](price-breakdown-invariants.md) — itemized quote must reconcile end-to-end; loyalty last, refuse over-quote discounts, server validates + auto-clears
+- [TS project references](ts-project-references.md) — api-server typechecks against lib/*/dist .d.ts; rebuild `tsc --build` in lib/db & lib/api-zod after adding schema/types or "missing export" errors break deploys

@@ -35,6 +35,9 @@ import type {
   ListStaffParams,
   PostStaffLocation200,
   PostStaffLocationBody,
+  SocialLink,
+  SocialLinkInput,
+  SocialLinkUpdate,
   Staff,
   StaffDaySchedule,
   StaffInput,
@@ -435,6 +438,297 @@ export const useDeleteContactMessage = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getDeleteContactMessageMutationOptions(options));
+    }
+
+export const getListSocialLinksUrl = () => {
+
+
+
+
+  return `/api/social-links`
+}
+
+/**
+ * @summary List social media links (public, no auth)
+ */
+export const listSocialLinks = async ( options?: Parameters<typeof customFetch>[1]): Promise<SocialLink[]> => {
+
+  return customFetch<SocialLink[]>(getListSocialLinksUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSocialLinksQueryKey = () => {
+    return [
+    `/api/social-links`
+    ] as const;
+    }
+
+
+export const getListSocialLinksQueryOptions = <TData = Awaited<ReturnType<typeof listSocialLinks>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSocialLinks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSocialLinksQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSocialLinks>>> = ({ signal }) => listSocialLinks({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSocialLinks>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSocialLinksQueryResult = NonNullable<Awaited<ReturnType<typeof listSocialLinks>>>
+export type ListSocialLinksQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List social media links (public, no auth)
+ */
+
+export function useListSocialLinks<TData = Awaited<ReturnType<typeof listSocialLinks>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSocialLinks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSocialLinksQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateSocialLinkUrl = () => {
+
+
+
+
+  return `/api/social-links`
+}
+
+/**
+ * @summary Add a social media link (dispatcher only)
+ */
+export const createSocialLink = async (socialLinkInput: SocialLinkInput, options?: Parameters<typeof customFetch>[1]): Promise<SocialLink> => {
+
+  return customFetch<SocialLink>(getCreateSocialLinkUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(socialLinkInput)
+  }
+);}
+
+
+
+
+
+export const getCreateSocialLinkMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSocialLink>>, TError,{data: BodyType<SocialLinkInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createSocialLink>>, TError,{data: BodyType<SocialLinkInput>}, TContext> => {
+
+const mutationKey = ['createSocialLink'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSocialLink>>, {data: BodyType<SocialLinkInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createSocialLink(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateSocialLinkMutationResult = NonNullable<Awaited<ReturnType<typeof createSocialLink>>>
+    export type CreateSocialLinkMutationBody = BodyType<SocialLinkInput>
+    export type CreateSocialLinkMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Add a social media link (dispatcher only)
+ */
+export const useCreateSocialLink = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSocialLink>>, TError,{data: BodyType<SocialLinkInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createSocialLink>>,
+        TError,
+        {data: BodyType<SocialLinkInput>},
+        TContext
+      > => {
+      return useMutation(getCreateSocialLinkMutationOptions(options));
+    }
+
+export const getUpdateSocialLinkUrl = (id: number,) => {
+
+
+
+
+  return `/api/social-links/${id}`
+}
+
+/**
+ * @summary Update a social media link (dispatcher only)
+ */
+export const updateSocialLink = async (id: number,
+    socialLinkUpdate: SocialLinkUpdate, options?: Parameters<typeof customFetch>[1]): Promise<SocialLink> => {
+
+  return customFetch<SocialLink>(getUpdateSocialLinkUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(socialLinkUpdate)
+  }
+);}
+
+
+
+
+
+export const getUpdateSocialLinkMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSocialLink>>, TError,{id: number;data: BodyType<SocialLinkUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateSocialLink>>, TError,{id: number;data: BodyType<SocialLinkUpdate>}, TContext> => {
+
+const mutationKey = ['updateSocialLink'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateSocialLink>>, {id: number;data: BodyType<SocialLinkUpdate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateSocialLink(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateSocialLinkMutationResult = NonNullable<Awaited<ReturnType<typeof updateSocialLink>>>
+    export type UpdateSocialLinkMutationBody = BodyType<SocialLinkUpdate>
+    export type UpdateSocialLinkMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Update a social media link (dispatcher only)
+ */
+export const useUpdateSocialLink = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSocialLink>>, TError,{id: number;data: BodyType<SocialLinkUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateSocialLink>>,
+        TError,
+        {id: number;data: BodyType<SocialLinkUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateSocialLinkMutationOptions(options));
+    }
+
+export const getDeleteSocialLinkUrl = (id: number,) => {
+
+
+
+
+  return `/api/social-links/${id}`
+}
+
+/**
+ * @summary Delete a social media link (dispatcher only)
+ */
+export const deleteSocialLink = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteSocialLinkUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteSocialLinkMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSocialLink>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteSocialLink>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteSocialLink'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteSocialLink>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteSocialLink(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteSocialLinkMutationResult = NonNullable<Awaited<ReturnType<typeof deleteSocialLink>>>
+
+    export type DeleteSocialLinkMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Delete a social media link (dispatcher only)
+ */
+export const useDeleteSocialLink = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSocialLink>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteSocialLink>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteSocialLinkMutationOptions(options));
     }
 
 export const getListBookingsUrl = (params?: ListBookingsParams,) => {
