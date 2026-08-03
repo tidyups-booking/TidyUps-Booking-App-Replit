@@ -100,6 +100,7 @@ router.post("/contact", async (req, res): Promise<void> => {
         phone,
         message,
         createdAt: new Date(),
+        handledAt: null,
       }),
     );
     return;

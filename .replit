@@ -20,6 +20,10 @@ author = "agent"
 task = "workflow.run"
 args = "dispatcher-access-e2e"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "contact-spam-filter-e2e"
+
 [[workflows.workflow]]
 name = "dispatcher-access-e2e"
 author = "agent"
@@ -30,6 +34,17 @@ args = "cd artifacts/api-server && pnpm exec tsx e2e-dispatcher-access-check.mts
 
 [workflows.workflow.metadata]
 isValidation = true
+
+[[workflows.workflow]]
+name = "contact-spam-filter-e2e"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd artifacts/api-server && pnpm exec tsx e2e-contact-spam-filter-check.mts"
+
+[workflows.workflow.metadata]
+outputType = "console"
 
 [agent]
 stack = "PNPM_WORKSPACE"
