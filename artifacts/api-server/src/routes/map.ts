@@ -193,8 +193,8 @@ router.get("/map/counts", requireAuth, async (req, res): Promise<void> => {
     .select()
     .from(bookingsTable)
     .where(and(
-      gte(bookingsTable.scheduledDate, start2),
-      lte(bookingsTable.scheduledDate, end2),
+      gte(bookingsTable.scheduledDate, start),
+      lte(bookingsTable.scheduledDate, end),
     ))
     .orderBy(bookingsTable.scheduledDate, bookingsTable.scheduledTime);
 

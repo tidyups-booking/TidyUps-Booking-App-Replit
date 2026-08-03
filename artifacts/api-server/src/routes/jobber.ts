@@ -84,8 +84,10 @@ router.get("/jobber/callback", async (req, res) => {
     return;
   }
 
-  if (state && !validateOAuthState(state)) {
-    req.log.warn({ state }, "Jobber OAuth: invalid or expired state nonce");
+  // state is required — a missing or invalid nonce means the callback did not
+  // originate from this server's /jobber/auth flow (CSRF / callback injection).
+  if (!state || typeof state !== "string" || !consumeOAuthState(state)) {
+    req.log.warn({ state }, "Jobber OAuth: missing or invalid state nonce — callback rejected");
     res.status(400).send("<h2>OAuth state mismatch — please try connecting again.</h2>");
     return;
   }
