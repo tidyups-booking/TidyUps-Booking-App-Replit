@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { LiveCallPanel } from "@/components/live-call-panel";
 import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { BookingMiniMap } from "@/components/booking-mini-map";
+import { EmailAutocomplete } from "@/components/email-autocomplete";
 
 const bookingSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
@@ -426,7 +427,12 @@ export default function NewBooking() {
                     <FormItem>
                       <FormLabel>Email<LockedBadge name="email" /> <span className="text-muted-foreground font-normal">(Optional)</span></FormLabel>
                       <FormControl>
-                        <Input type="email" placeholder="jane@example.com" className={fieldClass("email")} {...field} onChange={(e) => { markEdited("email"); field.onChange(e); }} />
+                        <EmailAutocomplete
+                          placeholder="jane@example.com"
+                          className={fieldClass("email")}
+                          value={field.value ?? ""}
+                          onChange={(v) => { markEdited("email"); field.onChange(v); }}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
