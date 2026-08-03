@@ -410,7 +410,9 @@ export default function NewBooking() {
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
 
-          <div className="grid md:grid-cols-2 gap-6">
+          <div className="grid md:grid-cols-2 gap-6 items-start">
+            {/* Left column: Customer Info + Job Scope */}
+            <div className="space-y-6">
             {/* Customer Details */}
             <Card className="border-t-4 border-t-primary shadow-md">
               <CardHeader className="pb-4">
@@ -468,97 +470,6 @@ export default function NewBooking() {
               </CardContent>
             </Card>
 
-            {/* Location Details */}
-            <Card className="border-t-4 border-t-secondary shadow-md">
-              <CardHeader className="pb-4">
-                <CardTitle className="text-lg flex items-center gap-2"><MapPin className="w-5 h-5 text-secondary" /> Location</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <FormField control={form.control} name="address" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Street Address<LockedBadge name="address" /></FormLabel>
-                    <FormControl>
-                      <AddressAutocomplete
-                        value={field.value}
-                        onChange={field.onChange}
-                        onManualChange={() => {
-                          markEdited("address");
-                          // Manual typing invalidates the exact Places coordinates
-                          form.setValue("addressLat", undefined);
-                          form.setValue("addressLng", undefined);
-                        }}
-                        onPlaceSelect={(place) => {
-                          form.setValue("address", place.address, { shouldValidate: true });
-                          if (place.city) form.setValue("city", place.city, { shouldValidate: true });
-                          if (place.province) form.setValue("province", place.province);
-                          if (place.postalCode) form.setValue("postalCode", place.postalCode, { shouldValidate: true });
-                          if (place.lat && place.lng) {
-                            form.setValue("addressLat", place.lat);
-                            form.setValue("addressLng", place.lng);
-                          }
-                          // Flash-highlight the auto-filled location fields green for 2 s
-                          const placeFilled: string[] = ["address"];
-                          if (place.city) placeFilled.push("city");
-                          if (place.province) placeFilled.push("province");
-                          if (place.postalCode) placeFilled.push("postalCode");
-                          setHighlightedFields(new Set(placeFilled));
-                          setTimeout(() => setHighlightedFields(new Set()), 2000);
-                        }}
-                        placeholder="123 Main St NW"
-                        className={fieldClass("address")}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <div className="grid grid-cols-[2fr_1fr_1fr] gap-4">
-                  <FormField control={form.control} name="city" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>City<LockedBadge name="city" /></FormLabel>
-                      <FormControl>
-                        <Input placeholder="Edmonton" className={fieldClass("city")} {...field} onChange={(e) => { markEdited("city"); field.onChange(e); }} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="province" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Prov</FormLabel>
-                      <FormControl>
-                        <NativeSelect {...field} className="bg-muted/30 focus:bg-background transition-colors">
-                          <option value="AB">AB</option>
-                          <option value="BC">BC</option>
-                          <option value="SK">SK</option>
-                          <option value="ON">ON</option>
-                        </NativeSelect>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="postalCode" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Postal<LockedBadge name="postalCode" /></FormLabel>
-                      <FormControl>
-                        <Input placeholder="T5J" className={cn(fieldClass("postalCode"), "uppercase")} {...field} onChange={(e) => { markEdited("postalCode"); field.onChange(e); }} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                </div>
-
-                {/* Live mini-map: caller's location vs cleaners, while on the phone */}
-                {miniMapCoords && (
-                  <BookingMiniMap
-                    lat={miniMapCoords[0]}
-                    lng={miniMapCoords[1]}
-                    baseUrl={getBaseUrl().replace(/\/$/, "")}
-                  />
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-6">
             {/* Job Details */}
             <Card className="shadow-md">
               <CardHeader className="pb-4 border-b">
@@ -648,9 +559,99 @@ export default function NewBooking() {
                 )} />
               </CardContent>
             </Card>
+            </div>
 
-            {/* Schedule & Price */}
+            {/* Right column: Location + Scheduling + Price */}
             <div className="space-y-6">
+            {/* Location Details */}
+            <Card className="border-t-4 border-t-secondary shadow-md">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-lg flex items-center gap-2"><MapPin className="w-5 h-5 text-secondary" /> Location</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <FormField control={form.control} name="address" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Street Address<LockedBadge name="address" /></FormLabel>
+                    <FormControl>
+                      <AddressAutocomplete
+                        value={field.value}
+                        onChange={field.onChange}
+                        onManualChange={() => {
+                          markEdited("address");
+                          // Manual typing invalidates the exact Places coordinates
+                          form.setValue("addressLat", undefined);
+                          form.setValue("addressLng", undefined);
+                        }}
+                        onPlaceSelect={(place) => {
+                          form.setValue("address", place.address, { shouldValidate: true });
+                          if (place.city) form.setValue("city", place.city, { shouldValidate: true });
+                          if (place.province) form.setValue("province", place.province);
+                          if (place.postalCode) form.setValue("postalCode", place.postalCode, { shouldValidate: true });
+                          if (place.lat && place.lng) {
+                            form.setValue("addressLat", place.lat);
+                            form.setValue("addressLng", place.lng);
+                          }
+                          // Flash-highlight the auto-filled location fields green for 2 s
+                          const placeFilled: string[] = ["address"];
+                          if (place.city) placeFilled.push("city");
+                          if (place.province) placeFilled.push("province");
+                          if (place.postalCode) placeFilled.push("postalCode");
+                          setHighlightedFields(new Set(placeFilled));
+                          setTimeout(() => setHighlightedFields(new Set()), 2000);
+                        }}
+                        placeholder="123 Main St NW"
+                        className={fieldClass("address")}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <div className="grid grid-cols-[2fr_1fr_1fr] gap-4">
+                  <FormField control={form.control} name="city" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>City<LockedBadge name="city" /></FormLabel>
+                      <FormControl>
+                        <Input placeholder="Edmonton" className={fieldClass("city")} {...field} onChange={(e) => { markEdited("city"); field.onChange(e); }} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="province" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Prov</FormLabel>
+                      <FormControl>
+                        <NativeSelect {...field} className="bg-muted/30 focus:bg-background transition-colors">
+                          <option value="AB">AB</option>
+                          <option value="BC">BC</option>
+                          <option value="SK">SK</option>
+                          <option value="ON">ON</option>
+                        </NativeSelect>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="postalCode" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Postal<LockedBadge name="postalCode" /></FormLabel>
+                      <FormControl>
+                        <Input placeholder="T5J" className={cn(fieldClass("postalCode"), "uppercase")} {...field} onChange={(e) => { markEdited("postalCode"); field.onChange(e); }} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
+
+                {/* Live mini-map: caller's location vs cleaners, while on the phone */}
+                {miniMapCoords && (
+                  <BookingMiniMap
+                    lat={miniMapCoords[0]}
+                    lng={miniMapCoords[1]}
+                    baseUrl={getBaseUrl().replace(/\/$/, "")}
+                  />
+                )}
+              </CardContent>
+            </Card>
+
               <Card className="shadow-md">
                 <CardHeader className="pb-4 border-b">
                   <CardTitle className="text-lg flex items-center gap-2"><CalendarClock className="w-5 h-5 text-foreground" /> Scheduling</CardTitle>
