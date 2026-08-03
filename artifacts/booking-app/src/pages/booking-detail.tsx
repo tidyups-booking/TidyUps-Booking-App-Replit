@@ -51,6 +51,22 @@ interface CallTranscriptRow {
 
 const EXTRAS_OPTIONS = ["Oven", "Fridge", "Windows", "Laundry", "Garage", "Basement", "Inside Cabinets"];
 
+// Shown when a booking has an address but no saved coordinates (bookings created
+// before Places autocomplete). Explains why the mini-map is missing and how to fix it.
+function MissingCoordinatesHint({ mode }: { mode: "view" | "edit" }) {
+  return (
+    <div className="flex items-start gap-2 rounded-lg border border-dashed bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground">
+      <MapPin className="w-4 h-4 mt-0.5 shrink-0 opacity-60" />
+      <span>
+        Map unavailable — this booking has no saved map coordinates.{" "}
+        {mode === "edit"
+          ? "Re-select the street address from the autocomplete suggestions to pin it on the map."
+          : "Edit the booking and re-select the address from the autocomplete suggestions to pin it on the map."}
+      </span>
+    </div>
+  );
+}
+
 const editSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
@@ -464,9 +480,11 @@ export default function BookingDetail() {
                       </FormItem>
                     )} />
                   </div>
-                  {editLat != null && editLng != null && (
+                  {editLat != null && editLng != null ? (
                     <BookingMiniMap lat={editLat} lng={editLng} baseUrl={apiBaseUrl} />
-                  )}
+                  ) : form.watch("address") ? (
+                    <MissingCoordinatesHint mode="edit" />
+                  ) : null}
                 </CardContent>
               </Card>
             </div>
@@ -739,13 +757,15 @@ export default function BookingDetail() {
                       </div>
                     </div>
                   </div>
-                  {booking.addressLat != null && booking.addressLng != null && (
+                  {booking.addressLat != null && booking.addressLng != null ? (
                     <BookingMiniMap
                       lat={booking.addressLat}
                       lng={booking.addressLng}
                       baseUrl={apiBaseUrl}
                     />
-                  )}
+                  ) : booking.address ? (
+                    <MissingCoordinatesHint mode="view" />
+                  ) : null}
                 </div>
               </div>
             </CardContent>
