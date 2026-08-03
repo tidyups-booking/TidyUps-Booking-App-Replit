@@ -394,9 +394,43 @@ export default function NewBooking() {
   // Fuel surcharge: added to every quote by default ($12.50); editable for out-of-area jobs
   const [fuelSurcharge, setFuelSurcharge] = useState("12.50");
 
-  // Where the customer heard about us — recorded on the booking notes
+  // Where the customer heard about us — recorded on the booking notes.
+  // Picking a source automatically applies a $10 thank-you discount.
   const LEAD_SOURCES = ["Google", "Facebook", "Instagram", "TikTok", "Referral"] as const;
   const [leadSource, setLeadSource] = useState<string | null>(null);
+  const [leadDiscountApplied, setLeadDiscountApplied] = useState(false);
+
+  // Hours of cleaning at the standard $105/hr rate (two cleaners)
+  const HOURLY_RATE = 105;
+  const [hours, setHours] = useState("1");
+
+  const adjustPrice = (delta: number) => {
+    const current = parseFloat(String(form.getValues("estimatedPrice")));
+    if (!isFinite(current)) return;
+    form.setValue("estimatedPrice", Math.max(0, Math.round((current + delta) * 100) / 100) as any);
+  };
+
+  const handleLeadSource = (src: string) => {
+    if (leadSource === src) {
+      // Unselecting: remove the $10 thank-you discount if it was applied
+      setLeadSource(null);
+      if (leadDiscountApplied) { adjustPrice(10); setLeadDiscountApplied(false); }
+    } else {
+      setLeadSource(src);
+      if (!leadDiscountApplied) { adjustPrice(-10); setLeadDiscountApplied(true); }
+    }
+  };
+
+  const handleHoursChange = (value: string) => {
+    setHours(value);
+    const h = parseFloat(value);
+    if (isFinite(h) && h > 0) {
+      let price = Math.round(h * HOURLY_RATE * 100) / 100;
+      if (leadDiscountApplied) price = Math.max(0, price - 10);
+      form.setValue("estimatedPrice", price as any);
+      setDiscountApplied(false);
+    }
+  };
 
   const onSubmit = (data: BookingFormValues) => {
     const submitData: Record<string, any> = { ...data };
@@ -848,15 +882,28 @@ export default function NewBooking() {
                       <FormItem className="flex-1">
                         <FormLabel className="text-primary-foreground/70 dark:text-primary">Quoted Price ($)</FormLabel>
                         <FormControl>
-                          <div className="relative">
-                            <DollarSign className="w-5 h-5 absolute left-3 top-3 text-primary" />
-                            <Input
-                              type="number"
-                              placeholder="150.00"
-                              className="pl-10 text-xl font-bold border-primary/30 focus-visible:ring-primary"
-                              {...field}
-                              onChange={(e) => { setDiscountApplied(false); field.onChange(e); }}
-                            />
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5">
+                              <Input
+                                type="number"
+                                min="0.5"
+                                step="0.5"
+                                value={hours}
+                                onChange={(e) => handleHoursChange(e.target.value)}
+                                className="h-12 w-16 text-center font-bold border-primary/30"
+                              />
+                              <span className="text-xs text-muted-foreground whitespace-nowrap">hrs × ${HOURLY_RATE}</span>
+                            </div>
+                            <div className="relative flex-1">
+                              <DollarSign className="w-5 h-5 absolute left-3 top-3 text-primary" />
+                              <Input
+                                type="number"
+                                placeholder="105.00"
+                                className="pl-10 text-xl font-bold border-primary/30 focus-visible:ring-primary"
+                                {...field}
+                                onChange={(e) => { setDiscountApplied(false); field.onChange(e); }}
+                              />
+                            </div>
                           </div>
                         </FormControl>
                         <div className="space-y-1">
@@ -866,7 +913,7 @@ export default function NewBooking() {
                               <button
                                 key={src}
                                 type="button"
-                                onClick={() => setLeadSource(leadSource === src ? null : src)}
+                                onClick={() => handleLeadSource(src)}
                                 className={cn(
                                   "text-xs font-medium rounded-full px-3 py-1 border transition-colors",
                                   leadSource === src
@@ -879,8 +926,8 @@ export default function NewBooking() {
                             ))}
                           </div>
                           {leadSource && (
-                            <p className="text-xs text-green-700 dark:text-green-400">
-                              Thanks-for-sharing discount? Tap −$10 or −$20 below.
+                            <p className="text-xs text-green-700 dark:text-green-400 flex items-center gap-1">
+                              <CheckCircle2 className="w-3.5 h-3.5" /> $10 thank-you discount applied
                             </p>
                           )}
                         </div>
