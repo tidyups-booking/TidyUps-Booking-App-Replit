@@ -419,7 +419,30 @@ export default function NewBooking() {
 
   const handleRateChange = (rate: number) => {
     setHourlyRate(rate);
+    setCustomRateActive(false);
     recomputePrice(parseFloat(hours), rate);
+  };
+
+  // Custom price-per-hour option
+  const [customRateActive, setCustomRateActive] = useState(false);
+  const [customRate, setCustomRate] = useState("");
+
+  const handleCustomRateChange = (value: string) => {
+    setCustomRate(value);
+    const rate = parseFloat(value);
+    if (isFinite(rate) && rate > 0) {
+      setHourlyRate(rate);
+      recomputePrice(parseFloat(hours), rate);
+    }
+  };
+
+  // Toggle a half hour on top of the whole hours (e.g. 2 → 2.5)
+  const toggleHalfHour = () => {
+    const h = parseFloat(hours) || 0;
+    const hasHalf = h % 1 !== 0;
+    const next = hasHalf ? Math.floor(h) : h + 0.5;
+    if (next <= 0) return;
+    handleHoursChange(String(next));
   };
 
   // Counters for the quick −$10/−$20 buttons so dispatchers can see and undo taps
@@ -917,6 +940,22 @@ export default function NewBooking() {
                                     {h}
                                   </button>
                                 ))}
+                                <button
+                                  type="button"
+                                  onClick={toggleHalfHour}
+                                  className={cn(
+                                    "w-9 h-9 rounded-lg text-sm font-bold border transition-colors",
+                                    (parseFloat(hours) || 0) % 1 !== 0
+                                      ? "bg-primary text-white border-primary"
+                                      : "bg-background text-foreground border-border hover:border-primary/50"
+                                  )}
+                                  title="Add half an hour"
+                                >
+                                  +½
+                                </button>
+                                {(parseFloat(hours) || 0) % 1 !== 0 && (
+                                  <span className="text-xs font-semibold text-primary ml-1">{hours} hrs</span>
+                                )}
                               </div>
                               <div className="flex items-center gap-1">
                                 {[{ rate: RATE_ONE, label: "1 cleaner $52.50/hr" }, { rate: RATE_TWO, label: "2 cleaners $105/hr" }].map(({ rate, label }) => (
@@ -926,7 +965,7 @@ export default function NewBooking() {
                                     onClick={() => handleRateChange(rate)}
                                     className={cn(
                                       "text-xs font-semibold rounded-full px-3 py-1.5 border transition-colors whitespace-nowrap",
-                                      hourlyRate === rate
+                                      !customRateActive && hourlyRate === rate
                                         ? "bg-primary text-white border-primary"
                                         : "bg-background text-muted-foreground border-border hover:border-primary/50"
                                     )}
@@ -934,6 +973,33 @@ export default function NewBooking() {
                                     {label}
                                   </button>
                                 ))}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCustomRateActive(!customRateActive);
+                                    if (customRateActive) handleRateChange(RATE_TWO);
+                                  }}
+                                  className={cn(
+                                    "text-xs font-semibold rounded-full px-3 py-1.5 border transition-colors whitespace-nowrap",
+                                    customRateActive
+                                      ? "bg-primary text-white border-primary"
+                                      : "bg-background text-muted-foreground border-border hover:border-primary/50"
+                                  )}
+                                >
+                                  Custom $/hr
+                                </button>
+                                {customRateActive && (
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    placeholder="75.00"
+                                    value={customRate}
+                                    onChange={(e) => handleCustomRateChange(e.target.value)}
+                                    className="h-8 w-24 text-sm font-semibold border-primary/30"
+                                    autoFocus
+                                  />
+                                )}
                               </div>
                             </div>
                             <div className="relative">
