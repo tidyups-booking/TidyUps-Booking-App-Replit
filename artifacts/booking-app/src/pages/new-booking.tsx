@@ -16,6 +16,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { useToast } from "@/hooks/use-toast";
 import { LiveCallPanel } from "@/components/live-call-panel";
 import { AddressAutocomplete } from "@/components/address-autocomplete";
+import { BookingMiniMap } from "@/components/booking-mini-map";
 
 const bookingSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
@@ -106,7 +107,10 @@ export default function NewBooking() {
 
   // Nearest cleaner suggestion
   const [nearestCleaner, setNearestCleaner] = useState<{ name: string; km: number; id: number } | null>(null);
+  // Coords for the mini-map when the address was typed manually (no Places pick)
+  const [geocodedCoords, setGeocodedCoords] = useState<[number, number] | null>(null);
   const geocodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const geocodeGenRef = useRef(0);
 
   const createBooking = useCreateBooking();
 
@@ -158,31 +162,49 @@ export default function NewBooking() {
   const address = form.watch("address");
   const city = form.watch("city");
 
+  // Coordinates picked via Places autocomplete (exact) — preferred for the mini-map
+  const addressLat = form.watch("addressLat");
+  const addressLng = form.watch("addressLng");
+
   useEffect(() => {
     if (!address || address.length < 5 || !city) {
       setNearestCleaner(null);
+      setGeocodedCoords(null);
       return;
     }
     if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
+    const gen = ++geocodeGenRef.current; // invalidates slow lookups from older inputs
     geocodeTimerRef.current = setTimeout(async () => {
-      const coords = await geocodeAddress(address, city);
+      // Prefer exact Places coords; only geocode when they're missing
+      const coords: [number, number] | null =
+        addressLat != null && addressLng != null
+          ? [addressLat, addressLng]
+          : await geocodeAddress(address, city);
+      if (gen !== geocodeGenRef.current) return;
       if (!coords) return;
+      setGeocodedCoords(coords);
       // Fetch cleaner locations
       try {
         const res = await fetch(`${getBaseUrl()}api/map/data?date=${new Date().toISOString().split("T")[0]}`, { credentials: "include" });
-        if (!res.ok) return;
+        if (gen !== geocodeGenRef.current || !res.ok) return;
         const data = await res.json();
+        if (gen !== geocodeGenRef.current) return;
         let best: { name: string; km: number; id: number } | null = null;
         for (const s of data.staff) {
-          if (!s.location) continue;
-          const km = haversineKm(coords[0], coords[1], s.location.lat, s.location.lng);
+          const pos = s.position ?? (s.homeLat != null && s.homeLng != null ? { lat: s.homeLat, lng: s.homeLng } : null);
+          if (!pos) continue;
+          const km = haversineKm(coords[0], coords[1], pos.lat, pos.lng);
           if (!best || km < best.km) best = { name: s.name, km, id: s.id };
         }
         setNearestCleaner(best);
       } catch { /* ignore */ }
     }, 1200);
     return () => { if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current); };
-  }, [address, city]);
+  }, [address, city, addressLat, addressLng]);
+
+  // Mini-map coords: exact Places pick wins, otherwise the geocoded guess
+  const miniMapCoords: [number, number] | null =
+    addressLat != null && addressLng != null ? [addressLat, addressLng] : geocodedCoords;
 
   // Called by LiveCallPanel when AI extracts fields
   const handleFieldsExtracted = useCallback(
@@ -426,7 +448,12 @@ export default function NewBooking() {
                       <AddressAutocomplete
                         value={field.value}
                         onChange={field.onChange}
-                        onManualChange={() => markEdited("address")}
+                        onManualChange={() => {
+                          markEdited("address");
+                          // Manual typing invalidates the exact Places coordinates
+                          form.setValue("addressLat", undefined);
+                          form.setValue("addressLng", undefined);
+                        }}
                         onPlaceSelect={(place) => {
                           form.setValue("address", place.address, { shouldValidate: true });
                           if (place.city) form.setValue("city", place.city, { shouldValidate: true });
@@ -485,6 +512,15 @@ export default function NewBooking() {
                     </FormItem>
                   )} />
                 </div>
+
+                {/* Live mini-map: caller's location vs cleaners, while on the phone */}
+                {miniMapCoords && (
+                  <BookingMiniMap
+                    lat={miniMapCoords[0]}
+                    lng={miniMapCoords[1]}
+                    baseUrl={getBaseUrl().replace(/\/$/, "")}
+                  />
+                )}
               </CardContent>
             </Card>
           </div>

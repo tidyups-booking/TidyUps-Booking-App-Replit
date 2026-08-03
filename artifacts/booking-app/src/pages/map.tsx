@@ -51,28 +51,7 @@ function initials(name: string) {
   return name.split(" ").map(p => p[0]).join("").toUpperCase().slice(0, 2);
 }
 
-// ── Google Maps loader ───────────────────────────────────────────────────────
-
-let gmapsPromise: Promise<void> | null = null;
-function loadGoogleMaps(apiKey: string): Promise<void> {
-  if ((window as any).google?.maps?.marker) return Promise.resolve();
-  if (gmapsPromise) return gmapsPromise;
-  gmapsPromise = new Promise((resolve, reject) => {
-    (window as any).__gmapsReady = () => resolve();
-    const s = document.createElement("script");
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly&libraries=marker&loading=async&callback=__gmapsReady`;
-    s.async = true;
-    s.onerror = () => { gmapsPromise = null; reject(new Error("Failed to load Google Maps")); };
-    document.head.appendChild(s);
-  });
-  return gmapsPromise;
-}
-
-function htmlToEl(html: string): HTMLElement {
-  const d = document.createElement("div");
-  d.innerHTML = html.trim();
-  return d.firstElementChild as HTMLElement;
-}
+import { loadGoogleMaps, htmlToEl } from "@/lib/google-maps";
 
 // ── Marker HTML (used as AdvancedMarkerElement content) ─────────────────────
 
