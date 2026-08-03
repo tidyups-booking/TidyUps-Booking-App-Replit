@@ -21,6 +21,7 @@ interface PoolClient {
   release(destroy?: boolean): void;
 }
 import { logger } from "../lib/logger.js";
+import { consumeStreamToken } from "./stream-tokens.js";
 import { speechToText } from "@workspace/integrations-openai-ai-server/audio";
 import { openai } from "@workspace/integrations-openai-ai-server";
 
@@ -197,11 +198,48 @@ async function publish(event: Record<string, unknown>) {
   }
 }
 
-async function setDbCallState(activeSid: string | null, transcript: string) {
-  await pool.query(
-    `UPDATE live_call_state SET active_call_sid = $1, transcript = $2, updated_at = now() WHERE id = 1`,
-    [activeSid, transcript],
+// ── Distributed call lease ──────────────────────────────────────────────────
+// The single live_call_state row doubles as a cross-instance lease: claiming,
+// transcript writes, and release are all CONDITIONAL updates keyed on the
+// call SID, so a stream on one autoscale instance can never overwrite or end
+// a live call owned by another instance.
+
+/** Atomically claim the shared call slot. STRICT: succeeds only when the slot
+ *  is free or stale (an instance died without releasing it). A duplicate
+ *  stream for the SAME CallSid (e.g. a retried webhook) is rejected too —
+ *  exactly one stream may own the slot at a time. */
+async function claimCall(sid: string): Promise<boolean> {
+  const { rowCount } = await pool.query(
+    `UPDATE live_call_state
+        SET active_call_sid = $1, transcript = '', updated_at = now()
+      WHERE id = 1
+        AND (active_call_sid IS NULL
+             OR updated_at < now() - interval '60 minutes')`,
+    [sid],
   );
+  return (rowCount ?? 0) > 0;
+}
+
+/** Persist the transcript only while this call still owns the slot. */
+async function persistTranscript(sid: string, transcript: string): Promise<void> {
+  const { rowCount } = await pool.query(
+    `UPDATE live_call_state SET transcript = $2, updated_at = now()
+      WHERE id = 1 AND active_call_sid = $1`,
+    [sid, transcript],
+  );
+  if ((rowCount ?? 0) === 0) {
+    logger.warn({ sid }, "Live-call lease lost — transcript update skipped");
+  }
+}
+
+/** Conditionally release the slot; returns false if another call owns it. */
+async function releaseCall(sid: string, transcript: string): Promise<boolean> {
+  const { rowCount } = await pool.query(
+    `UPDATE live_call_state SET active_call_sid = NULL, transcript = $2, updated_at = now()
+      WHERE id = 1 AND active_call_sid = $1`,
+    [sid, transcript],
+  );
+  return (rowCount ?? 0) > 0;
 }
 
 /** Read the shared call state (works regardless of which instance owns the call). */
@@ -302,10 +340,10 @@ async function flushAudio(force = false) {
   const pcm = mulawToPcm(raw);
   const wav = buildWav(pcm);
   const text = await transcribeWav(wav);
-  if (text) {
+  if (text && activeCallSid) {
     fullTranscript = (fullTranscript + " " + text).trim();
     try {
-      await setDbCallState(activeCallSid, fullTranscript);
+      await persistTranscript(activeCallSid, fullTranscript);
     } catch (err) {
       logger.warn({ err }, "Failed to persist live call transcript");
     }
@@ -327,24 +365,93 @@ async function flushAudio(force = false) {
   }
 }
 
-/** Mark the call over: clear shared state and publish call_ended. */
+/** Mark the call over: release the shared slot and publish call_ended.
+ *  If the lease was lost (another instance's call owns the slot), skip the
+ *  publish so we never end someone else's live call. */
 async function endCall() {
+  const sid = activeCallSid;
   activeCallSid = null;
+  if (!sid) return;
+  let released = false;
   try {
-    await setDbCallState(null, fullTranscript);
+    released = await releaseCall(sid, fullTranscript);
   } catch (err) {
     logger.warn({ err }, "Failed to persist call end");
   }
-  await publish({ type: "call_ended", full: fullTranscript });
+  if (released) {
+    await publish({ type: "call_ended", full: fullTranscript });
+  } else {
+    logger.warn({ sid }, "Call slot owned by another call — call_ended not published");
+  }
 }
 
 // ── WebSocket server (attached to the HTTP server via `upgrade` event) ──────
 
-export function createTwilioWss() {
-  const wss = new WebSocketServer({ noServer: true });
+// Twilio sends its "start" frame immediately after connecting, so a short
+// window is plenty — and it shrinks how long anonymous sockets can squat.
+const AUTH_TIMEOUT_MS = 5_000;
+// Caps on concurrent unauthenticated (provisional) sockets: a global ceiling
+// protects instance resources, and a small per-IP cap stops a single source
+// from monopolizing the provisional pool and starving real Twilio streams
+// (Twilio connects from many media IPs; abusers typically come from few).
+const MAX_PENDING_SOCKETS = 50;
+const MAX_PENDING_PER_IP = 5;
+// Twilio start/media frames are well under 1 KB; anything huge is abuse.
+const MAX_WS_PAYLOAD = 64 * 1024;
 
-  wss.on("connection", (ws: WebSocket) => {
-    logger.info("Twilio Media Stream WebSocket connected");
+let pendingSockets = 0;
+const pendingPerIp = new Map<string, number>();
+// The single socket that owns the active call. Only this socket may mutate
+// or end the shared call state — a stray/duplicate connection closing must
+// never kill a live call.
+let ownerSocket: WebSocket | null = null;
+
+export function createTwilioWss() {
+  const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_PAYLOAD });
+
+  wss.on("connection", (ws: WebSocket, req?: { headers?: Record<string, string | string[] | undefined>; socket?: { remoteAddress?: string } }, auth?: { preauthed?: boolean }) => {
+    // Query-token clients (e2e/synthetic) arrive pre-authenticated. Real Twilio
+    // strips query strings from <Stream> URLs, so it must authenticate via the
+    // "token" customParameter in its "start" message.
+    let authenticated = auth?.preauthed === true;
+
+    const fwd = req?.headers?.["x-forwarded-for"];
+    const ip =
+      (Array.isArray(fwd) ? fwd[0] : fwd)?.split(",")[0]?.trim() ||
+      req?.socket?.remoteAddress ||
+      "unknown";
+
+    if (!authenticated) {
+      const perIp = pendingPerIp.get(ip) ?? 0;
+      if (pendingSockets >= MAX_PENDING_SOCKETS || perIp >= MAX_PENDING_PER_IP) {
+        logger.warn({ ip, pendingSockets, perIp }, "Rejecting Twilio WS: pending unauthenticated socket limit");
+        ws.close(1013, "try again later");
+        return;
+      }
+      pendingSockets++;
+      pendingPerIp.set(ip, perIp + 1);
+    }
+    let countedPending = !authenticated;
+    const settlePending = () => {
+      if (countedPending) {
+        countedPending = false;
+        pendingSockets--;
+        const n = (pendingPerIp.get(ip) ?? 1) - 1;
+        if (n <= 0) pendingPerIp.delete(ip);
+        else pendingPerIp.set(ip, n);
+      }
+    };
+
+    logger.info({ preauthed: authenticated }, "Twilio Media Stream WebSocket connected");
+
+    const authTimer = authenticated
+      ? null
+      : setTimeout(() => {
+          if (!authenticated) {
+            logger.warn("Closing Twilio WS: no authenticated start message within timeout");
+            ws.close(1008, "unauthorized");
+          }
+        }, AUTH_TIMEOUT_MS);
 
     ws.on("message", async (rawMsg) => {
       try {
@@ -352,27 +459,72 @@ export function createTwilioWss() {
           event: string;
           streamSid?: string;
           callSid?: string;
+          start?: {
+            callSid?: string;
+            streamSid?: string;
+            customParameters?: Record<string, string>;
+          };
           media?: { payload: string; track?: string };
         };
 
         if (msg.event === "start") {
-          activeCallSid = msg.callSid ?? msg.streamSid ?? "unknown";
+          if (!authenticated) {
+            const paramToken = msg.start?.customParameters?.token;
+            if (!(await consumeStreamToken(paramToken))) {
+              logger.warn("Twilio WS rejected: invalid or missing stream token (start customParameters)");
+              ws.close(1008, "unauthorized");
+              return;
+            }
+            authenticated = true;
+            settlePending();
+          }
+          if (authTimer) clearTimeout(authTimer);
+
+          // One call at a time — same instance fast path.
+          if (ownerSocket && ownerSocket !== ws && ownerSocket.readyState === ownerSocket.OPEN) {
+            logger.warn("Second concurrent Twilio stream rejected — a call is already active");
+            ws.close(1013, "call in progress");
+            return;
+          }
+
+          // Cross-instance guard: atomically claim the shared call slot in the
+          // DB. If another autoscale instance owns a live call, back off.
+          const sid = msg.start?.callSid ?? msg.callSid ?? msg.streamSid ?? "unknown";
+          if (ownerSocket === ws && activeCallSid === sid) {
+            // Duplicate start frame on our own live stream — idempotent no-op.
+            return;
+          }
+          let claimed = false;
+          try {
+            claimed = await claimCall(sid);
+          } catch (err) {
+            logger.warn({ err }, "Failed to claim call slot");
+          }
+          if (!claimed) {
+            logger.warn({ sid }, "Concurrent Twilio stream rejected — call slot owned by another instance");
+            ws.close(1013, "call in progress");
+            return;
+          }
+
+          ownerSocket = ws;
+          activeCallSid = sid;
           audioChunks = [];
           fullTranscript = "";
-          try {
-            await setDbCallState(activeCallSid, "");
-          } catch (err) {
-            logger.warn({ err }, "Failed to persist call start");
-          }
           await publish({ type: "call_started" });
           logger.info({ callSid: activeCallSid }, "Twilio call started");
+        } else if (!authenticated) {
+          // Ignore anything else from unauthenticated sockets.
+          return;
         } else if (msg.event === "media") {
+          if (ownerSocket !== ws) return;
           const payload = msg.media?.payload;
           if (!payload) return;
           const chunk = Buffer.from(payload, "base64");
           for (const b of chunk) audioChunks.push(b);
           await flushAudio();
         } else if (msg.event === "stop") {
+          if (ownerSocket !== ws) return;
+          ownerSocket = null;
           await flushAudio(true);
           await endCall();
           logger.info("Twilio call ended");
@@ -383,9 +535,14 @@ export function createTwilioWss() {
     });
 
     ws.on("close", async () => {
-      if (activeCallSid) {
-        await flushAudio(true);
-        await endCall();
+      if (authTimer) clearTimeout(authTimer);
+      settlePending();
+      if (ownerSocket === ws) {
+        ownerSocket = null;
+        if (activeCallSid) {
+          await flushAudio(true);
+          await endCall();
+        }
       }
       logger.info("Twilio Media Stream WebSocket disconnected");
     });

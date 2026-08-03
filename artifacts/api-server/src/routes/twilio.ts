@@ -56,10 +56,16 @@ router.post("/twilio/voice", requireTwilioWebhookAuth, (req, res) => {
 
   // TwiML: start the media stream for transcription, then dial the business.
   // <Start> is non-blocking so audio is captured while the real call rings through.
+  // IMPORTANT: Twilio strips query strings when it connects to the <Stream> URL,
+  // so the auth token MUST be passed as a nested <Parameter> — it arrives in the
+  // "start" message's customParameters. The query token is kept as well for
+  // synthetic/e2e clients that authenticate at upgrade time.
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Start>
-    <Stream url="${wsUrl}" track="inbound_track" />
+    <Stream url="${wsUrl}" track="inbound_track">
+      <Parameter name="token" value="${streamToken}" />
+    </Stream>
   </Start>
   <Dial>${businessPhone}</Dial>
 </Response>`;

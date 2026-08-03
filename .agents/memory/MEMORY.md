@@ -8,5 +8,5 @@
 - [Clerk e2e test users](clerk-e2e-test-users.md) — backend-created emails are auto-verified; users must keep ≥1 verified email; reuse/delete stray test users to avoid email-taken 422s
 - [Orval codegen + zod v3](orval-codegen.md) — never use `format: email` in openapi.yaml (generates zod v4-only `zod.email()`); use a `pattern` regex instead
 - [Booking price-breakdown invariants](price-breakdown-invariants.md) — itemized quote must reconcile end-to-end; loyalty last, refuse over-quote discounts, server validates + auto-clears
-- [Live-call scaling](live-call-scaling.md) — call state in `live_call_state` row + LISTEN/NOTIFY fan-out; stream tokens are stateless HMAC; never keep realtime state in module memory
+- [Live-call scaling](live-call-scaling.md) — Twilio strips query strings from <Stream> URLs (auth must use <Parameter>); state row doubles as strict call lease; single-use HMAC tokens; LISTEN/NOTIFY fan-out
 - [TS project references](ts-project-references.md) — api-server typechecks against lib/*/dist .d.ts; rebuild `tsc --build` in lib/db & lib/api-zod after adding schema/types or "missing export" errors break deploys

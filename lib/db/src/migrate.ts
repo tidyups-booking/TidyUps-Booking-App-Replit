@@ -294,6 +294,16 @@ const MIGRATIONS: { name: string; sql: string }[] = [
       ON CONFLICT (id) DO NOTHING;
     `,
   },
+  {
+    // Mirrors lib/db/migrations/012_add_stream_token_uses.sql.
+    name: "012_add_stream_token_uses",
+    sql: `
+      CREATE TABLE IF NOT EXISTS stream_token_uses (
+        token_sig  TEXT PRIMARY KEY,
+        expires_at TIMESTAMPTZ NOT NULL
+      );
+    `,
+  },
 ];
 
 /**

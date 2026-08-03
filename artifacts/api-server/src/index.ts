@@ -39,8 +39,11 @@ const twilioWss = createTwilioWss();
 startLiveCallListener();
 
 // Route WebSocket upgrades to the Twilio stream handler.
-// Require a valid one-time token issued by POST /api/twilio/voice so that
-// only a real Twilio call (which received the TwiML) can open this socket.
+// Auth: a valid token in the query string authenticates immediately (used by
+// e2e/synthetic clients). Real Twilio STRIPS query strings from <Stream> URLs,
+// so its connections arrive without a token — they are accepted provisionally
+// and must present the token via the "start" message's customParameters
+// (<Parameter name="token">), validated in twilio-stream.ts, or be closed.
 server.on("upgrade", (req, socket, head) => {
   const reqUrl = req.url ?? "";
   if (reqUrl.startsWith("/api/twilio/stream")) {
@@ -49,16 +52,12 @@ server.on("upgrade", (req, socket, head) => {
     const { searchParams } = new URL(reqUrl, "http://localhost");
     const token = searchParams.get("token") ?? undefined;
 
-    if (!consumeStreamToken(token)) {
-      logger.warn({ reqUrl: reqUrl.split("?")[0] }, "WebSocket upgrade rejected: invalid or missing stream token");
-      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-      socket.destroy();
-      return;
-    }
-
-    twilioWss.handleUpgrade(req, socket, head, (ws) => {
-      twilioWss.emit("connection", ws, req);
-    });
+    void (async () => {
+      const preauthed = token ? await consumeStreamToken(token) : false;
+      twilioWss.handleUpgrade(req, socket, head, (ws) => {
+        twilioWss.emit("connection", ws, req, { preauthed });
+      });
+    })().catch(() => socket.destroy());
   } else {
     socket.destroy();
   }
