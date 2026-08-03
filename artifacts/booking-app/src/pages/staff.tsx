@@ -7,13 +7,13 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { Users, Plus, Phone, Pencil, CheckCircle2, X, MapPin, AlertTriangle } from "lucide-react";
+import { Users, Plus, Phone, Pencil, CheckCircle2, X, MapPin, AlertTriangle, Download, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Staff } from "@workspace/api-client-react";
 import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import React, { useState, useRef } from "react";
-import { Users, Plus, Phone, Pencil, CheckCircle2, X, MapPin, Download, Upload } from "lucide-react";
+import { DispatcherAccess } from "@/components/dispatcher-access";
 
 const ROLE_LABELS: Record<string, string> = {
   cleaner: "Cleaner",
@@ -238,7 +238,7 @@ export default function StaffManagement() {
   };
 
   const handleSave = () => {
-    const payload: Record<string, unknown> = {
+    const payload = {
       name: form.name.trim(),
       role: form.role as "cleaner" | "lead_cleaner" | "supervisor",
       phone: form.phone.trim() || undefined,
@@ -514,6 +514,9 @@ export default function StaffManagement() {
           )}
         </>
       )}
+
+      {/* Dispatcher access management */}
+      <DispatcherAccess />
     </div>
   );
 }

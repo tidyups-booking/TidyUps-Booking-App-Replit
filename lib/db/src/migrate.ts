@@ -15,7 +15,118 @@
 
 import { pool } from "./pool.js";
 
+/**
+ * Renamed migrations: if the old name is recorded in `_migrations`, the new
+ * name is marked applied too, so the same migration never runs twice under
+ * two names. Applies to both this runner and lib/db/migrate.sh.
+ */
+const RENAMED_MIGRATIONS: { oldName: string; newName: string }[] = [
+  // Renamed when the jobber sync column migration was rewritten
+  { oldName: "002_add_jobber_job_id_unique_index", newName: "003_add_jobber_synced_job_id" },
+];
+
 const MIGRATIONS: { name: string; sql: string }[] = [
+  {
+    // Baseline: all tables that exist before any incremental migrations.
+    // Idempotent — safe on an empty DB or one that already has these tables.
+    // Mirrors lib/db/migrations/000_baseline.sql.
+    name: "000_baseline",
+    sql: `
+      DO $$ BEGIN
+        CREATE TYPE staff_role AS ENUM ('cleaner', 'lead_cleaner', 'supervisor');
+      EXCEPTION WHEN duplicate_object THEN NULL;
+      END $$;
+
+      DO $$ BEGIN
+        CREATE TYPE service_type AS ENUM (
+          'standard_clean', 'deep_clean', 'move_in_out', 'post_construction'
+        );
+      EXCEPTION WHEN duplicate_object THEN NULL;
+      END $$;
+
+      DO $$ BEGIN
+        CREATE TYPE frequency AS ENUM (
+          'one_time', 'weekly', 'biweekly', 'monthly'
+        );
+      EXCEPTION WHEN duplicate_object THEN NULL;
+      END $$;
+
+      DO $$ BEGIN
+        CREATE TYPE booking_status AS ENUM (
+          'pending', 'confirmed', 'in_progress', 'completed', 'cancelled'
+        );
+      EXCEPTION WHEN duplicate_object THEN NULL;
+      END $$;
+
+      CREATE TABLE IF NOT EXISTS staff (
+        id           SERIAL PRIMARY KEY,
+        name         TEXT    NOT NULL,
+        role         staff_role NOT NULL DEFAULT 'cleaner',
+        phone        TEXT,
+        active       BOOLEAN NOT NULL DEFAULT TRUE,
+        home_address TEXT,
+        home_lat     DOUBLE PRECISION,
+        home_lng     DOUBLE PRECISION,
+        created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+
+      CREATE TABLE IF NOT EXISTS bookings (
+        id                  SERIAL PRIMARY KEY,
+        first_name          TEXT NOT NULL,
+        last_name           TEXT NOT NULL,
+        phone               TEXT NOT NULL,
+        email               TEXT,
+        address             TEXT NOT NULL,
+        city                TEXT NOT NULL,
+        province            TEXT NOT NULL DEFAULT 'AB',
+        postal_code         TEXT,
+        service_type        service_type NOT NULL,
+        bedrooms            REAL NOT NULL DEFAULT 2,
+        bathrooms           REAL NOT NULL DEFAULT 1,
+        extras              TEXT[] NOT NULL DEFAULT '{}',
+        scheduled_date      TEXT NOT NULL,
+        scheduled_time      TEXT NOT NULL,
+        frequency           frequency NOT NULL DEFAULT 'one_time',
+        estimated_price     REAL,
+        notes               TEXT,
+        staff_id            INTEGER REFERENCES staff(id) ON DELETE SET NULL,
+        status              booking_status NOT NULL DEFAULT 'pending',
+        address_lat         REAL,
+        address_lng         REAL,
+        jobber_job_id       TEXT,
+        jobber_sync_status  TEXT NOT NULL DEFAULT 'not_started',
+        jobber_sync_error   TEXT,
+        created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+
+      CREATE TABLE IF NOT EXISTS call_transcripts (
+        id                    SERIAL PRIMARY KEY,
+        booking_id            INTEGER NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+        transcript            TEXT NOT NULL,
+        call_duration_seconds INTEGER,
+        created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+
+      CREATE TABLE IF NOT EXISTS cleaner_locations (
+        id         SERIAL PRIMARY KEY,
+        staff_id   INTEGER NOT NULL REFERENCES staff(id) ON DELETE CASCADE UNIQUE,
+        lat        DOUBLE PRECISION NOT NULL,
+        lng        DOUBLE PRECISION NOT NULL,
+        accuracy   REAL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+
+      CREATE TABLE IF NOT EXISTS jobber_tokens (
+        id            SERIAL PRIMARY KEY,
+        access_token  TEXT NOT NULL,
+        refresh_token TEXT NOT NULL,
+        token_type    TEXT NOT NULL DEFAULT 'Bearer',
+        expires_at    TIMESTAMPTZ,
+        created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+    `,
+  },
   {
     name: "001_add_staff_clerk_user_id",
     sql: `
@@ -35,6 +146,30 @@ const MIGRATIONS: { name: string; sql: string }[] = [
         clerk_user_id TEXT PRIMARY KEY,
         created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
       );
+    `,
+  },
+  {
+    // Separate Jobber request IDs from Jobber job IDs for calendar sync.
+    // Full commentary in lib/db/migrations/003_add_jobber_synced_job_id.sql.
+    // All steps are idempotent.
+    name: "003_add_jobber_synced_job_id",
+    sql: `
+      DROP INDEX IF EXISTS bookings_jobber_job_id_unique;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS jobber_synced_job_id TEXT;
+      UPDATE bookings
+      SET jobber_synced_job_id = NULL
+      WHERE id IN (
+        SELECT id FROM (
+          SELECT id, ROW_NUMBER() OVER (
+            PARTITION BY jobber_synced_job_id ORDER BY id
+          ) AS rn
+          FROM bookings
+          WHERE jobber_synced_job_id IS NOT NULL
+        ) ranked
+        WHERE rn > 1
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS bookings_jobber_synced_job_id_unique
+        ON bookings (jobber_synced_job_id);
     `,
   },
   {
@@ -66,6 +201,17 @@ export async function runMigrations(): Promise<void> {
       )
     `);
 
+    // Reconcile renamed migrations: if the old name was recorded, mark the
+    // new name as applied so the same migration never re-runs under a new name.
+    for (const { oldName, newName } of RENAMED_MIGRATIONS) {
+      await client.query(
+        `INSERT INTO _migrations (name)
+         SELECT $1 WHERE EXISTS (SELECT 1 FROM _migrations WHERE name = $2)
+         ON CONFLICT (name) DO NOTHING`,
+        [newName, oldName],
+      );
+    }
+
     for (const { name, sql } of MIGRATIONS) {
       const { rows } = await client.query(
         "SELECT 1 FROM _migrations WHERE name = $1",
@@ -76,8 +222,17 @@ export async function runMigrations(): Promise<void> {
         continue;
       }
 
-      await client.query(sql);
-      await client.query("INSERT INTO _migrations (name) VALUES ($1)", [name]);
+      // Apply the migration and record it atomically, so a crash between the
+      // two can never leave an applied-but-unrecorded migration behind.
+      try {
+        await client.query("BEGIN");
+        await client.query(sql);
+        await client.query("INSERT INTO _migrations (name) VALUES ($1)", [name]);
+        await client.query("COMMIT");
+      } catch (err) {
+        await client.query("ROLLBACK");
+        throw err;
+      }
       console.log(`[db] migration applied: ${name}`);
     }
   } finally {

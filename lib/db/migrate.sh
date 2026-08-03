@@ -27,6 +27,16 @@ psql "$DATABASE_URL" -q -c "
   );
 "
 
+# Reconcile renamed migrations: if the old name was recorded, mark the new
+# name applied so the same migration never re-runs under a new name.
+# Keep this list in sync with RENAMED_MIGRATIONS in src/migrate.ts.
+psql "$DATABASE_URL" -q -c "
+  INSERT INTO _migrations (name)
+  SELECT '003_add_jobber_synced_job_id'
+  WHERE EXISTS (SELECT 1 FROM _migrations WHERE name = '002_add_jobber_job_id_unique_index')
+  ON CONFLICT (name) DO NOTHING;
+"
+
 echo "Running migrations from $MIGRATIONS_DIR"
 
 # Iterate over .sql files in sorted (numeric) order.
@@ -57,8 +67,12 @@ for file in "${sql_files[@]}"; do
   fi
 
   echo "  ✦ applying  $filename"
-  psql "$DATABASE_URL" -q -f "$file"
-  psql "$DATABASE_URL" -q -c "INSERT INTO _migrations (name) VALUES ('$name');"
+  # Apply the migration and record it in ONE transaction (--single-transaction
+  # wraps all -f/-c actions), so a failure can never leave an applied-but-
+  # unrecorded migration that would re-run on retry.
+  psql "$DATABASE_URL" -q -v ON_ERROR_STOP=1 --single-transaction \
+    -f "$file" \
+    -c "INSERT INTO _migrations (name) VALUES ('$name');"
   applied_count=$((applied_count + 1))
 done
 

@@ -9,6 +9,7 @@ import staffRouter from "./staff";
 import twilioRouter from "./twilio";
 import mapRouter from "./map";
 import placesRouter from "./places";
+import dispatchersRouter from "./dispatchers";
 
 const router: IRouter = Router();
 
@@ -35,5 +36,6 @@ router.use(aiRouter);
 router.use(staffRouter);
 router.use(mapRouter);
 router.use(placesRouter);
+router.use(dispatchersRouter);
 
 export default router;

@@ -16,10 +16,10 @@ import { db, staffTable, dispatcherAllowlistTable } from "@workspace/db";
  * DENIED     — Authenticated user not present in either table.
  *              All protected routes return 403.
  *
- * Seeding the first dispatcher:
+ * The first dispatcher (owner) is seeded by migration 003. After that,
+ * dispatchers manage the allowlist from the Staff page in the booking app
+ * (routes in routes/dispatchers.ts). Manual fallback:
  *   INSERT INTO dispatcher_allowlist (clerk_user_id) VALUES ('<clerk_user_id>');
- *
- * Get a user's Clerk ID from the Clerk dashboard → Users.
  */
 export type CallerRole =
   | { role: "dispatcher"; staffId: null }
