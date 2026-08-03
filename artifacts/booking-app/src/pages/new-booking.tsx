@@ -140,6 +140,7 @@ export default function NewBooking() {
       extras: [],
       notes: "",
       staffId: undefined,
+      estimatedPrice: 105,
     },
   });
 
@@ -393,6 +394,10 @@ export default function NewBooking() {
   // Fuel surcharge: added to every quote by default ($12.50); editable for out-of-area jobs
   const [fuelSurcharge, setFuelSurcharge] = useState("12.50");
 
+  // Where the customer heard about us — recorded on the booking notes
+  const LEAD_SOURCES = ["Google", "Facebook", "Instagram", "TikTok", "Referral"] as const;
+  const [leadSource, setLeadSource] = useState<string | null>(null);
+
   const onSubmit = (data: BookingFormValues) => {
     const submitData: Record<string, any> = { ...data };
     if (isNaN(submitData.estimatedPrice as any)) submitData.estimatedPrice = undefined;
@@ -408,6 +413,9 @@ export default function NewBooking() {
     if (submitData.postalCode === "") submitData.postalCode = undefined;
     if (!submitData.staffId) submitData.staffId = undefined;
     if (callTranscript.trim()) submitData.callTranscript = callTranscript.trim();
+    if (leadSource) {
+      submitData.notes = [`Lead source: ${leadSource}`, submitData.notes].filter(Boolean).join("\n");
+    }
 
     createBooking.mutate({ data: submitData as any }, {
       onSuccess: () => {
@@ -851,6 +859,31 @@ export default function NewBooking() {
                             />
                           </div>
                         </FormControl>
+                        <div className="space-y-1">
+                          <p className="text-xs font-medium text-muted-foreground">How did they hear about us?</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {LEAD_SOURCES.map((src) => (
+                              <button
+                                key={src}
+                                type="button"
+                                onClick={() => setLeadSource(leadSource === src ? null : src)}
+                                className={cn(
+                                  "text-xs font-medium rounded-full px-3 py-1 border transition-colors",
+                                  leadSource === src
+                                    ? "bg-primary text-white border-primary"
+                                    : "bg-background text-muted-foreground border-border hover:border-primary/50"
+                                )}
+                              >
+                                {src}
+                              </button>
+                            ))}
+                          </div>
+                          {leadSource && (
+                            <p className="text-xs text-green-700 dark:text-green-400">
+                              Thanks-for-sharing discount? Tap −$10 or −$20 below.
+                            </p>
+                          )}
+                        </div>
                         <div className="flex flex-wrap items-center gap-2">
                           {[10, 20].map((off) => (
                             <button
