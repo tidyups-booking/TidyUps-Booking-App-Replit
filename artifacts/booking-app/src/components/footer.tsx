@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { Phone, Mail, Clock, Globe } from "lucide-react";
+import { Phone, Mail, Clock, Globe, MapPin, CreditCard } from "lucide-react";
 import {
   FaFacebookF,
   FaInstagram,
@@ -59,7 +59,36 @@ function SocialIconRow() {
 
 export const COMPANY_PHONE = "1-833-843-9877";
 export const COMPANY_PHONE_DISPLAY = "1-833-TIDYUPS (843-9877)";
-export const COMPANY_EMAIL = "hello@833tidyups.com";
+export const COMPANY_PHONE_LOCAL = "+15877422500";
+export const COMPANY_PHONE_LOCAL_DISPLAY = "(587) 742-2500";
+export const COMPANY_EMAIL = "support@bookcleaning.app";
+export const COMPANY_ADDRESS_LINES = [
+  "6510 Gateway Blvd NW Suite 1020",
+  "Edmonton, AB T6H 5Z5",
+];
+export const COMPANY_MAPS_URL =
+  "https://www.google.com/maps/search/?api=1&query=" +
+  encodeURIComponent(
+    "833 Tidyups, 6510 Gateway Blvd NW Suite 1020, Edmonton, AB T6H 5Z5",
+  );
+export const SERVICE_AREAS = [
+  "Edmonton",
+  "St. Albert",
+  "Sherwood Park",
+  "Leduc",
+  "Beaumont",
+  "Spruce Grove",
+];
+export const PAYMENT_METHODS = [
+  "Cash",
+  "Visa",
+  "Mastercard",
+  "American Express",
+  "PayPal",
+  "e-Transfer",
+  "Google Pay",
+  "Apple Pay",
+];
 export const COMPANY_HOURS = [
   "Monday – Friday: 8:00 AM – 6:00 PM",
   "Saturday: 9:00 AM – 4:00 PM",
@@ -72,7 +101,7 @@ export function SiteFooter() {
   return (
     <footer className="border-t bg-card">
       <div className="container mx-auto px-4 py-10">
-        <div className="grid gap-8 sm:grid-cols-2 md:grid-cols-3">
+        <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
           {/* Brand */}
           <div className="space-y-3">
             <Link
@@ -123,6 +152,23 @@ export function SiteFooter() {
             </nav>
           </div>
 
+          {/* Service areas */}
+          <div>
+            <h3 className="font-sans text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+              Service Areas
+            </h3>
+            <ul className="flex flex-col gap-2">
+              {SERVICE_AREAS.map((area) => (
+                <li key={area} className="text-sm text-foreground">
+                  {area}
+                </li>
+              ))}
+            </ul>
+            <p className="text-xs text-muted-foreground mt-2">
+              …and surrounding areas within a 15-mile radius
+            </p>
+          </div>
+
           {/* Contact info */}
           <div>
             <h3 className="font-sans text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">
@@ -130,11 +176,33 @@ export function SiteFooter() {
             </h3>
             <div className="flex flex-col gap-2.5 text-sm text-foreground">
               <a
+                href={COMPANY_MAPS_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-start gap-2 hover:text-primary transition-colors w-fit"
+              >
+                <MapPin className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                <span>
+                  {COMPANY_ADDRESS_LINES.map((line) => (
+                    <span key={line} className="block">
+                      {line}
+                    </span>
+                  ))}
+                </span>
+              </a>
+              <a
                 href={`tel:${COMPANY_PHONE}`}
                 className="flex items-center gap-2 hover:text-primary transition-colors w-fit"
               >
                 <Phone className="w-4 h-4 text-primary shrink-0" />
                 {COMPANY_PHONE_DISPLAY}
+              </a>
+              <a
+                href={`tel:${COMPANY_PHONE_LOCAL}`}
+                className="flex items-center gap-2 hover:text-primary transition-colors w-fit"
+              >
+                <Phone className="w-4 h-4 text-primary shrink-0" />
+                {COMPANY_PHONE_LOCAL_DISPLAY}
               </a>
               <a
                 href={`mailto:${COMPANY_EMAIL}`}
@@ -155,7 +223,12 @@ export function SiteFooter() {
           </div>
         </div>
 
-        <div className="mt-8 pt-6 border-t flex flex-col sm:flex-row items-center justify-between gap-2">
+        <div className="mt-8 pt-6 border-t space-y-3">
+          <p className="text-xs text-muted-foreground flex items-center justify-center sm:justify-start gap-1.5 flex-wrap">
+            <CreditCard className="w-3.5 h-3.5 text-primary shrink-0" />
+            <span>We accept: {PAYMENT_METHODS.join(" · ")}</span>
+          </p>
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
           <p className="text-xs text-muted-foreground">
             © {year} 833 Tidyups. All rights reserved.
           </p>
@@ -172,6 +245,7 @@ export function SiteFooter() {
             >
               Help
             </Link>
+          </div>
           </div>
         </div>
       </div>

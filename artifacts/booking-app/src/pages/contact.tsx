@@ -6,14 +6,29 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Phone, Mail, Clock, CheckCircle2, Send } from "lucide-react";
+import {
+  Phone,
+  Mail,
+  Clock,
+  CheckCircle2,
+  Send,
+  MapPin,
+  CreditCard,
+} from "lucide-react";
 import { PublicPage, PublicPageHero } from "@/components/public-page";
 import {
   COMPANY_PHONE,
   COMPANY_PHONE_DISPLAY,
+  COMPANY_PHONE_LOCAL,
+  COMPANY_PHONE_LOCAL_DISPLAY,
   COMPANY_EMAIL,
   COMPANY_HOURS,
+  COMPANY_ADDRESS_LINES,
+  COMPANY_MAPS_URL,
+  SERVICE_AREAS,
+  PAYMENT_METHODS,
 } from "@/components/footer";
+import vehicleImg from "@assets/brand-doc/vehicle-wrap.jpg";
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -110,10 +125,39 @@ export default function ContactPage() {
                   <p className="font-semibold">Phone</p>
                   <a
                     href={`tel:${COMPANY_PHONE}`}
-                    className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                    className="block text-sm text-muted-foreground hover:text-primary transition-colors"
                   >
                     {COMPANY_PHONE_DISPLAY}
                   </a>
+                  <a
+                    href={`tel:${COMPANY_PHONE_LOCAL}`}
+                    className="block text-sm text-muted-foreground hover:text-primary transition-colors"
+                  >
+                    {COMPANY_PHONE_LOCAL_DISPLAY}
+                  </a>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="bg-primary/10 rounded-lg p-2.5 border border-primary/20">
+                  <MapPin className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <p className="font-semibold">Address</p>
+                  <a
+                    href={COMPANY_MAPS_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                  >
+                    {COMPANY_ADDRESS_LINES.map((line) => (
+                      <span key={line} className="block">
+                        {line}
+                      </span>
+                    ))}
+                  </a>
+                  <p className="text-xs text-muted-foreground mt-1.5">
+                    Serving {SERVICE_AREAS.join(", ")} & surrounding areas
+                  </p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
@@ -143,12 +187,29 @@ export default function ContactPage() {
                   </div>
                 </div>
               </div>
+              <div className="flex items-start gap-3">
+                <div className="bg-primary/10 rounded-lg p-2.5 border border-primary/20">
+                  <CreditCard className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <p className="font-semibold">Payment</p>
+                  <p className="text-sm text-muted-foreground">
+                    {PAYMENT_METHODS.join(", ")}
+                  </p>
+                </div>
+              </div>
             </CardContent>
           </Card>
           <p className="text-xs text-muted-foreground px-1">
             For urgent same-day changes to a booking, please call us — it's the
             fastest way to reach dispatch.
           </p>
+          <img
+            src={vehicleImg}
+            alt="The 833 Tidyups company vehicle"
+            className="w-full rounded-xl shadow-sm border"
+            loading="lazy"
+          />
         </div>
 
         {/* Message form */}

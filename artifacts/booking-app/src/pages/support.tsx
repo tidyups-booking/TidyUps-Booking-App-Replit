@@ -17,6 +17,7 @@ import {
   COMPANY_PHONE_DISPLAY,
   COMPANY_EMAIL,
 } from "@/components/footer";
+import livingRoomImg from "@assets/brand-doc/branded-living-room.jpg";
 
 const FAQS = [
   {
@@ -59,6 +60,13 @@ export default function SupportPage() {
         eyebrow="Help Center"
         title="How can we help?"
         subtitle="Answers to the questions we hear most often. Can't find what you're looking for? Our team is one call or message away."
+      />
+
+      <img
+        src={livingRoomImg}
+        alt="A freshly cleaned living room by 833 Tidyups"
+        className="w-full rounded-2xl shadow-sm border mb-10 aspect-[5/2] object-cover object-left-top"
+        loading="lazy"
       />
 
       <Card className="shadow-sm border-t-4 border-t-primary">
