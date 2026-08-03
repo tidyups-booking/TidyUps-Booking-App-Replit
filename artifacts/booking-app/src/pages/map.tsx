@@ -100,11 +100,25 @@ function makeHomeIcon(s: StaffEntry) {
   return L.divIcon({ html, className: "", iconSize: [36, 44], iconAnchor: [18, 44], popupAnchor: [0, -46] });
 }
 
-function makeJobIcon(borderColor: string, isNearest: boolean) {
+// One-time CSS for the "jumped to this day" pulse highlight on job pins
+if (typeof document !== "undefined" && !document.getElementById("job-pin-pulse-style")) {
+  const style = document.createElement("style");
+  style.id = "job-pin-pulse-style";
+  style.textContent = `
+@keyframes jobPinPulse {
+  0%   { transform: scale(1);    filter: drop-shadow(0 0 0 rgba(238,63,206,0.0)); }
+  50%  { transform: scale(1.28); filter: drop-shadow(0 0 10px rgba(238,63,206,0.65)); }
+  100% { transform: scale(1);    filter: drop-shadow(0 0 0 rgba(238,63,206,0.0)); }
+}
+.job-pin-highlight { animation: jobPinPulse 0.9s ease-in-out 4; transform-origin: 50% 100%; }`;
+  document.head.appendChild(style);
+}
+
+function makeJobIcon(borderColor: string, isNearest: boolean, highlight = false) {
   const bg = isNearest ? borderColor : "white";
   const emoji = isNearest ? "🏠" : "🏠";
   const html = `
-    <div style="width:34px;height:40px;display:flex;flex-direction:column;align-items:center;">
+    <div class="${highlight ? "job-pin-highlight" : ""}" style="width:34px;height:40px;display:flex;flex-direction:column;align-items:center;">
       <div style="width:30px;height:30px;border-radius:8px 8px 8px 4px;
         background:${bg};border:2.5px solid ${borderColor};
         box-shadow:0 2px 7px rgba(0,0,0,0.22);
@@ -224,6 +238,8 @@ export default function MapPage() {
   const [calendarMonth, setCalendarMonth] = useState<Date>(() => startOfMonth(new Date()));
   const [dayCounts, setDayCounts] = useState<Record<string, number>>({});
   const [bookingsByDate, setBookingsByDate] = useState<Record<string, CalendarBooking[]>>({});
+  const [jumpHighlight, setJumpHighlight] = useState<string | null>(null);
+  const fitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
@@ -457,6 +473,8 @@ export default function MapPage() {
     });
 
     const staffMap = new Map(staffData.map(s => [s.id, s]));
+    const highlight = jumpHighlight === selectedDate;
+    const coordsForFit: [number, number][] = [];
 
     bookings.forEach(async (b, i) => {
       // Use stored coordinates if available, otherwise fall back to Nominatim geocoding
@@ -488,7 +506,7 @@ export default function MapPage() {
       // Enrich booking with ranking for popup
       const enriched: BookingEntry = { ...b, coords, ranking };
 
-      const icon = makeJobIcon(borderColor, !!nearest && nearest.id === b.staffId);
+      const icon = makeJobIcon(borderColor, !!nearest && nearest.id === b.staffId, highlight);
       const popup = buildJobPopup(enriched, staffMap);
 
       const key = `job-${b.id}`;
@@ -501,9 +519,33 @@ export default function MapPage() {
         const m = L.marker(coords, { icon }).addTo(mapRef.current).bindPopup(popup);
         markersRef.current.set(key, m);
       }
+
+      // Auto-fit the map to include all of the day's job pins after a
+      // Month → Day jump. Markers appear asynchronously (some geocode),
+      // so debounce the fit until pins stop arriving.
+      if (highlight) {
+        coordsForFit.push(coords);
+        if (fitTimerRef.current) clearTimeout(fitTimerRef.current);
+        fitTimerRef.current = setTimeout(() => {
+          if (coordsForFit.length > 0 && mapRef.current) {
+            mapRef.current.fitBounds(L.latLngBounds(coordsForFit), {
+              padding: [60, 60],
+              maxZoom: 14,
+              animate: true,
+            });
+          }
+        }, 400);
+      }
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookings]);
+  }, [bookings, jumpHighlight, selectedDate]);
+
+  // Clear the jump highlight after the pulse animation finishes
+  useEffect(() => {
+    if (!jumpHighlight) return;
+    const t = setTimeout(() => setJumpHighlight(null), 5000);
+    return () => clearTimeout(t);
+  }, [jumpHighlight]);
 
   // ── GPS tracking (cleaner self-share) ────────────────────────────────────────
   const postLocation = useCallback(async (lat: number, lng: number, accuracy?: number) => {
@@ -650,6 +692,7 @@ export default function MapPage() {
           onDateSelect={(date) => {
             setSelectedDate(date);
             setCalendarView("day");
+            setJumpHighlight(date);
             // After React re-renders into Day view, scroll the map into view
             setTimeout(() => {
               mapCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
