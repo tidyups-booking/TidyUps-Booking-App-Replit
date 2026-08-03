@@ -1,4 +1,3 @@
-import React, { useState } from "react";
 import { useListStaff, useCreateStaff, useUpdateStaff } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getListStaffQueryKey } from "@workspace/api-client-react";
@@ -13,6 +12,8 @@ import { useToast } from "@/hooks/use-toast";
 import type { Staff } from "@workspace/api-client-react";
 import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import React, { useState, useRef } from "react";
+import { Users, Plus, Phone, Pencil, CheckCircle2, X, MapPin, Download, Upload } from "lucide-react";
 
 const ROLE_LABELS: Record<string, string> = {
   cleaner: "Cleaner",
@@ -135,6 +136,8 @@ export default function StaffManagement() {
   const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
   const [form, setForm] = useState<StaffFormData>(EMPTY_FORM);
   const [showInactive, setShowInactive] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   // Always fetch all staff so we can show the inactive count without an extra request
   const { data: allStaffData = [], isLoading } = useListStaff({ activeOnly: false });
@@ -150,6 +153,68 @@ export default function StaffManagement() {
   const invalidateStaff = () => {
     queryClient.invalidateQueries({ queryKey: getListStaffQueryKey({ activeOnly: false }) });
     queryClient.invalidateQueries({ queryKey: getListStaffQueryKey({ activeOnly: true }) });
+  };
+
+  const handleExport = () => {
+    const exportData = allStaffData.map((s) => ({
+      name: s.name,
+      role: s.role,
+      phone: (s as any).phone ?? null,
+      active: s.active,
+      homeAddress: (s as any).homeAddress ?? null,
+      homeLat: (s as any).homeLat ?? null,
+      homeLng: (s as any).homeLng ?? null,
+    }));
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `staff-export-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: "Exported", description: `${exportData.length} staff records downloaded.` });
+  };
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Reset the input so the same file can be re-imported if needed
+    e.target.value = "";
+
+    let records: unknown[];
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      if (!Array.isArray(parsed)) throw new Error("File must contain a JSON array");
+      records = parsed;
+    } catch (err: any) {
+      toast({ title: "Invalid file", description: err.message ?? "Could not parse JSON file.", variant: "destructive" });
+      return;
+    }
+
+    setIsImporting(true);
+    try {
+      const res = await fetch("/api/staff/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(records),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as any).error ?? `Server error ${res.status}`);
+      }
+      const result = await res.json() as { imported: number; created: number; updated: number };
+      invalidateStaff();
+      toast({
+        title: "Import complete",
+        description: `${result.imported} records processed — ${result.created} added, ${result.updated} updated.`,
+      });
+    } catch (err: any) {
+      toast({ title: "Import failed", description: err.message ?? "Unknown error.", variant: "destructive" });
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   const openCreate = () => {
@@ -234,15 +299,47 @@ export default function StaffManagement() {
 
   return (
     <div className="max-w-3xl mx-auto animate-in slide-in-from-bottom-4 duration-500">
-      <div className="mb-6 flex items-center justify-between">
+      {/* Hidden file input for import */}
+      <input
+        ref={importInputRef}
+        type="file"
+        accept=".json,application/json"
+        className="hidden"
+        onChange={handleImportFile}
+      />
+
+      <div className="mb-6 flex items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold tracking-tight brand-gradient-text">Staff</h1>
           <p className="text-muted-foreground">Manage your cleaning team.</p>
         </div>
-        <Button onClick={openCreate} className="brand-gradient text-white shadow-md shadow-primary/20">
-          <Plus className="w-4 h-4 mr-2" />
-          Add Staff
-        </Button>
+        <div className="flex items-center gap-2">
+          {allStaffData.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExport}
+              title="Export all staff to JSON"
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Export
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => importInputRef.current?.click()}
+            isLoading={isImporting}
+            title="Import staff from a previously exported JSON file"
+          >
+            <Upload className="w-4 h-4 mr-2" />
+            Import
+          </Button>
+          <Button onClick={openCreate} className="brand-gradient text-white shadow-md shadow-primary/20">
+            <Plus className="w-4 h-4 mr-2" />
+            Add Staff
+          </Button>
+        </div>
       </div>
 
       {/* Add/Edit form */}

@@ -255,6 +255,148 @@ router.get("/staff/:id/schedule", async (req, res): Promise<void> => {
   res.json(bookings);
 });
 
+// POST /staff/import — bulk upsert staff records (dispatcher only)
+// Matches existing records by name (case-insensitive). Updates if found, inserts if not.
+// Preserves all fields including homeLat/homeLng so map pins survive the round-trip.
+router.post("/staff/import", async (req, res): Promise<void> => {
+  if (await guardDispatcher(req, res)) return;
+
+  const body = req.body;
+  if (!Array.isArray(body)) {
+    res.status(400).json({ error: "Request body must be an array of staff records" });
+    return;
+  }
+
+  if (body.length === 0) {
+    res.json({ imported: 0, created: 0, updated: 0, records: [] });
+    return;
+  }
+
+  const VALID_ROLES = new Set(["cleaner", "lead_cleaner", "supervisor"]);
+
+  type ImportRecord = {
+    name: string;
+    role: "cleaner" | "lead_cleaner" | "supervisor";
+    phone: string | null;
+    active: boolean;
+    homeAddress: string | null;
+    homeLat: number | null;
+    homeLng: number | null;
+  };
+
+  // Strict validation — reject the entire batch on first invalid record
+  const validRecords: ImportRecord[] = [];
+  for (let i = 0; i < body.length; i++) {
+    const item = body[i] as Record<string, unknown>;
+    if (typeof item !== "object" || item === null) {
+      res.status(400).json({ error: `Record at index ${i} is not an object` });
+      return;
+    }
+    if (typeof item.name !== "string" || item.name.trim() === "") {
+      res.status(400).json({ error: `Record at index ${i}: "name" must be a non-empty string` });
+      return;
+    }
+    if (item.role !== undefined && !VALID_ROLES.has(item.role as string)) {
+      res.status(400).json({
+        error: `Record at index ${i}: "role" must be one of cleaner, lead_cleaner, supervisor (got ${JSON.stringify(item.role)})`,
+      });
+      return;
+    }
+    if (item.active !== undefined && typeof item.active !== "boolean") {
+      res.status(400).json({
+        error: `Record at index ${i}: "active" must be a boolean (got ${JSON.stringify(item.active)})`,
+      });
+      return;
+    }
+    if (item.homeLat !== undefined && item.homeLat !== null && typeof item.homeLat !== "number") {
+      res.status(400).json({
+        error: `Record at index ${i}: "homeLat" must be a number or null (got ${JSON.stringify(item.homeLat)})`,
+      });
+      return;
+    }
+    if (item.homeLng !== undefined && item.homeLng !== null && typeof item.homeLng !== "number") {
+      res.status(400).json({
+        error: `Record at index ${i}: "homeLng" must be a number or null (got ${JSON.stringify(item.homeLng)})`,
+      });
+      return;
+    }
+    validRecords.push({
+      name: (item.name as string).trim(),
+      role: (item.role as "cleaner" | "lead_cleaner" | "supervisor") ?? "cleaner",
+      phone: typeof item.phone === "string" ? item.phone || null : null,
+      active: typeof item.active === "boolean" ? item.active : true,
+      homeAddress: typeof item.homeAddress === "string" ? item.homeAddress || null : null,
+      homeLat: typeof item.homeLat === "number" ? item.homeLat : null,
+      homeLng: typeof item.homeLng === "number" ? item.homeLng : null,
+    });
+  }
+
+  // Run all DB writes in a single transaction — all-or-nothing
+  const { created, updated } = await db.transaction(async (tx) => {
+    // Build name→record map from DB; updated as we insert new records within the batch
+    // so duplicate names in the import file update the earlier result rather than inserting twice.
+    const existingStaff = await tx.select().from(staffTable);
+    const existingByName = new Map(
+      existingStaff.map((s) => [s.name.toLowerCase().trim(), s])
+    );
+
+    const created: (typeof staffTable.$inferSelect)[] = [];
+    const updated: (typeof staffTable.$inferSelect)[] = [];
+
+    for (const record of validRecords) {
+      const key = record.name.toLowerCase().trim();
+      const existing = existingByName.get(key);
+
+      if (existing) {
+        const [staff] = await tx
+          .update(staffTable)
+          .set({
+            role: record.role as typeof staffTable.role._.data,
+            phone: record.phone,
+            active: record.active,
+            homeAddress: record.homeAddress,
+            homeLat: record.homeLat,
+            homeLng: record.homeLng,
+          })
+          .where(eq(staffTable.id, existing.id))
+          .returning();
+        if (staff) {
+          updated.push(staff);
+          // Refresh map entry in case a later record in the batch also matches this name
+          existingByName.set(key, staff);
+        }
+      } else {
+        const [staff] = await tx
+          .insert(staffTable)
+          .values({
+            name: record.name,
+            role: record.role as typeof staffTable.role._.data,
+            phone: record.phone,
+            active: record.active,
+            homeAddress: record.homeAddress,
+            homeLat: record.homeLat,
+            homeLng: record.homeLng,
+          })
+          .returning();
+        if (staff) {
+          created.push(staff);
+          // Register the new record so any later duplicate name in this batch triggers an update
+          existingByName.set(key, staff);
+        }
+      }
+    }
+
+    return { created, updated };
+  });
+
+  res.json({
+    imported: created.length + updated.length,
+    created: created.length,
+    updated: updated.length,
+    records: [...created, ...updated],
+  });
+});
+
 // GET /schedule?date=YYYY-MM-DD — all staff schedules for a given day (dispatcher only)
 router.get("/schedule", async (req, res): Promise<void> => {
   if (await guardDispatcher(req, res)) return;
