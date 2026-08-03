@@ -400,9 +400,24 @@ export default function NewBooking() {
   const [leadSource, setLeadSource] = useState<string | null>(null);
   const [leadDiscountApplied, setLeadDiscountApplied] = useState(false);
 
-  // Hours of cleaning at the standard $105/hr rate (two cleaners)
-  const HOURLY_RATE = 105;
+  // Hours of cleaning: $52.50/hr for one cleaner, $105/hr for two cleaners
+  const RATE_ONE = 52.5;
+  const RATE_TWO = 105;
+  const [hourlyRate, setHourlyRate] = useState(RATE_TWO);
   const [hours, setHours] = useState("1");
+
+  const recomputePrice = (h: number, rate: number) => {
+    if (!isFinite(h) || h <= 0) return;
+    let price = Math.round(h * rate * 100) / 100;
+    if (leadDiscountApplied) price = Math.max(0, price - 10);
+    form.setValue("estimatedPrice", price as any);
+    setDiscountApplied(false);
+  };
+
+  const handleRateChange = (rate: number) => {
+    setHourlyRate(rate);
+    recomputePrice(parseFloat(hours), rate);
+  };
 
   const adjustPrice = (delta: number) => {
     const current = parseFloat(String(form.getValues("estimatedPrice")));
@@ -423,13 +438,7 @@ export default function NewBooking() {
 
   const handleHoursChange = (value: string) => {
     setHours(value);
-    const h = parseFloat(value);
-    if (isFinite(h) && h > 0) {
-      let price = Math.round(h * HOURLY_RATE * 100) / 100;
-      if (leadDiscountApplied) price = Math.max(0, price - 10);
-      form.setValue("estimatedPrice", price as any);
-      setDiscountApplied(false);
-    }
+    recomputePrice(parseFloat(value), hourlyRate);
   };
 
   const onSubmit = (data: BookingFormValues) => {
@@ -892,7 +901,24 @@ export default function NewBooking() {
                                 onChange={(e) => handleHoursChange(e.target.value)}
                                 className="h-12 w-16 text-center font-bold border-primary/30"
                               />
-                              <span className="text-xs text-muted-foreground whitespace-nowrap">hrs × ${HOURLY_RATE}</span>
+                              <span className="text-xs text-muted-foreground whitespace-nowrap">hrs ×</span>
+                              <div className="flex flex-col gap-1">
+                                {[{ rate: RATE_ONE, label: "1 cleaner $52.50" }, { rate: RATE_TWO, label: "2 cleaners $105" }].map(({ rate, label }) => (
+                                  <button
+                                    key={rate}
+                                    type="button"
+                                    onClick={() => handleRateChange(rate)}
+                                    className={cn(
+                                      "text-[11px] font-semibold rounded-full px-2.5 py-0.5 border transition-colors whitespace-nowrap",
+                                      hourlyRate === rate
+                                        ? "bg-primary text-white border-primary"
+                                        : "bg-background text-muted-foreground border-border hover:border-primary/50"
+                                    )}
+                                  >
+                                    {label}
+                                  </button>
+                                ))}
+                              </div>
                             </div>
                             <div className="relative flex-1">
                               <DollarSign className="w-5 h-5 absolute left-3 top-3 text-primary" />
