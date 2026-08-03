@@ -26,7 +26,11 @@ import BookingDetail from "@/pages/booking-detail";
 import Schedule from "@/pages/schedule";
 import StaffManagement from "@/pages/staff";
 import MapPage from "@/pages/map";
+import SupportPage from "@/pages/support";
+import ContactPage from "@/pages/contact";
+import PrivacyPage from "@/pages/privacy";
 import NotFound from "@/pages/not-found";
+import { SiteFooter } from "@/components/footer";
 
 const queryClient = new QueryClient();
 
@@ -110,24 +114,30 @@ const clerkAppearance = {
 
 function SignInPage() {
   return (
-    <div className="flex min-h-[100dvh] items-center justify-center bg-gradient-to-br from-pink-50 via-white to-purple-50 px-4">
-      <SignIn
-        routing="path"
-        path={`${basePath}/sign-in`}
-        signUpUrl={`${basePath}/sign-up`}
-      />
+    <div className="flex min-h-[100dvh] flex-col">
+      <div className="flex flex-1 items-center justify-center bg-gradient-to-br from-pink-50 via-white to-purple-50 px-4 py-10">
+        <SignIn
+          routing="path"
+          path={`${basePath}/sign-in`}
+          signUpUrl={`${basePath}/sign-up`}
+        />
+      </div>
+      <SiteFooter />
     </div>
   );
 }
 
 function SignUpPage() {
   return (
-    <div className="flex min-h-[100dvh] items-center justify-center bg-gradient-to-br from-pink-50 via-white to-purple-50 px-4">
-      <SignUp
-        routing="path"
-        path={`${basePath}/sign-up`}
-        signInUrl={`${basePath}/sign-in`}
-      />
+    <div className="flex min-h-[100dvh] flex-col">
+      <div className="flex flex-1 items-center justify-center bg-gradient-to-br from-pink-50 via-white to-purple-50 px-4 py-10">
+        <SignUp
+          routing="path"
+          path={`${basePath}/sign-up`}
+          signInUrl={`${basePath}/sign-in`}
+        />
+      </div>
+      <SiteFooter />
     </div>
   );
 }
@@ -137,7 +147,8 @@ function SignUpPage() {
 function LandingPage() {
   const [, setLocation] = useLocation();
   return (
-    <div className="relative flex min-h-[100dvh] flex-col items-center justify-center px-4 gap-8 overflow-hidden">
+    <div className="flex min-h-[100dvh] flex-col">
+      <div className="relative flex flex-1 min-h-[100dvh] flex-col items-center justify-center px-4 gap-8 overflow-hidden">
       {/* Vehicle background */}
       <div className="absolute inset-0 z-0">
         <img
@@ -178,6 +189,8 @@ function LandingPage() {
           </a>
         </div>
       </div>
+      </div>
+      <SiteFooter />
     </div>
   );
 }
@@ -273,6 +286,9 @@ function AppRouter() {
             <Route path="/" component={HomeRoute} />
             <Route path="/sign-in/*?" component={SignInPage} />
             <Route path="/sign-up/*?" component={SignUpPage} />
+            <Route path="/support" component={SupportPage} />
+            <Route path="/contact" component={ContactPage} />
+            <Route path="/privacy" component={PrivacyPage} />
             <Route path="/new">
               <ProtectedRoute component={NewBooking} />
             </Route>

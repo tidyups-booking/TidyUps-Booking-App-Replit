@@ -10,6 +10,7 @@ import twilioRouter from "./twilio";
 import mapRouter from "./map";
 import placesRouter from "./places";
 import dispatchersRouter from "./dispatchers";
+import contactRouter from "./contact";
 
 const router: IRouter = Router();
 
@@ -26,6 +27,9 @@ router.use(twilioRouter);
 // the rest of the jobber routes (auth trigger, status, sync) are safe to leave
 // public — they rely on server-side secrets and don't expose user data
 router.use(jobberRouter);
+
+// Contact form: submitted from the public Contact page (no session cookie).
+router.use(contactRouter);
 
 // ── Protected routes ─────────────────────────────────────────────────────────
 

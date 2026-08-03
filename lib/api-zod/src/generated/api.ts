@@ -18,6 +18,38 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
+ * @summary Submit a contact form message (public, no auth)
+ */
+export const submitContactMessageBodyNameMax = 200;
+
+export const submitContactMessageBodyEmailMax = 320;
+
+
+export const submitContactMessageBodyEmailRegExp = new RegExp('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
+export const submitContactMessageBodyPhoneMax = 40;
+
+export const submitContactMessageBodyMessageMax = 5000;
+
+
+
+export const SubmitContactMessageBody = zod.object({
+  "name": zod.string().min(1).max(submitContactMessageBodyNameMax),
+  "email": zod.string().max(submitContactMessageBodyEmailMax).regex(submitContactMessageBodyEmailRegExp),
+  "phone": zod.string().max(submitContactMessageBodyPhoneMax).optional(),
+  "message": zod.string().min(1).max(submitContactMessageBodyMessageMax)
+})
+
+export const SubmitContactMessageResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "phone": zod.string().nullish(),
+  "message": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
  * @summary List all bookings
  */
 export const listBookingsQueryLimitDefault = 50;

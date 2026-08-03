@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { LayoutDashboard, CalendarPlus, List, Menu, CalendarDays, Users, Map } from "lucide-react";
 import { LiveCallProvider, useLiveCall } from "@/contexts/live-call-context";
 import { CallAlertBanner } from "@/components/call-alert-banner";
+import { SiteFooter } from "@/components/footer";
 import logoImg from "@assets/833tidyups-logo.png";
 
 function LayoutInner({ children }: { children: React.ReactNode }) {
@@ -107,6 +108,8 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
       <main className="flex-1 container mx-auto px-4 py-8">
         {children}
       </main>
+
+      <SiteFooter />
     </div>
   );
 }

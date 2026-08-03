@@ -3,3 +3,4 @@
 - [DB migration runners](db-migrations.md) — two runners (embedded startup + migrate.sh) share the _migrations ledger; keep names/sets identical, reconcile renames, apply+record in one txn
 - [Jobber API quirks](jobber-api.md) — Jobber retires GraphQL versions (404s), filter fields renamed across versions; drizzle `${arr}` becomes a tuple, use `sql.param(arr)` for `ANY(::text[])`
 - [Cleaner App Auth](cleaner-app-auth.md) — Clerk v4 Expo auth: use @clerk/expo/legacy for useSignIn/useSignUp; useSSO from @clerk/expo; signals API (default export) lacks setActive
+- [Orval codegen + zod v3](orval-codegen.md) — never use `format: email` in openapi.yaml (generates zod v4-only `zod.email()`); use a `pattern` regex instead

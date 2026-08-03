@@ -192,6 +192,21 @@ const MIGRATIONS: { name: string; sql: string }[] = [
       ALTER TYPE service_type ADD VALUE IF NOT EXISTS 'move_out';
     `,
   },
+  {
+    // Contact form submissions from the public Contact page.
+    // Mirrors lib/db/migrations/005_add_contact_messages.sql.
+    name: "005_add_contact_messages",
+    sql: `
+      CREATE TABLE IF NOT EXISTS contact_messages (
+        id         SERIAL PRIMARY KEY,
+        name       TEXT NOT NULL,
+        email      TEXT NOT NULL,
+        phone      TEXT,
+        message    TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+    `,
+  },
 ];
 
 /**

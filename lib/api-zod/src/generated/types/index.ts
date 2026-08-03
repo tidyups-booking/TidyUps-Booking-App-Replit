@@ -20,6 +20,8 @@ export * from './bookingUpdate';
 export * from './bookingUpdateFrequency';
 export * from './bookingUpdateServiceType';
 export * from './bookingUpdateStatus';
+export * from './contactMessage';
+export * from './contactMessageInput';
 export * from './errorResponse';
 export * from './getDayScheduleParams';
 export * from './getStaffScheduleParams';

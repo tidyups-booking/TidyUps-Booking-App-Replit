@@ -13,6 +13,36 @@ export interface ErrorResponse {
   error: string;
 }
 
+export interface ContactMessage {
+  id: number;
+  name: string;
+  email: string;
+  /** @nullable */
+  phone?: string | null;
+  message: string;
+  createdAt: string;
+}
+
+export interface ContactMessageInput {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  name: string;
+  /**
+     * @maxLength 320
+     * @pattern ^[^@\s]+@[^@\s]+\.[^@\s]+$
+     */
+  email: string;
+  /** @maxLength 40 */
+  phone?: string;
+  /**
+     * @minLength 1
+     * @maxLength 5000
+     */
+  message: string;
+}
+
 export type BookingServiceType = typeof BookingServiceType[keyof typeof BookingServiceType];
 
 
