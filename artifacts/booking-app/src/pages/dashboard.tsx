@@ -8,6 +8,7 @@ import { formatDate, formatTime, formatCurrency, cn } from "@/lib/utils";
 import { DollarSign, Calendar, Clock, AlertCircle, ArrowRight, Activity, CalendarDays } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { JobberStatus } from "@/components/jobber-status";
+import { TwilioWebhookStatus } from "@/components/twilio-webhook-status";
 
 function getBaseUrl() {
   const base = import.meta.env.BASE_URL ?? "/";
@@ -27,6 +28,7 @@ export default function Dashboard() {
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <JobberStatus baseUrl={getBaseUrl()} />
+          <TwilioWebhookStatus baseUrl={getBaseUrl()} />
           <Link href="/new">
             <Button size="lg" className="w-full md:w-auto gap-2">
               <Calendar className="w-5 h-5" />

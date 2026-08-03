@@ -8,8 +8,49 @@ import {
   getVoiceWebhookUrl,
 } from "../middlewares/twilioWebhookAuth.js";
 import { requireDispatcherAuth } from "../lib/callerRole.js";
+import {
+  checkTwilioWebhookNow,
+  fixTwilioWebhook,
+} from "../services/twilio-webhook-check.js";
+import { logger } from "../lib/logger.js";
 
 const router = Router();
+
+/**
+ * GET /twilio/webhook-health — dispatcher only
+ * Reads the voice webhook configured on the inbound Twilio number via the
+ * Twilio API and compares it with the expected production URL. Used by the
+ * dispatcher dashboard to warn when the phone system stops pointing at the
+ * live site.
+ */
+router.get("/twilio/webhook-health", async (req, res) => {
+  if (await requireDispatcherAuth(req, res)) return;
+  try {
+    const result = await checkTwilioWebhookNow();
+    res.json(result);
+  } catch (err) {
+    logger.error({ err }, "Twilio webhook health check failed");
+    res.status(502).json({ error: "Failed to check Twilio webhook configuration" });
+  }
+});
+
+/**
+ * POST /twilio/webhook-health/fix — dispatcher only
+ * One-click fix: re-points the Twilio number's voice webhook at the
+ * production URL, then returns the fresh check result.
+ */
+router.post("/twilio/webhook-health/fix", async (req, res) => {
+  if (await requireDispatcherAuth(req, res)) return;
+  try {
+    const result = await fixTwilioWebhook();
+    res.json(result);
+  } catch (err) {
+    logger.error({ err }, "Twilio webhook fix failed");
+    res.status(502).json({
+      error: err instanceof Error ? err.message : "Failed to update Twilio webhook",
+    });
+  }
+});
 
 /**
  * GET /twilio/webhook-url — dispatcher only

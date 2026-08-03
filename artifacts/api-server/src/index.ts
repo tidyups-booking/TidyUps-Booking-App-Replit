@@ -6,6 +6,7 @@ import { createTwilioWss, startLiveCallListener } from "./services/twilio-stream
 import { consumeStreamToken } from "./services/stream-tokens.js";
 import { runMigrations } from "@workspace/db";
 import { startJobberAutoSync } from "./services/jobberCalendarSync.js";
+import { startTwilioWebhookMonitor } from "./services/twilio-webhook-check.js";
 
 const rawPort = process.env["PORT"];
 
@@ -68,6 +69,9 @@ server.listen(port, "0.0.0.0", () => {
   // Background poller: automatically pulls new Jobber appointments every few
   // minutes while Jobber is connected (no manual sync needed).
   startJobberAutoSync();
+  // Background monitor: warns loudly (logs + dashboard endpoint) if the
+  // Twilio number's voice webhook stops pointing at the live site.
+  startTwilioWebhookMonitor();
 });
 
 server.on("error", (err: NodeJS.ErrnoException) => {
