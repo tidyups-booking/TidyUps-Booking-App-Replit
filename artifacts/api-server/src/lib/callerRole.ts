@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { type Response } from "express";
-import { getAuth } from "@clerk/express";
+import { getAuth, clerkClient } from "@clerk/express";
 import { db, staffTable, dispatcherAllowlistTable } from "@workspace/db";
 
 /**
@@ -49,7 +49,62 @@ export async function resolveCallerRole(callerId: string): Promise<CallerRole> {
     return { role: "cleaner", staffId: staffRows[0].id };
   }
 
-  return { role: "denied", staffId: null };
+  return await tryBootstrapDispatcherByEmail(callerId);
+}
+
+/**
+ * Environment-portable dispatcher bootstrap.
+ *
+ * Clerk user IDs differ between development and production (separate user
+ * stores), so an allowlist seeded in one environment does not carry over to
+ * the other — which locks the owner out of the deployed app. To fix this,
+ * `DISPATCHER_EMAILS` (comma-separated) names owner emails that always get
+ * dispatcher access: when an authenticated caller is not in the allowlist,
+ * we check their VERIFIED Clerk emails against the list and, on match,
+ * insert them into `dispatcher_allowlist` (self-healing, one-time per user).
+ *
+ * Unmatched callers are cached per process so repeated denied requests do
+ * not hammer the Clerk API.
+ */
+const bootstrapCheckedCallers = new Set<string>();
+
+async function tryBootstrapDispatcherByEmail(callerId: string): Promise<CallerRole> {
+  const denied: CallerRole = { role: "denied", staffId: null };
+
+  const bootstrapEmails = (process.env.DISPATCHER_EMAILS ?? "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  if (bootstrapEmails.length === 0) return denied;
+  if (bootstrapCheckedCallers.has(callerId)) return denied;
+
+  try {
+    const user = await clerkClient.users.getUser(callerId);
+
+    const verifiedEmails = user.emailAddresses
+      .filter((e) => e.verification?.status === "verified")
+      .map((e) => e.emailAddress.toLowerCase());
+
+    if (!verifiedEmails.some((e) => bootstrapEmails.includes(e))) {
+      // Confirmed nonmatch — cache so future denied requests skip the Clerk
+      // call. Matching callers are never cached: once the allowlist insert
+      // succeeds they resolve via the allowlist, and if the insert fails
+      // transiently they stay retryable on the next request.
+      bootstrapCheckedCallers.add(callerId);
+      return denied;
+    }
+
+    await db
+      .insert(dispatcherAllowlistTable)
+      .values({ clerkUserId: callerId })
+      .onConflictDoNothing();
+    console.log(`[callerRole] bootstrapped dispatcher access for ${callerId} via DISPATCHER_EMAILS`);
+    return { role: "dispatcher", staffId: null };
+  } catch (err) {
+    // Transient Clerk failure — do NOT cache, so the next request retries.
+    console.warn("[callerRole] dispatcher email bootstrap check failed:", err);
+    return denied;
+  }
 }
 
 /**
