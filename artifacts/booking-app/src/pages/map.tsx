@@ -202,6 +202,7 @@ function buildJobPopup(b: BookingEntry, staffMap: Map<number, StaffEntry>) {
 export default function MapPage() {
   const mapRef = useRef<L.Map | null>(null);
   const mapElRef = useRef<HTMLDivElement | null>(null);
+  const mapCardRef = useRef<HTMLDivElement | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
 
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split("T")[0]);
@@ -649,6 +650,10 @@ export default function MapPage() {
           onDateSelect={(date) => {
             setSelectedDate(date);
             setCalendarView("day");
+            // After React re-renders into Day view, scroll the map into view
+            setTimeout(() => {
+              mapCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }, 50);
           }}
           counts={dayCounts}
           currentMonth={calendarMonth}
@@ -802,7 +807,7 @@ export default function MapPage() {
       )}
 
       {/* Map */}
-      <Card className="overflow-hidden shadow-md">
+      <Card ref={mapCardRef} className="overflow-hidden shadow-md">
         <div ref={mapElRef} style={{ height: 520 }} className="w-full" />
       </Card>
 
