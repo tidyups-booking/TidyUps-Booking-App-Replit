@@ -252,6 +252,16 @@ export default function NewBooking() {
                   form.setValue("addressLat", place.lat);
                   form.setValue("addressLng", place.lng);
                 }
+                // Flash-highlight the Places-backfilled fields green for 2 s
+                const placesFilled: string[] = [];
+                if (place.address && !lockedFields.has("address")) placesFilled.push("address");
+                if (place.city && !fields.city && !lockedFields.has("city")) placesFilled.push("city");
+                if (place.province && !fields.province && !lockedFields.has("province")) placesFilled.push("province");
+                if (place.postalCode && !fields.postalCode && !lockedFields.has("postalCode")) placesFilled.push("postalCode");
+                if (placesFilled.length > 0) {
+                  setHighlightedFields((prev) => new Set([...prev, ...placesFilled]));
+                  setTimeout(() => setHighlightedFields(new Set()), 2000);
+                }
               }
             }
           }
@@ -426,6 +436,13 @@ export default function NewBooking() {
                             form.setValue("addressLat", place.lat);
                             form.setValue("addressLng", place.lng);
                           }
+                          // Flash-highlight the auto-filled location fields green for 2 s
+                          const placeFilled: string[] = ["address"];
+                          if (place.city) placeFilled.push("city");
+                          if (place.province) placeFilled.push("province");
+                          if (place.postalCode) placeFilled.push("postalCode");
+                          setHighlightedFields(new Set(placeFilled));
+                          setTimeout(() => setHighlightedFields(new Set()), 2000);
                         }}
                         placeholder="123 Main St NW"
                         className={fieldClass("address")}
