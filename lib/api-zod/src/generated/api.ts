@@ -567,6 +567,7 @@ export const ListStaffResponseItem = zod.object({
   "name": zod.string(),
   "role": zod.enum(['cleaner', 'lead_cleaner', 'supervisor']),
   "phone": zod.string().nullish(),
+  "email": zod.string().nullish(),
   "active": zod.boolean(),
   "createdAt": zod.coerce.date()
 })
@@ -578,12 +579,14 @@ export const ListStaffResponse = zod.array(ListStaffResponseItem)
  */
 
 export const createStaffBodyRoleDefault = `cleaner`;
+export const createStaffBodyEmailRegExp = new RegExp('^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$');
 export const createStaffBodyActiveDefault = true;
 
 export const CreateStaffBody = zod.object({
   "name": zod.string().min(1),
   "role": zod.enum(['cleaner', 'lead_cleaner', 'supervisor']).default(createStaffBodyRoleDefault),
   "phone": zod.string().optional(),
+  "email": zod.string().regex(createStaffBodyEmailRegExp).optional(),
   "active": zod.boolean().default(createStaffBodyActiveDefault)
 })
 
@@ -592,6 +595,7 @@ export const CreateStaffResponse = zod.object({
   "name": zod.string(),
   "role": zod.enum(['cleaner', 'lead_cleaner', 'supervisor']),
   "phone": zod.string().nullish(),
+  "email": zod.string().nullish(),
   "active": zod.boolean(),
   "createdAt": zod.coerce.date()
 })
@@ -605,6 +609,7 @@ export const GetStaffMeResponse = zod.object({
   "name": zod.string(),
   "role": zod.enum(['cleaner', 'lead_cleaner', 'supervisor']),
   "phone": zod.string().nullish(),
+  "email": zod.string().nullish(),
   "active": zod.boolean(),
   "createdAt": zod.coerce.date()
 })
@@ -621,6 +626,7 @@ export const UpdateStaffBody = zod.object({
   "name": zod.string().optional(),
   "role": zod.enum(['cleaner', 'lead_cleaner', 'supervisor']).optional(),
   "phone": zod.string().optional(),
+  "email": zod.string().nullish().describe('Email address. Send null or an empty string to clear it.'),
   "active": zod.boolean().optional(),
   "clerkUserId": zod.string().nullish().describe('Clerk user ID to link to this staff record. Dispatcher-only field. Set to null to unlink. When set, the staff member can sign in to the cleaner app and their schedule will load automatically.\n'),
   "homeAddress": zod.string().nullish().describe('Street address for the cleaner\'s home base (used for map proximity).'),
@@ -633,6 +639,7 @@ export const UpdateStaffResponse = zod.object({
   "name": zod.string(),
   "role": zod.enum(['cleaner', 'lead_cleaner', 'supervisor']),
   "phone": zod.string().nullish(),
+  "email": zod.string().nullish(),
   "active": zod.boolean(),
   "createdAt": zod.coerce.date()
 })
@@ -725,6 +732,7 @@ export const GetDayScheduleResponseItem = zod.object({
   "name": zod.string(),
   "role": zod.enum(['cleaner', 'lead_cleaner', 'supervisor']),
   "phone": zod.string().nullish(),
+  "email": zod.string().nullish(),
   "active": zod.boolean(),
   "createdAt": zod.coerce.date()
 }),

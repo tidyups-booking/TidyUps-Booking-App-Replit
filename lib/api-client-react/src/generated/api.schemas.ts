@@ -356,6 +356,8 @@ export interface Staff {
   role: StaffRole;
   /** @nullable */
   phone?: string | null;
+  /** @nullable */
+  email?: string | null;
   active: boolean;
   createdAt: string;
 }
@@ -374,6 +376,8 @@ export interface StaffInput {
   name: string;
   role?: StaffInputRole;
   phone?: string;
+  /** @pattern ^[^\s@]+@[^\s@]+\.[^\s@]+$ */
+  email?: string;
   active?: boolean;
 }
 
@@ -390,6 +394,8 @@ export interface StaffUpdate {
   name?: string;
   role?: StaffUpdateRole;
   phone?: string;
+  /** Email address. Send null or an empty string to clear it. */
+  email?: string | null;
   active?: boolean;
   /** Clerk user ID to link to this staff record. Dispatcher-only field. Set to null to unlink. When set, the staff member can sign in to the cleaner app and their schedule will load automatically. */
   clerkUserId?: string | null;

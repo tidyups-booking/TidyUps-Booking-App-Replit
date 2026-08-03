@@ -13,6 +13,8 @@ export interface Staff {
   role: StaffRole;
   /** @nullable */
   phone?: string | null;
+  /** @nullable */
+  email?: string | null;
   active: boolean;
   createdAt: Date;
 }

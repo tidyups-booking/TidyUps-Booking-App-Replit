@@ -15,6 +15,10 @@ import { resolveCallerRole, guardDispatcher } from "../lib/callerRole.js";
 
 const router: IRouter = Router();
 
+// Same email shape the OpenAPI spec enforces on create — applied to PATCH and
+// import too so malformed emails can't enter through a side door.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 // GET /staff — dispatcher only
 router.get("/staff", async (req, res): Promise<void> => {
   if (await guardDispatcher(req, res)) return;
@@ -52,6 +56,7 @@ router.post("/staff", async (req, res): Promise<void> => {
       name: data.name,
       role: (data.role as typeof staffTable.role._.data) ?? "cleaner",
       phone: data.phone ?? null,
+      email: data.email ?? null,
       active: data.active ?? true,
     })
     .returning();
@@ -170,6 +175,17 @@ router.patch("/staff/:id", async (req, res): Promise<void> => {
 
   // Self-service fields (both roles, own record only for cleaners — enforced above)
   if (data.phone !== undefined) updateData.phone = data.phone;
+  if (data.email !== undefined) {
+    // null or empty string clears the email; anything else must be a valid address
+    if (data.email === null || data.email === "") {
+      updateData.email = null;
+    } else if (!EMAIL_RE.test(data.email)) {
+      res.status(400).json({ error: "Invalid email address" });
+      return;
+    } else {
+      updateData.email = data.email;
+    }
+  }
   if (typeof raw.homeAddress === "string") updateData.homeAddress = raw.homeAddress || null;
   if (typeof raw.homeLat === "number") updateData.homeLat = raw.homeLat;
   if (typeof raw.homeLng === "number") updateData.homeLng = raw.homeLng;
@@ -278,6 +294,7 @@ router.post("/staff/import", async (req, res): Promise<void> => {
     name: string;
     role: "cleaner" | "lead_cleaner" | "supervisor";
     phone: string | null;
+    email: string | null;
     active: boolean;
     homeAddress: string | null;
     homeLat: number | null;
@@ -320,10 +337,27 @@ router.post("/staff/import", async (req, res): Promise<void> => {
       });
       return;
     }
+    if (item.email !== undefined && item.email !== null && typeof item.email !== "string") {
+      res.status(400).json({
+        error: `Record at index ${i}: "email" must be a string or null (got ${JSON.stringify(item.email)})`,
+      });
+      return;
+    }
+    if (
+      typeof item.email === "string" &&
+      item.email.trim() !== "" &&
+      !EMAIL_RE.test(item.email.trim())
+    ) {
+      res.status(400).json({
+        error: `Record at index ${i}: "email" is not a valid email address (got ${JSON.stringify(item.email)})`,
+      });
+      return;
+    }
     validRecords.push({
       name: (item.name as string).trim(),
       role: (item.role as "cleaner" | "lead_cleaner" | "supervisor") ?? "cleaner",
       phone: typeof item.phone === "string" ? item.phone || null : null,
+      email: typeof item.email === "string" ? item.email.trim() || null : null,
       active: typeof item.active === "boolean" ? item.active : true,
       homeAddress: typeof item.homeAddress === "string" ? item.homeAddress || null : null,
       homeLat: typeof item.homeLat === "number" ? item.homeLat : null,
@@ -353,6 +387,7 @@ router.post("/staff/import", async (req, res): Promise<void> => {
           .set({
             role: record.role as typeof staffTable.role._.data,
             phone: record.phone,
+            email: record.email,
             active: record.active,
             homeAddress: record.homeAddress,
             homeLat: record.homeLat,
@@ -372,6 +407,7 @@ router.post("/staff/import", async (req, res): Promise<void> => {
             name: record.name,
             role: record.role as typeof staffTable.role._.data,
             phone: record.phone,
+            email: record.email,
             active: record.active,
             homeAddress: record.homeAddress,
             homeLat: record.homeLat,

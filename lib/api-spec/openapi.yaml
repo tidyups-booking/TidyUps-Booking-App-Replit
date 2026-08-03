@@ -1023,6 +1023,8 @@ components:
           enum: [cleaner, lead_cleaner, supervisor]
         phone:
           type: ["string", "null"]
+        email:
+          type: ["string", "null"]
         active:
           type: boolean
         createdAt:
@@ -1043,6 +1045,9 @@ components:
           default: cleaner
         phone:
           type: string
+        email:
+          type: string
+          pattern: "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"
         active:
           type: boolean
           default: true
@@ -1057,6 +1062,10 @@ components:
           enum: [cleaner, lead_cleaner, supervisor]
         phone:
           type: string
+        email:
+          type: string
+          nullable: true
+          description: Email address. Send null or an empty string to clear it.
         active:
           type: boolean
         clerkUserId:

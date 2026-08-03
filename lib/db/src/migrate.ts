@@ -271,6 +271,14 @@ const MIGRATIONS: { name: string; sql: string }[] = [
       WHERE NOT EXISTS (SELECT 1 FROM social_links);
     `,
   },
+  {
+    // Optional email address for staff members.
+    // Mirrors lib/db/migrations/010_add_staff_email.sql.
+    name: "010_add_staff_email",
+    sql: `
+      ALTER TABLE staff ADD COLUMN IF NOT EXISTS email text;
+    `,
+  },
 ];
 
 /**

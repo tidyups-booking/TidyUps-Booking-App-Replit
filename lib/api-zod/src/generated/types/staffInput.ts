@@ -12,5 +12,7 @@ export interface StaffInput {
   name: string;
   role?: StaffInputRole;
   phone?: string;
+  /** @pattern ^[^\s@]+@[^\s@]+\.[^\s@]+$ */
+  email?: string;
   active?: boolean;
 }

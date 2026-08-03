@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { Users, Plus, Phone, Pencil, CheckCircle2, X, MapPin, AlertTriangle, Download, Upload } from "lucide-react";
+import { Users, Plus, Phone, Mail, Pencil, CheckCircle2, X, MapPin, AlertTriangle, Download, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Staff } from "@workspace/api-client-react";
 import { AddressAutocomplete } from "@/components/address-autocomplete";
@@ -93,6 +93,12 @@ function StaffCard({
                 {staff.phone}
               </p>
             )}
+            {s.email && (
+              <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5 min-w-0">
+                <Mail className="w-3 h-3 shrink-0" />
+                <span className="truncate">{s.email}</span>
+              </p>
+            )}
           </div>
           <Button
             variant="ghost"
@@ -112,6 +118,7 @@ interface StaffFormData {
   name: string;
   role: string;
   phone: string;
+  email: string;
   active: boolean;
   homeAddress: string;
   homeLat: number | null;
@@ -122,6 +129,7 @@ const EMPTY_FORM: StaffFormData = {
   name: "",
   role: "cleaner",
   phone: "",
+  email: "",
   active: true,
   homeAddress: "",
   homeLat: null,
@@ -160,6 +168,7 @@ export default function StaffManagement() {
       name: s.name,
       role: s.role,
       phone: (s as any).phone ?? null,
+      email: (s as any).email ?? null,
       active: s.active,
       homeAddress: (s as any).homeAddress ?? null,
       homeLat: (s as any).homeLat ?? null,
@@ -229,6 +238,7 @@ export default function StaffManagement() {
       name: staff.name,
       role: staff.role,
       phone: staff.phone ?? "",
+      email: (staff as any).email ?? "",
       active: staff.active,
       homeAddress: (staff as any).homeAddress ?? "",
       homeLat: (staff as any).homeLat ?? null,
@@ -238,6 +248,16 @@ export default function StaffManagement() {
   };
 
   const handleSave = () => {
+    const trimmedEmail = form.email.trim();
+    if (trimmedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      toast({
+        title: "Invalid email",
+        description: "Please enter a valid email address, e.g. name@example.com.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const payload = {
       name: form.name.trim(),
       role: form.role as "cleaner" | "lead_cleaner" | "supervisor",
@@ -266,7 +286,8 @@ export default function StaffManagement() {
 
     if (editingStaff) {
       updateStaff.mutate(
-        { id: editingStaff.id, data: payload },
+        // Empty email on edit clears the saved value
+        { id: editingStaff.id, data: { ...payload, email: trimmedEmail || null } as any },
         {
           onSuccess: () => {
             toast({ title: "Staff updated", description: `${payload.name} has been updated.` });
@@ -280,7 +301,7 @@ export default function StaffManagement() {
       );
     } else {
       createStaff.mutate(
-        { data: payload },
+        { data: trimmedEmail ? { ...payload, email: trimmedEmail } : payload },
         {
           onSuccess: () => {
             toast({ title: "Staff added", description: `${payload.name} has been added to the team.` });
@@ -385,6 +406,15 @@ export default function StaffManagement() {
                   placeholder="(780) 555-1234"
                   value={form.phone}
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Email <span className="text-muted-foreground font-normal">(Optional)</span></label>
+                <Input
+                  type="email"
+                  placeholder="name@example.com"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
                 />
               </div>
               {editingStaff && (

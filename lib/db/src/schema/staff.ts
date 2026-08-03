@@ -21,6 +21,7 @@ export const staffTable = pgTable("staff", {
   name: text("name").notNull(),
   role: staffRoleEnum("role").notNull().default("cleaner"),
   phone: text("phone"),
+  email: text("email"),
   active: boolean("active").notNull().default(true),
   homeAddress: text("home_address"),
   homeLat: doublePrecision("home_lat"),
