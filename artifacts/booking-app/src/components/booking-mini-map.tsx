@@ -159,11 +159,18 @@ export function BookingMiniMap({ lat, lng, baseUrl }: Props) {
 
   return (
     <div className="rounded-lg overflow-hidden border shadow-sm">
-      <div ref={elRef} style={{ height: 220 }} className="w-full bg-muted/40" />
+      {/* resize:vertical lets the dispatcher drag the bottom-right corner to make the map taller */}
+      <div
+        style={{ height: 300, minHeight: 200, maxHeight: 640, resize: "vertical", overflow: "hidden" }}
+        className="w-full relative"
+      >
+        <div ref={elRef} className="absolute inset-0 bg-muted/40" />
+      </div>
       <div className="px-3 py-1.5 bg-muted/40 text-[11px] text-muted-foreground flex items-center gap-3">
         <span>📍 Caller</span>
         <span>● Cleaner (live)</span>
         <span>◌ Cleaner (home)</span>
+        <span className="ml-auto opacity-70">↘ drag corner to resize</span>
       </div>
     </div>
   );
