@@ -163,12 +163,20 @@ function LandingPage() {
           <p className="text-xl font-semibold text-pink-200">Dispatch Portal</p>
           <p className="text-white/70">Staff access only — sign in to continue</p>
         </div>
-        <button
-          onClick={() => setLocation("/sign-in")}
-          className="bg-primary text-white font-semibold px-10 py-4 rounded-xl text-lg hover:bg-primary/90 transition-all shadow-xl shadow-primary/25 hover:shadow-primary/40 hover:-translate-y-0.5"
-        >
-          Sign In to Dispatch
-        </button>
+        <div className="flex flex-col sm:flex-row items-center gap-4">
+          <button
+            onClick={() => setLocation("/sign-in")}
+            className="bg-primary text-white font-semibold px-10 py-4 rounded-xl text-lg hover:bg-primary/90 transition-all shadow-xl shadow-primary/25 hover:shadow-primary/40 hover:-translate-y-0.5"
+          >
+            Sign In to Dispatch
+          </button>
+          <a
+            href="/cleaner-app/"
+            className="bg-white/10 backdrop-blur border border-white/30 text-white font-semibold px-10 py-4 rounded-xl text-lg hover:bg-white/20 transition-all shadow-xl shadow-black/20 hover:-translate-y-0.5"
+          >
+            Cleaner Sign In
+          </a>
+        </div>
       </div>
     </div>
   );
