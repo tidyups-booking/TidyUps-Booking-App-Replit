@@ -225,6 +225,12 @@ export default function NewBooking() {
     const gen = ++returningGenRef.current;
     if (digits.length < 7 || digits === acknowledgedPhoneRef.current) {
       setReturningMatch(null);
+      // A different (or cleared) number means this may be a brand-new caller —
+      // withdraw the loyalty discount unless it's the acknowledged returning customer
+      if (digits !== acknowledgedPhoneRef.current) {
+        setLoyaltyEligible(false);
+        setDiscountApplied(false);
+      }
       return;
     }
     returningTimerRef.current = setTimeout(async () => {
@@ -237,7 +243,8 @@ export default function NewBooking() {
           (c: CustomerRecord) => c.phone.replace(/\D/g, "") === digits
         );
         setReturningMatch(match ?? null);
-        if (match) setLoyaltyEligible(true);
+        setLoyaltyEligible(!!match);
+        if (!match) setDiscountApplied(false);
       } catch { /* ignore */ }
     }, 400);
     return () => { if (returningTimerRef.current) clearTimeout(returningTimerRef.current); };
@@ -383,9 +390,20 @@ export default function NewBooking() {
     aiFilledFieldsRef.current = new Set();
   }, []);
 
+  // Fuel surcharge: added to every quote by default ($12.50); editable for out-of-area jobs
+  const [fuelSurcharge, setFuelSurcharge] = useState("12.50");
+
   const onSubmit = (data: BookingFormValues) => {
     const submitData: Record<string, any> = { ...data };
     if (isNaN(submitData.estimatedPrice as any)) submitData.estimatedPrice = undefined;
+    // Fold the fuel surcharge into the final quoted price
+    if (submitData.estimatedPrice !== undefined) {
+      const base = parseFloat(String(submitData.estimatedPrice));
+      const fuel = parseFloat(fuelSurcharge);
+      if (isFinite(base) && isFinite(fuel) && fuel > 0) {
+        submitData.estimatedPrice = Math.round((base + fuel) * 100) / 100;
+      }
+    }
     if (submitData.email === "") submitData.email = undefined;
     if (submitData.postalCode === "") submitData.postalCode = undefined;
     if (!submitData.staffId) submitData.staffId = undefined;
@@ -851,6 +869,26 @@ export default function NewBooking() {
                               −${off} off
                             </button>
                           ))}
+                        </div>
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-muted-foreground">+ Fuel surcharge $</span>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={fuelSurcharge}
+                            onChange={(e) => setFuelSurcharge(e.target.value)}
+                            className="h-8 w-24 text-sm font-semibold border-primary/30"
+                          />
+                          {(() => {
+                            const base = parseFloat(String(field.value));
+                            const fuel = parseFloat(fuelSurcharge) || 0;
+                            return isFinite(base) && base > 0 ? (
+                              <span className="ml-auto font-bold text-primary">
+                                Total: ${(Math.round((base + fuel) * 100) / 100).toFixed(2)}
+                              </span>
+                            ) : null;
+                          })()}
                         </div>
                         {loyaltyEligible && (
                           discountApplied ? (
