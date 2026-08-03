@@ -50,6 +50,12 @@ An internal quick-booking tool for 833 Tidyups home cleaning service (Edmonton, 
 
 _Populate as you build — explicit user instructions worth remembering across sessions._
 
+## Phone numbers (live-call system)
+
+- **(825) 533-4317** — the Twilio number. This is the ONLY number that activates the AI live-call panel; its voice webhook points at `https://bookcleaning.app/api/twilio/voice?sig=...` and calls forward to the business line.
+- **(780) 718-5092** — `BUSINESS_PHONE_NUMBER` (where Twilio forwards answered calls); also shown on the public site.
+- 587-900-7223 and the 833 number are NOT routed through Twilio — calls to them never reach the app.
+
 ## Gotchas
 
 - After OpenAPI spec changes, always run `pnpm --filter @workspace/api-spec run codegen`
