@@ -3,7 +3,7 @@ import {
   getStoredTokens,
   exchangeCodeForTokens,
   getCallbackUrl,
-  syncBookingToJobber,
+  syncBookingUpsertToJobber,
 } from "../services/jobber.js";
 import { getClerkProxyHost } from "../middlewares/clerkProxyMiddleware.js";
 import { requireAuth } from "../app.js";
@@ -208,7 +208,9 @@ router.post("/jobber/sync/:bookingId", async (req, res) => {
     .where(eq(bookingsTable.id, bookingId));
 
   try {
-    const jobberRequestId = await syncBookingToJobber(booking);
+    // Updates the linked Jobber request when one exists (no duplicates);
+    // creates a new request otherwise.
+    const jobberRequestId = await syncBookingUpsertToJobber(booking);
 
     // Store the Jobber ID and mark as synced
     await db

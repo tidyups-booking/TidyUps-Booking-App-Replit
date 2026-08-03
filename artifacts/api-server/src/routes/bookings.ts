@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, gte, lte, and, or, ilike, desc, sql, inArray } from "drizzle-orm";
 import { getAuth } from "@clerk/express";
 import { db, bookingsTable, callTranscriptsTable, staffTable } from "@workspace/db";
-import { syncBookingToJobber, getStoredTokens } from "../services/jobber.js";
+import { syncBookingToJobber, syncBookingUpsertToJobber, getStoredTokens } from "../services/jobber.js";
 import { resolveCallerRole, guardDispatcher } from "../lib/callerRole.js";
 import {
   ListBookingsQueryParams,
@@ -470,6 +470,62 @@ router.patch("/bookings/:id", async (req, res): Promise<void> => {
   }
 
   res.json(UpdateBookingResponse.parse(booking));
+
+  // Fire-and-forget Jobber sync so the linked Jobber record reflects the edit
+  // (updates the existing request when one is linked — never a duplicate).
+  // Skip when the edit only touched local-only fields (status, staff
+  // assignment, jobber ids, coordinates) that Jobber doesn't carry — this also
+  // covers cleaner status-only updates.
+  const jobberRelevantFields = [
+    "firstName", "lastName", "phone", "email",
+    "address", "city", "province", "postalCode",
+    "serviceType", "bedrooms", "bathrooms", "extras",
+    "scheduledDate", "scheduledTime", "notes", "estimatedPrice",
+  ];
+  const touchesJobberFields = jobberRelevantFields.some((f) => f in updateData);
+  if (!touchesJobberFields) return;
+
+  void (async () => {
+    let tokens;
+    try {
+      tokens = await getStoredTokens();
+    } catch (err: any) {
+      req.log.warn({ bookingId: booking.id, err: err.message }, "Could not read Jobber tokens");
+      return;
+    }
+    if (!tokens) return; // Jobber not connected — skip silently
+
+    try {
+      await db
+        .update(bookingsTable)
+        .set({ jobberSyncStatus: "pending" })
+        .where(eq(bookingsTable.id, booking.id));
+    } catch (err: any) {
+      req.log.warn({ bookingId: booking.id, err: err.message }, "Could not mark Jobber sync as pending");
+    }
+
+    try {
+      const jobberRequestId = await syncBookingUpsertToJobber(booking);
+      await db
+        .update(bookingsTable)
+        .set({ jobberJobId: jobberRequestId, jobberSyncStatus: "synced", jobberSyncError: null })
+        .where(eq(bookingsTable.id, booking.id));
+      req.log.info({ bookingId: booking.id, jobberRequestId }, "Booking edit synced to Jobber");
+    } catch (err: any) {
+      req.log.warn({ bookingId: booking.id, err: err.message }, "Jobber edit sync failed — persisting failure");
+      try {
+        await db
+          .update(bookingsTable)
+          .set({ jobberSyncStatus: "failed", jobberSyncError: err.message })
+          .where(eq(bookingsTable.id, booking.id));
+      } catch (dbErr: any) {
+        req.log.error(
+          { bookingId: booking.id, syncErr: err.message, dbErr: dbErr.message },
+          "Could not persist Jobber sync failure — booking may show stale pending status"
+        );
+      }
+    }
+  })();
 });
 
 // DELETE /bookings/:id — dispatcher only

@@ -237,12 +237,12 @@ async function findOrCreateClient(booking: BookingForSync): Promise<string> {
   const searchResult = await jobberGQL<{
     clients: { nodes: Array<{ id: string; firstName: string; lastName: string }> };
   }>(
-    `query SearchClients($filter: ClientFilterAttributes) {
-      clients(filter: $filter) {
+    `query SearchClients($searchTerm: String) {
+      clients(searchTerm: $searchTerm) {
         nodes { id firstName lastName }
       }
     }`,
-    { filter: { searchTerm: `${booking.firstName} ${booking.lastName}` } }
+    { searchTerm: `${booking.firstName} ${booking.lastName}` }
   );
 
   const match = searchResult.clients.nodes.find(
@@ -278,7 +278,7 @@ async function findOrCreateClient(booking: BookingForSync): Promise<string> {
         phones,
         emails,
         billingAddress: {
-          street: booking.address,
+          street1: booking.address,
           city: booking.city,
           province: booking.province,
           postalCode: booking.postalCode ?? "",
@@ -297,18 +297,16 @@ async function findOrCreateClient(booking: BookingForSync): Promise<string> {
   return client.id;
 }
 
-export async function syncBookingToJobber(booking: BookingForSync): Promise<string> {
-  const clientId = await findOrCreateClient(booking);
-
+function buildRequestTitle(booking: BookingForSync): string {
   const serviceLabel = SERVICE_LABELS[booking.serviceType] ?? booking.serviceType;
   const extrasText = booking.extras.length > 0 ? ` + ${booking.extras.join(", ")}` : "";
-  const title = `${serviceLabel}${extrasText} — ${booking.bedrooms}bd/${booking.bathrooms}ba`;
+  return `${serviceLabel}${extrasText} — ${booking.bedrooms}bd/${booking.bathrooms}ba`;
+}
+export async function syncBookingToJobber(booking: BookingForSync): Promise<string> {
+  const clientId = await findOrCreateClient(booking);
+  const propertyId = await createProperty(clientId, booking);
 
-  const instructionsParts = [
-    `Scheduled: ${booking.scheduledDate} at ${booking.scheduledTime}`,
-    booking.notes ? `Notes: ${booking.notes}` : null,
-    booking.estimatedPrice ? `Quoted: $${booking.estimatedPrice}` : null,
-  ].filter(Boolean);
+  const title = buildRequestTitle(booking);
 
   const result = await jobberGQL<{
     requestCreate: {
@@ -322,20 +320,7 @@ export async function syncBookingToJobber(booking: BookingForSync): Promise<stri
         userErrors { message path }
       }
     }`,
-    {
-      input: {
-        clientId,
-        title,
-        instructions: instructionsParts.join("\n"),
-        property: {
-          street: booking.address,
-          city: booking.city,
-          province: booking.province,
-          postalCode: booking.postalCode ?? "",
-          country: "Canada",
-        },
-      },
-    }
+    { input: { clientId, propertyId, title } }
   );
 
   const { request, userErrors } = result.requestCreate;
@@ -344,5 +329,135 @@ export async function syncBookingToJobber(booking: BookingForSync): Promise<stri
   }
   if (!request) throw new Error("Jobber requestCreate returned no request");
 
+  // The current Jobber API version has no free-text instructions on
+  // requestCreate, so booking details go on a pinned note instead.
+  await createRequestNote(request.id, buildDetailsText(booking));
+
   return request.id;
+}
+
+export async function updateBookingInJobber(
+  booking: BookingForSync,
+  jobberRequestId: string
+): Promise<string> {
+  const title = buildRequestTitle(booking);
+
+  const editResult = await jobberGQL<{
+    requestEdit: {
+      request: { id: string } | null;
+      userErrors: Array<{ message: string; path: string[] }>;
+    };
+  }>(
+    `mutation RequestEdit($requestId: EncodedId!, $input: RequestEditInput!) {
+      requestEdit(requestId: $requestId, input: $input) {
+        request { id }
+        userErrors { message path }
+      }
+    }`,
+    { requestId: jobberRequestId, input: { title } }
+  );
+
+  const { request, userErrors } = editResult.requestEdit;
+  if (userErrors.length > 0) {
+    throw new Error(`Jobber requestEdit errors: ${userErrors.map((e) => e.message).join(", ")}`);
+  }
+  if (!request) throw new Error("Jobber requestEdit returned no request");
+
+  const message = [
+    `Booking updated in 833 Tidyups dispatch:`,
+    `Client: ${booking.firstName} ${booking.lastName} — ${booking.phone}`,
+    `Address: ${booking.address}, ${booking.city}, ${booking.province}${booking.postalCode ? " " + booking.postalCode : ""}`,
+    buildDetailsText(booking),
+  ].join("\n");
+
+  await createRequestNote(jobberRequestId, message);
+
+  return request.id;
+}
+
+function buildDetailsText(booking: BookingForSync): string {
+  return [
+    `Scheduled: ${booking.scheduledDate} at ${booking.scheduledTime}`,
+    booking.notes ? `Notes: ${booking.notes}` : null,
+    booking.estimatedPrice ? `Quoted: $${booking.estimatedPrice}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** Create a property on the client for the booking's service address. */
+async function createProperty(clientId: string, booking: BookingForSync): Promise<string> {
+  const result = await jobberGQL<{
+    propertyCreate: {
+      properties: Array<{ id: string }> | null;
+      userErrors: Array<{ message: string; path: string[] }>;
+    };
+  }>(
+    `mutation PropertyCreate($clientId: EncodedId!, $input: PropertyCreateInput!) {
+      propertyCreate(clientId: $clientId, input: $input) {
+        properties { id }
+        userErrors { message path }
+      }
+    }`,
+    {
+      clientId,
+      input: {
+        properties: [
+          {
+            address: {
+              street1: booking.address,
+              city: booking.city,
+              province: booking.province,
+              postalCode: booking.postalCode ?? "",
+              country: "Canada",
+            },
+          },
+        ],
+      },
+    }
+  );
+
+  const { properties, userErrors } = result.propertyCreate;
+  if (userErrors.length > 0) {
+    throw new Error(`Jobber propertyCreate errors: ${userErrors.map((e) => e.message).join(", ")}`);
+  }
+  const property = properties?.[0];
+  if (!property) throw new Error("Jobber propertyCreate returned no property");
+  return property.id;
+}
+
+/** Attach a pinned note with booking details to a Jobber request. */
+async function createRequestNote(jobberRequestId: string, message: string): Promise<void> {
+  const noteResult = await jobberGQL<{
+    requestCreateNote: {
+      requestNote: { id: string } | null;
+      userErrors: Array<{ message: string; path: string[] }>;
+    };
+  }>(
+    `mutation RequestCreateNote($requestId: EncodedId!, $input: RequestCreateNoteInput!) {
+      requestCreateNote(requestId: $requestId, input: $input) {
+        requestNote { id }
+        userErrors { message path }
+      }
+    }`,
+    { requestId: jobberRequestId, input: { message, pinned: true } }
+  );
+
+  const noteErrors = noteResult.requestCreateNote.userErrors;
+  if (noteErrors.length > 0) {
+    throw new Error(`Jobber requestCreateNote errors: ${noteErrors.map((e) => e.message).join(", ")}`);
+  }
+}
+
+/**
+ * Sync a booking to Jobber, updating the linked request when one exists
+ * (no duplicates) and creating a new request otherwise.
+ */
+export async function syncBookingUpsertToJobber(
+  booking: BookingForSync & { jobberJobId?: string | null }
+): Promise<string> {
+  if (booking.jobberJobId) {
+    return updateBookingInJobber(booking, booking.jobberJobId);
+  }
+  return syncBookingToJobber(booking);
 }
