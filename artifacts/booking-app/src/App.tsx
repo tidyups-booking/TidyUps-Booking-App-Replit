@@ -33,6 +33,7 @@ import ContactPage from "@/pages/contact";
 import PrivacyPage from "@/pages/privacy";
 import NotFound from "@/pages/not-found";
 import { SiteFooter } from "@/components/footer";
+import { LandingSections } from "@/components/landing-sections";
 
 const queryClient = new QueryClient();
 
@@ -192,6 +193,7 @@ function LandingPage() {
         </div>
       </div>
       </div>
+      <LandingSections />
       <SiteFooter />
     </div>
   );

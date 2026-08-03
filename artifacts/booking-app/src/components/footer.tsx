@@ -61,6 +61,8 @@ export const COMPANY_PHONE = "1-833-843-9877";
 export const COMPANY_PHONE_DISPLAY = "1-833-TIDYUPS (843-9877)";
 export const COMPANY_PHONE_LOCAL = "+15877422500";
 export const COMPANY_PHONE_LOCAL_DISPLAY = "(587) 742-2500";
+export const COMPANY_PHONE_780 = "+17807185092";
+export const COMPANY_PHONE_780_DISPLAY = "(780) 718-5092";
 export const COMPANY_EMAIL = "support@bookcleaning.app";
 export const COMPANY_ADDRESS_LINES = [
   "6510 Gateway Blvd NW Suite 1020",
@@ -203,6 +205,13 @@ export function SiteFooter() {
               >
                 <Phone className="w-4 h-4 text-primary shrink-0" />
                 {COMPANY_PHONE_LOCAL_DISPLAY}
+              </a>
+              <a
+                href={`tel:${COMPANY_PHONE_780}`}
+                className="flex items-center gap-2 hover:text-primary transition-colors w-fit"
+              >
+                <Phone className="w-4 h-4 text-primary shrink-0" />
+                {COMPANY_PHONE_780_DISPLAY}
               </a>
               <a
                 href={`mailto:${COMPANY_EMAIL}`}

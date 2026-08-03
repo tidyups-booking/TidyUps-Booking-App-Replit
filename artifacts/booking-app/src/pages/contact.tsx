@@ -21,6 +21,8 @@ import {
   COMPANY_PHONE_DISPLAY,
   COMPANY_PHONE_LOCAL,
   COMPANY_PHONE_LOCAL_DISPLAY,
+  COMPANY_PHONE_780,
+  COMPANY_PHONE_780_DISPLAY,
   COMPANY_EMAIL,
   COMPANY_HOURS,
   COMPANY_ADDRESS_LINES,
@@ -134,6 +136,12 @@ export default function ContactPage() {
                     className="block text-sm text-muted-foreground hover:text-primary transition-colors"
                   >
                     {COMPANY_PHONE_LOCAL_DISPLAY}
+                  </a>
+                  <a
+                    href={`tel:${COMPANY_PHONE_780}`}
+                    className="block text-sm text-muted-foreground hover:text-primary transition-colors"
+                  >
+                    {COMPANY_PHONE_780_DISPLAY}
                   </a>
                 </div>
               </div>
