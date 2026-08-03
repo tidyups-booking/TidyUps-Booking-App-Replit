@@ -8,7 +8,9 @@ import { eq } from "drizzle-orm";
 
 const JOBBER_API_BASE = "https://api.getjobber.com/api";
 const JOBBER_GRAPHQL = `${JOBBER_API_BASE}/graphql`;
-const JOBBER_VERSION = "2024-11-15";
+// Must be a version Jobber actually supports — verified against the live API.
+// ("2024-11-15" was rejected with a 404 "version does not exist".)
+const JOBBER_VERSION = "2025-04-16";
 
 function getClientId() {
   const id = process.env.JOBBER_CLIENT_ID;

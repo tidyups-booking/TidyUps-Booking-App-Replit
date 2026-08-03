@@ -5,6 +5,7 @@ import { logger } from "./lib/logger.js";
 import { createTwilioWss } from "./services/twilio-stream.js";
 import { consumeStreamToken } from "./services/stream-tokens.js";
 import { runMigrations } from "@workspace/db";
+import { startJobberAutoSync } from "./services/jobberCalendarSync.js";
 
 const rawPort = process.env["PORT"];
 
@@ -60,6 +61,9 @@ server.on("upgrade", (req, socket, head) => {
 
 server.listen(port, "0.0.0.0", () => {
   logger.info({ port }, "Server listening");
+  // Background poller: automatically pulls new Jobber appointments every few
+  // minutes while Jobber is connected (no manual sync needed).
+  startJobberAutoSync();
 });
 
 server.on("error", (err: NodeJS.ErrnoException) => {

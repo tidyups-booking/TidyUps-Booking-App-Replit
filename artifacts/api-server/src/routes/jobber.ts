@@ -4,15 +4,15 @@ import {
   exchangeCodeForTokens,
   getCallbackUrl,
   syncBookingToJobber,
-  jobberGQL,
 } from "../services/jobber.js";
 import { getClerkProxyHost } from "../middlewares/clerkProxyMiddleware.js";
 import { requireAuth } from "../app.js";
 import { db } from "@workspace/db";
 import { bookingsTable } from "@workspace/db";
-import { eq, inArray, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { requireDispatcherAuth } from "../lib/callerRole.js";
 import { randomBytes } from "crypto";
+import { runCalendarSync, getAutoSyncStatus } from "../services/jobberCalendarSync.js";
 
 const router = Router();
 
@@ -49,7 +49,7 @@ router.get("/jobber/status", async (_req, res) => {
       res.json({ connected: false, stale: true });
       return;
     }
-    res.json({ connected: true });
+    res.json({ connected: true, autoSync: getAutoSyncStatus() });
   } catch (err: any) {
     res.json({ connected: false, error: err.message });
   }
@@ -243,67 +243,6 @@ function isRealCalendarDate(s: string): boolean {
   return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
 }
 
-/**
- * Returns the UTC offset string for America/Edmonton at a given date,
- * accounting for Daylight Saving Time (MDT = -06:00, MST = -07:00).
- */
-function edmontonOffset(dateStr: string): string {
-  const pivot = new Date(`${dateStr}T12:00:00Z`);
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Edmonton",
-    timeZoneName: "shortOffset",
-  }).formatToParts(pivot);
-  const tzPart = parts.find((p) => p.type === "timeZoneName")?.value ?? "GMT-7";
-  const match = tzPart.match(/GMT([+-]\d+)/);
-  const hours = match ? parseInt(match[1], 10) : -7;
-  return hours < 0
-    ? `-${String(Math.abs(hours)).padStart(2, "0")}:00`
-    : `+${String(Math.abs(hours)).padStart(2, "0")}:00`;
-}
-
-/**
- * Given an ISO datetime string, returns { date: "YYYY-MM-DD", time: "HH:mm" }
- * in the America/Edmonton timezone so the record lands on the right calendar day.
- */
-function parseEdmontonDateTime(isoStr: string): { date: string; time: string } {
-  const dt = new Date(isoStr);
-  const date = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Edmonton",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(dt);
-
-  const time = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Edmonton",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(dt);
-
-  return { date, time };
-}
-
-type JobberJob = {
-  id: string;
-  title: string;
-  startAt: string | null;
-  client: {
-    firstName: string;
-    lastName: string;
-    phone: string;
-    email: string | null;
-  } | null;
-  property: {
-    address: {
-      street: string;
-      city: string;
-      province: string;
-      postalCode: string;
-    } | null;
-  } | null;
-};
-
 // ---------------------------------------------------------------------------
 // POST /jobber/sync-calendar
 // Body: { startDate: "YYYY-MM-DD", endDate: "YYYY-MM-DD" }
@@ -368,73 +307,9 @@ router.post("/jobber/sync-calendar", requireAuth, async (req, res) => {
       return;
     }
 
-    // Build DST-aware Edmonton boundaries for scheduledBetween
-    const startOffset = edmontonOffset(startDate);
-    const endOffset = edmontonOffset(endDate);
-    const scheduledStart = `${startDate}T00:00:00${startOffset}`;
-    const scheduledEnd = `${endDate}T23:59:59${endOffset}`;
-
-    // Paginate Jobber jobs (up to 5 pages × 100 = 500)
-    const jobberJobs: JobberJob[] = [];
-    let cursor: string | null = null;
-    let pages = 0;
-    const MAX_PAGES = 5;
-    let hitPageLimit = false;
-
-    type JobberJobsGQLResponse = {
-      jobs: {
-        nodes: JobberJob[];
-        pageInfo: { hasNextPage: boolean; endCursor: string | null };
-      };
-    };
-    const emptyPage: JobberJobsGQLResponse["jobs"] = {
-      nodes: [],
-      pageInfo: { hasNextPage: false, endCursor: null },
-    };
-
+    let syncResult;
     try {
-      do {
-        const gqlData: JobberJobsGQLResponse = await jobberGQL<JobberJobsGQLResponse>(
-          `query SyncCalendarJobs($filter: JobFilterAttributes, $after: String) {
-            jobs(filter: $filter, first: 100, after: $after) {
-              nodes {
-                id
-                title
-                startAt
-                client {
-                  firstName
-                  lastName
-                  phone
-                  email
-                }
-                property {
-                  address {
-                    street
-                    city
-                    province
-                    postalCode
-                  }
-                }
-              }
-              pageInfo { hasNextPage endCursor }
-            }
-          }`,
-          {
-            filter: { scheduledBetween: { startAt: scheduledStart, endAt: scheduledEnd } },
-            after: cursor,
-          }
-        );
-
-        const page: JobberJobsGQLResponse["jobs"] = gqlData.jobs ?? emptyPage;
-        jobberJobs.push(...page.nodes);
-        cursor = page.pageInfo.hasNextPage ? (page.pageInfo.endCursor ?? null) : null;
-        pages++;
-
-        if (cursor && pages >= MAX_PAGES) {
-          hitPageLimit = true;
-          cursor = null; // stop paging
-        }
-      } while (cursor);
+      syncResult = await runCalendarSync(startDate, endDate, (req as any).log ?? console);
     } catch (gqlErr: any) {
       (req as any).log?.warn({ err: gqlErr.message }, "Jobber sync-calendar: GraphQL error");
       res.json({
@@ -446,101 +321,13 @@ router.post("/jobber/sync-calendar", requireAuth, async (req, res) => {
       return;
     }
 
-    // Pre-fetch which Jobber job IDs are already locally present in
-    // jobber_synced_job_id — the dedicated column for calendar-sync job IDs,
-    // separate from jobber_job_id (Jobber request IDs from outbound sync).
-    // Raw SQL avoids stale Drizzle type issues with the new column.
-    // This pre-SELECT gives accurate insert vs update counts without relying
-    // on rowCount semantics (PostgreSQL reports 1 for both INSERT and
-    // ON CONFLICT DO UPDATE).
-    const jobIds = jobberJobs.map((j) => j.id);
-    let existingIds = new Set<string>();
-    if (jobIds.length > 0) {
-      const existing = await db.execute<{ jobber_synced_job_id: string }>(
-        sql`SELECT jobber_synced_job_id FROM bookings WHERE jobber_synced_job_id = ANY(${jobIds}::text[])`
-      );
-      existingIds = new Set(existing.rows.map((r) => r.jobber_synced_job_id));
-    }
-
-    let synced = 0;
-    let imported = 0;
-    let skipped = 0;
-
-    for (const job of jobberJobs) {
-      if (!job.startAt) {
-        skipped++;
-        continue; // skip unscheduled jobs (no appointment date to place on calendar)
-      }
-
-      const { date, time } = parseEdmontonDateTime(job.startAt);
-
-      // Derive display values with safe fallbacks so scheduled jobs always
-      // appear on the calendar even when optional Jobber fields are absent.
-      const firstName = job.client?.firstName ?? job.title ?? "Jobber";
-      const lastName  = job.client?.lastName  ?? "Job";
-      const phone     = job.client?.phone     ?? "";
-      const email     = job.client?.email     ?? null;
-      const street    = job.property?.address?.street   ?? "Address not provided";
-      const city      = job.property?.address?.city     ?? "Edmonton";
-      const province  = job.property?.address?.province ?? "AB";
-      const postalCode = job.property?.address?.postalCode ?? null;
-
-      try {
-        // Raw SQL upsert on jobber_synced_job_id to avoid stale Drizzle types.
-        // ON CONFLICT uses the unique index created in migration 002.
-        await db.execute(sql`
-          INSERT INTO bookings (
-            first_name, last_name, phone, email,
-            address, city, province, postal_code,
-            service_type, bedrooms, bathrooms, extras,
-            scheduled_date, scheduled_time,
-            frequency, status,
-            jobber_synced_job_id, jobber_sync_status
-          ) VALUES (
-            ${firstName}, ${lastName}, ${phone}, ${email},
-            ${street}, ${city}, ${province}, ${postalCode},
-            'standard_clean', 2, 1, '{}',
-            ${date}, ${time},
-            'one_time', 'confirmed',
-            ${job.id}, 'synced'
-          )
-          ON CONFLICT (jobber_synced_job_id) DO UPDATE SET
-            first_name         = EXCLUDED.first_name,
-            last_name          = EXCLUDED.last_name,
-            phone              = EXCLUDED.phone,
-            email              = EXCLUDED.email,
-            address            = EXCLUDED.address,
-            city               = EXCLUDED.city,
-            province           = EXCLUDED.province,
-            postal_code        = EXCLUDED.postal_code,
-            scheduled_date     = EXCLUDED.scheduled_date,
-            scheduled_time     = EXCLUDED.scheduled_time,
-            status             = EXCLUDED.status,
-            jobber_sync_status = 'synced'
-        `);
-
-        if (existingIds.has(job.id)) synced++;
-        else imported++;
-      } catch (upsertErr: any) {
-        skipped++;
-        (req as any).log?.warn(
-          { err: upsertErr.message, jobId: job.id },
-          "Jobber sync-calendar: upsert failed"
-        );
-      }
-    }
-
-    const result: Record<string, unknown> = {
-      synced,
-      imported,
-      skipped,
-      jobberCount: jobberJobs.length,
-    };
+    const { synced, imported, skipped, jobberCount, hitPageLimit } = syncResult;
+    const result: Record<string, unknown> = { synced, imported, skipped, jobberCount };
     if (skipped > 0) {
       result.skippedNote = `${skipped} job(s) skipped — missing scheduled time or client/address data`;
     }
     if (hitPageLimit) {
-      result.warning = `Result may be incomplete — more than ${MAX_PAGES * 100} jobs found. Narrow the date range for a complete sync.`;
+      result.warning = `Result may be incomplete — more than 500 jobs found. Narrow the date range for a complete sync.`;
     }
     res.json(result);
   } catch (err: any) {
