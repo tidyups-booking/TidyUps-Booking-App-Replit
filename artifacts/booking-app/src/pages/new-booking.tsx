@@ -898,25 +898,34 @@ export default function NewBooking() {
                       <FormItem className="flex-1">
                         <FormLabel className="text-primary-foreground/70 dark:text-primary">Quoted Price ($)</FormLabel>
                         <FormControl>
-                          <div className="flex items-center gap-2">
-                            <div className="flex items-center gap-1.5">
-                              <Input
-                                type="number"
-                                min="0.5"
-                                step="0.5"
-                                value={hours}
-                                onChange={(e) => handleHoursChange(e.target.value)}
-                                className="h-12 w-16 text-center font-bold border-primary/30"
-                              />
-                              <span className="text-xs text-muted-foreground whitespace-nowrap">hrs ×</span>
-                              <div className="flex flex-col gap-1">
-                                {[{ rate: RATE_ONE, label: "1 cleaner $52.50" }, { rate: RATE_TWO, label: "2 cleaners $105" }].map(({ rate, label }) => (
+                          <div className="space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <div className="flex items-center gap-1">
+                                <span className="text-xs text-muted-foreground mr-1">Hours:</span>
+                                {[1, 2, 3, 4, 5].map((h) => (
+                                  <button
+                                    key={h}
+                                    type="button"
+                                    onClick={() => handleHoursChange(String(h))}
+                                    className={cn(
+                                      "w-9 h-9 rounded-lg text-sm font-bold border transition-colors",
+                                      parseFloat(hours) === h
+                                        ? "bg-primary text-white border-primary"
+                                        : "bg-background text-foreground border-border hover:border-primary/50"
+                                    )}
+                                  >
+                                    {h}
+                                  </button>
+                                ))}
+                              </div>
+                              <div className="flex items-center gap-1">
+                                {[{ rate: RATE_ONE, label: "1 cleaner $52.50/hr" }, { rate: RATE_TWO, label: "2 cleaners $105/hr" }].map(({ rate, label }) => (
                                   <button
                                     key={rate}
                                     type="button"
                                     onClick={() => handleRateChange(rate)}
                                     className={cn(
-                                      "text-[11px] font-semibold rounded-full px-2.5 py-0.5 border transition-colors whitespace-nowrap",
+                                      "text-xs font-semibold rounded-full px-3 py-1.5 border transition-colors whitespace-nowrap",
                                       hourlyRate === rate
                                         ? "bg-primary text-white border-primary"
                                         : "bg-background text-muted-foreground border-border hover:border-primary/50"
@@ -927,7 +936,7 @@ export default function NewBooking() {
                                 ))}
                               </div>
                             </div>
-                            <div className="relative flex-1">
+                            <div className="relative">
                               <DollarSign className="w-5 h-5 absolute left-3 top-3 text-primary" />
                               <Input
                                 type="number"
