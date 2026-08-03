@@ -23,6 +23,8 @@ import { pool } from "./pool.js";
 const RENAMED_MIGRATIONS: { oldName: string; newName: string }[] = [
   // Renamed when the jobber sync column migration was rewritten
   { oldName: "002_add_jobber_job_id_unique_index", newName: "003_add_jobber_synced_job_id" },
+  // Renumbered during rebase: main took 005 for contact_messages
+  { oldName: "005_add_price_breakdown", newName: "006_add_price_breakdown" },
 ];
 
 const MIGRATIONS: { name: string; sql: string }[] = [
@@ -205,6 +207,16 @@ const MIGRATIONS: { name: string; sql: string }[] = [
         message    TEXT NOT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
       );
+    `,
+  },
+  {
+    // Itemized price breakdown (hours, rate, discounts, fuel surcharge)
+    // recorded at booking creation so dispatchers can see how the quoted
+    // price was built. Mirrors lib/db/migrations/006_add_price_breakdown.sql.
+    // (Renumbered from 005 during rebase: main added 005_add_contact_messages.)
+    name: "006_add_price_breakdown",
+    sql: `
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS price_breakdown JSONB;
     `,
   },
 ];

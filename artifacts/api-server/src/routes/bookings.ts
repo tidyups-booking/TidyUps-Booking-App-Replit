@@ -231,6 +231,53 @@ router.get("/bookings", async (req, res): Promise<void> => {
   res.json(response);
 });
 
+// Verify a submitted price breakdown is internally consistent and matches the
+// quoted price. Returns an error string, or null when valid (or absent).
+// Invariants: a base line (hours × hourlyRate = baseAmount, or manualPrice)
+// is required; base − discounts + fuel must equal total; total must equal
+// estimatedPrice when one is provided.
+function priceBreakdownError(pb: unknown, estimatedPrice: number | null | undefined): string | null {
+  if (pb === null || pb === undefined) return null;
+  if (typeof pb !== "object" || Array.isArray(pb)) return "priceBreakdown must be an object";
+  const b = pb as Record<string, unknown>;
+  const num = (v: unknown): v is number => typeof v === "number" && isFinite(v);
+  if (!num(b.total)) return "priceBreakdown.total is required";
+  // Semantic constraints: every monetary field must be a finite non-negative
+  // number, counts must be non-negative integers.
+  for (const field of ["hours", "hourlyRate", "baseAmount", "manualPrice", "leadDiscount", "loyaltyDiscount", "fuelSurcharge", "total"]) {
+    if (b[field] !== undefined && (!num(b[field]) || (b[field] as number) < 0))
+      return `priceBreakdown.${field} must be a non-negative number`;
+  }
+  for (const field of ["quickDiscountTens", "quickDiscountTwenties"]) {
+    if (b[field] !== undefined && (!num(b[field]) || (b[field] as number) < 0 || !Number.isInteger(b[field])))
+      return `priceBreakdown.${field} must be a non-negative integer`;
+  }
+  const hasBase = num(b.baseAmount);
+  const hasManual = num(b.manualPrice);
+  if (!hasBase && !hasManual) return "priceBreakdown requires baseAmount (with hours and hourlyRate) or manualPrice";
+  if (hasBase && hasManual) return "priceBreakdown must have either baseAmount or manualPrice, not both";
+  if (hasBase) {
+    if (!num(b.hours) || !num(b.hourlyRate) || (b.hours as number) <= 0 || (b.hourlyRate as number) <= 0)
+      return "priceBreakdown.baseAmount requires positive hours and hourlyRate";
+    if (Math.abs((b.hours as number) * (b.hourlyRate as number) - (b.baseAmount as number)) > 0.01)
+      return "priceBreakdown.baseAmount must equal hours × hourlyRate";
+  }
+  const base = hasBase ? (b.baseAmount as number) : (b.manualPrice as number);
+  const totalDiscounts =
+    (num(b.leadDiscount) ? b.leadDiscount : 0) +
+    (num(b.quickDiscountTens) ? b.quickDiscountTens * 10 : 0) +
+    (num(b.quickDiscountTwenties) ? b.quickDiscountTwenties * 20 : 0) +
+    (num(b.loyaltyDiscount) ? b.loyaltyDiscount : 0);
+  // Discounts may never exceed the pre-discount quote (quote floor is $0)
+  if (base - totalDiscounts < -0.01) return "priceBreakdown discounts exceed the pre-discount quote";
+  const reconciled = base - totalDiscounts + (num(b.fuelSurcharge) ? b.fuelSurcharge : 0);
+  if (Math.abs(reconciled - (b.total as number)) > 0.01)
+    return "priceBreakdown lines do not reconcile with priceBreakdown.total";
+  if (estimatedPrice != null && Math.abs((b.total as number) - estimatedPrice) > 0.01)
+    return "priceBreakdown.total must equal estimatedPrice";
+  return null;
+}
+
 // POST /bookings — dispatcher only
 router.post("/bookings", async (req, res): Promise<void> => {
   if (await guardDispatcher(req, res)) return;
@@ -242,6 +289,11 @@ router.post("/bookings", async (req, res): Promise<void> => {
   }
 
   const data = parsed.data;
+  const pbError = priceBreakdownError(data.priceBreakdown, data.estimatedPrice);
+  if (pbError) {
+    res.status(400).json({ error: pbError });
+    return;
+  }
   const [booking] = await db
     .insert(bookingsTable)
     .values({
@@ -261,6 +313,7 @@ router.post("/bookings", async (req, res): Promise<void> => {
       scheduledTime: data.scheduledTime,
       frequency: data.frequency,
       estimatedPrice: data.estimatedPrice ?? null,
+      priceBreakdown: data.priceBreakdown ?? null,
       notes: data.notes ?? null,
       status: (data.status as typeof bookingsTable.status._.data) ?? "pending",
       staffId: data.staffId ?? null,
@@ -461,6 +514,35 @@ router.patch("/bookings/:id", async (req, res): Promise<void> => {
   if (data.email !== undefined) updateData.email = data.email ?? null;
   if (data.postalCode !== undefined) updateData.postalCode = data.postalCode ?? null;
   if (data.estimatedPrice !== undefined) updateData.estimatedPrice = data.estimatedPrice ?? null;
+  if (data.priceBreakdown !== undefined) {
+    // Validate against the incoming price when provided, otherwise the stored one
+    let priceForCheck: number | null | undefined = data.estimatedPrice;
+    if (priceForCheck === undefined) {
+      const [current] = await db
+        .select({ estimatedPrice: bookingsTable.estimatedPrice })
+        .from(bookingsTable)
+        .where(eq(bookingsTable.id, Number(req.params.id)));
+      priceForCheck = current?.estimatedPrice;
+    }
+    const pbError = priceBreakdownError(data.priceBreakdown, priceForCheck);
+    if (pbError) {
+      res.status(400).json({ error: pbError });
+      return;
+    }
+    updateData.priceBreakdown = data.priceBreakdown ?? null;
+  } else if (data.estimatedPrice !== undefined) {
+    // Price changed with no replacement breakdown: clear any stored breakdown
+    // atomically so a stale itemization can never contradict the new price.
+    // (Left intact when the incoming price equals the stored one.)
+    const [current] = await db
+      .select({ estimatedPrice: bookingsTable.estimatedPrice, priceBreakdown: bookingsTable.priceBreakdown })
+      .from(bookingsTable)
+      .where(eq(bookingsTable.id, Number(req.params.id)));
+    const oldPrice = current?.estimatedPrice ?? null;
+    const newPrice = data.estimatedPrice ?? null;
+    const changed = oldPrice === null || newPrice === null ? oldPrice !== newPrice : Math.abs(oldPrice - newPrice) > 0.005;
+    if (current?.priceBreakdown && changed) updateData.priceBreakdown = null;
+  }
   if (data.notes !== undefined) updateData.notes = data.notes ?? null;
   if (data.staffId !== undefined) updateData.staffId = data.staffId ?? null;
   if (data.addressLat !== undefined) updateData.addressLat = data.addressLat ?? null;

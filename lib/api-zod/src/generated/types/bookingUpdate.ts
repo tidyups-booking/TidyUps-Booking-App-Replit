@@ -8,6 +8,7 @@
 import type { BookingUpdateFrequency } from './bookingUpdateFrequency';
 import type { BookingUpdateServiceType } from './bookingUpdateServiceType';
 import type { BookingUpdateStatus } from './bookingUpdateStatus';
+import type { PriceBreakdown } from './priceBreakdown';
 
 export interface BookingUpdate {
   staffId?: number | null;
@@ -27,6 +28,8 @@ export interface BookingUpdate {
   scheduledTime?: string;
   frequency?: BookingUpdateFrequency;
   estimatedPrice?: number | null;
+  /** Itemized quote breakdown. Send null to clear it (e.g. when the quoted price is edited and the old itemization no longer applies). */
+  priceBreakdown?: PriceBreakdown | null;
   notes?: string | null;
   status?: BookingUpdateStatus;
   jobberJobId?: string;

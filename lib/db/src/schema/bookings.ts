@@ -7,6 +7,7 @@ import {
   timestamp,
   pgEnum,
   uniqueIndex,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
@@ -55,6 +56,21 @@ export const bookingsTable = pgTable("bookings", {
   scheduledTime: text("scheduled_time").notNull(),
   frequency: frequencyEnum("frequency").notNull().default("one_time"),
   estimatedPrice: real("estimated_price"),
+  // Itemized quote breakdown (hours, rate, discounts, fuel surcharge)
+  // recorded when a dispatcher creates the booking. Null for older bookings.
+  priceBreakdown: jsonb("price_breakdown").$type<{
+    hours?: number;
+    hourlyRate?: number;
+    baseAmount?: number;
+    manualPrice?: number;
+    leadSource?: string | null;
+    leadDiscount?: number;
+    quickDiscountTens?: number;
+    quickDiscountTwenties?: number;
+    loyaltyDiscount?: number;
+    fuelSurcharge?: number;
+    total?: number;
+  } | null>(),
   notes: text("notes"),
   staffId: integer("staff_id").references(() => staffTable.id, {
     onDelete: "set null",

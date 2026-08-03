@@ -31,7 +31,6 @@ export const submitContactMessageBodyPhoneMax = 40;
 export const submitContactMessageBodyMessageMax = 5000;
 
 
-
 export const SubmitContactMessageBody = zod.object({
   "name": zod.string().min(1).max(submitContactMessageBodyNameMax),
   "email": zod.string().max(submitContactMessageBodyEmailMax).regex(submitContactMessageBodyEmailRegExp),
@@ -82,6 +81,19 @@ export const ListBookingsResponseItem = zod.object({
   "scheduledTime": zod.string().describe('Time in HH:MM format'),
   "frequency": zod.enum(['one_time', 'weekly', 'biweekly', 'monthly']),
   "estimatedPrice": zod.number().nullish(),
+  "priceBreakdown": zod.union([zod.object({
+  "hours": zod.number().optional().describe('Hours of cleaning quoted.'),
+  "hourlyRate": zod.number().optional().describe('Hourly rate used ($52.50 one cleaner, $105 two cleaners, or custom).'),
+  "baseAmount": zod.number().optional().describe('hours × hourlyRate before discounts.'),
+  "manualPrice": zod.number().optional().describe('Manually entered quoted price before discounts, recorded instead of hours\/hourlyRate\/baseAmount when the dispatcher typed the price directly rather than deriving it from hours × rate.\n'),
+  "leadSource": zod.string().nullish().describe('Where the customer heard about us, if recorded.'),
+  "leadDiscount": zod.number().optional().describe('Lead-source thank-you discount amount ($10 when applied).'),
+  "quickDiscountTens": zod.number().optional().describe('Number of −$10 quick discounts applied.'),
+  "quickDiscountTwenties": zod.number().optional().describe('Number of −$20 quick discounts applied.'),
+  "loyaltyDiscount": zod.number().optional().describe('Dollar amount of the 10% loyalty discount, if applied.'),
+  "fuelSurcharge": zod.number().optional().describe('Fuel surcharge added to the quote.'),
+  "total": zod.number().describe('Final quoted price including the fuel surcharge.')
+}).describe('Itemized breakdown of how a quoted price was built: hours × rate, each discount applied, and the fuel surcharge.\n'),zod.null()]).optional().describe('Itemized quote breakdown recorded at booking creation. Null for older bookings.'),
   "notes": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']),
   "jobberJobId": zod.string().nullish(),
@@ -101,7 +113,6 @@ export const ListBookingsResponse = zod.array(ListBookingsResponseItem)
 
 
 export const createBookingBodyPhoneMin = 7;
-
 
 
 export const createBookingBodyProvinceDefault = `AB`;
@@ -131,6 +142,19 @@ export const CreateBookingBody = zod.object({
   "scheduledTime": zod.string(),
   "frequency": zod.enum(['one_time', 'weekly', 'biweekly', 'monthly']),
   "estimatedPrice": zod.number().optional(),
+  "priceBreakdown": zod.object({
+  "hours": zod.number().optional().describe('Hours of cleaning quoted.'),
+  "hourlyRate": zod.number().optional().describe('Hourly rate used ($52.50 one cleaner, $105 two cleaners, or custom).'),
+  "baseAmount": zod.number().optional().describe('hours × hourlyRate before discounts.'),
+  "manualPrice": zod.number().optional().describe('Manually entered quoted price before discounts, recorded instead of hours\/hourlyRate\/baseAmount when the dispatcher typed the price directly rather than deriving it from hours × rate.\n'),
+  "leadSource": zod.string().nullish().describe('Where the customer heard about us, if recorded.'),
+  "leadDiscount": zod.number().optional().describe('Lead-source thank-you discount amount ($10 when applied).'),
+  "quickDiscountTens": zod.number().optional().describe('Number of −$10 quick discounts applied.'),
+  "quickDiscountTwenties": zod.number().optional().describe('Number of −$20 quick discounts applied.'),
+  "loyaltyDiscount": zod.number().optional().describe('Dollar amount of the 10% loyalty discount, if applied.'),
+  "fuelSurcharge": zod.number().optional().describe('Fuel surcharge added to the quote.'),
+  "total": zod.number().describe('Final quoted price including the fuel surcharge.')
+}).optional().describe('Itemized breakdown of how a quoted price was built: hours × rate, each discount applied, and the fuel surcharge.\n'),
   "notes": zod.string().optional(),
   "status": zod.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']).default(createBookingBodyStatusDefault),
   "callTranscript": zod.string().optional().describe('Full transcript of the inbound call that generated this booking.'),
@@ -157,6 +181,19 @@ export const CreateBookingResponse = zod.object({
   "scheduledTime": zod.string().describe('Time in HH:MM format'),
   "frequency": zod.enum(['one_time', 'weekly', 'biweekly', 'monthly']),
   "estimatedPrice": zod.number().nullish(),
+  "priceBreakdown": zod.union([zod.object({
+  "hours": zod.number().optional().describe('Hours of cleaning quoted.'),
+  "hourlyRate": zod.number().optional().describe('Hourly rate used ($52.50 one cleaner, $105 two cleaners, or custom).'),
+  "baseAmount": zod.number().optional().describe('hours × hourlyRate before discounts.'),
+  "manualPrice": zod.number().optional().describe('Manually entered quoted price before discounts, recorded instead of hours\/hourlyRate\/baseAmount when the dispatcher typed the price directly rather than deriving it from hours × rate.\n'),
+  "leadSource": zod.string().nullish().describe('Where the customer heard about us, if recorded.'),
+  "leadDiscount": zod.number().optional().describe('Lead-source thank-you discount amount ($10 when applied).'),
+  "quickDiscountTens": zod.number().optional().describe('Number of −$10 quick discounts applied.'),
+  "quickDiscountTwenties": zod.number().optional().describe('Number of −$20 quick discounts applied.'),
+  "loyaltyDiscount": zod.number().optional().describe('Dollar amount of the 10% loyalty discount, if applied.'),
+  "fuelSurcharge": zod.number().optional().describe('Fuel surcharge added to the quote.'),
+  "total": zod.number().describe('Final quoted price including the fuel surcharge.')
+}).describe('Itemized breakdown of how a quoted price was built: hours × rate, each discount applied, and the fuel surcharge.\n'),zod.null()]).optional().describe('Itemized quote breakdown recorded at booking creation. Null for older bookings.'),
   "notes": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']),
   "jobberJobId": zod.string().nullish(),
@@ -206,6 +243,19 @@ export const GetUpcomingBookingsResponseItem = zod.object({
   "scheduledTime": zod.string().describe('Time in HH:MM format'),
   "frequency": zod.enum(['one_time', 'weekly', 'biweekly', 'monthly']),
   "estimatedPrice": zod.number().nullish(),
+  "priceBreakdown": zod.union([zod.object({
+  "hours": zod.number().optional().describe('Hours of cleaning quoted.'),
+  "hourlyRate": zod.number().optional().describe('Hourly rate used ($52.50 one cleaner, $105 two cleaners, or custom).'),
+  "baseAmount": zod.number().optional().describe('hours × hourlyRate before discounts.'),
+  "manualPrice": zod.number().optional().describe('Manually entered quoted price before discounts, recorded instead of hours\/hourlyRate\/baseAmount when the dispatcher typed the price directly rather than deriving it from hours × rate.\n'),
+  "leadSource": zod.string().nullish().describe('Where the customer heard about us, if recorded.'),
+  "leadDiscount": zod.number().optional().describe('Lead-source thank-you discount amount ($10 when applied).'),
+  "quickDiscountTens": zod.number().optional().describe('Number of −$10 quick discounts applied.'),
+  "quickDiscountTwenties": zod.number().optional().describe('Number of −$20 quick discounts applied.'),
+  "loyaltyDiscount": zod.number().optional().describe('Dollar amount of the 10% loyalty discount, if applied.'),
+  "fuelSurcharge": zod.number().optional().describe('Fuel surcharge added to the quote.'),
+  "total": zod.number().describe('Final quoted price including the fuel surcharge.')
+}).describe('Itemized breakdown of how a quoted price was built: hours × rate, each discount applied, and the fuel surcharge.\n'),zod.null()]).optional().describe('Itemized quote breakdown recorded at booking creation. Null for older bookings.'),
   "notes": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']),
   "jobberJobId": zod.string().nullish(),
@@ -245,6 +295,19 @@ export const GetBookingResponse = zod.object({
   "scheduledTime": zod.string().describe('Time in HH:MM format'),
   "frequency": zod.enum(['one_time', 'weekly', 'biweekly', 'monthly']),
   "estimatedPrice": zod.number().nullish(),
+  "priceBreakdown": zod.union([zod.object({
+  "hours": zod.number().optional().describe('Hours of cleaning quoted.'),
+  "hourlyRate": zod.number().optional().describe('Hourly rate used ($52.50 one cleaner, $105 two cleaners, or custom).'),
+  "baseAmount": zod.number().optional().describe('hours × hourlyRate before discounts.'),
+  "manualPrice": zod.number().optional().describe('Manually entered quoted price before discounts, recorded instead of hours\/hourlyRate\/baseAmount when the dispatcher typed the price directly rather than deriving it from hours × rate.\n'),
+  "leadSource": zod.string().nullish().describe('Where the customer heard about us, if recorded.'),
+  "leadDiscount": zod.number().optional().describe('Lead-source thank-you discount amount ($10 when applied).'),
+  "quickDiscountTens": zod.number().optional().describe('Number of −$10 quick discounts applied.'),
+  "quickDiscountTwenties": zod.number().optional().describe('Number of −$20 quick discounts applied.'),
+  "loyaltyDiscount": zod.number().optional().describe('Dollar amount of the 10% loyalty discount, if applied.'),
+  "fuelSurcharge": zod.number().optional().describe('Fuel surcharge added to the quote.'),
+  "total": zod.number().describe('Final quoted price including the fuel surcharge.')
+}).describe('Itemized breakdown of how a quoted price was built: hours × rate, each discount applied, and the fuel surcharge.\n'),zod.null()]).optional().describe('Itemized quote breakdown recorded at booking creation. Null for older bookings.'),
   "notes": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']),
   "jobberJobId": zod.string().nullish(),
@@ -282,6 +345,19 @@ export const UpdateBookingBody = zod.object({
   "scheduledTime": zod.string().optional(),
   "frequency": zod.enum(['one_time', 'weekly', 'biweekly', 'monthly']).optional(),
   "estimatedPrice": zod.number().nullish(),
+  "priceBreakdown": zod.union([zod.object({
+  "hours": zod.number().optional().describe('Hours of cleaning quoted.'),
+  "hourlyRate": zod.number().optional().describe('Hourly rate used ($52.50 one cleaner, $105 two cleaners, or custom).'),
+  "baseAmount": zod.number().optional().describe('hours × hourlyRate before discounts.'),
+  "manualPrice": zod.number().optional().describe('Manually entered quoted price before discounts, recorded instead of hours\/hourlyRate\/baseAmount when the dispatcher typed the price directly rather than deriving it from hours × rate.\n'),
+  "leadSource": zod.string().nullish().describe('Where the customer heard about us, if recorded.'),
+  "leadDiscount": zod.number().optional().describe('Lead-source thank-you discount amount ($10 when applied).'),
+  "quickDiscountTens": zod.number().optional().describe('Number of −$10 quick discounts applied.'),
+  "quickDiscountTwenties": zod.number().optional().describe('Number of −$20 quick discounts applied.'),
+  "loyaltyDiscount": zod.number().optional().describe('Dollar amount of the 10% loyalty discount, if applied.'),
+  "fuelSurcharge": zod.number().optional().describe('Fuel surcharge added to the quote.'),
+  "total": zod.number().describe('Final quoted price including the fuel surcharge.')
+}).describe('Itemized breakdown of how a quoted price was built: hours × rate, each discount applied, and the fuel surcharge.\n'),zod.null()]).optional().describe('Itemized quote breakdown. Send null to clear it (e.g. when the quoted price is edited and the old itemization no longer applies).\n'),
   "notes": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']).optional(),
   "jobberJobId": zod.string().optional(),
@@ -308,6 +384,19 @@ export const UpdateBookingResponse = zod.object({
   "scheduledTime": zod.string().describe('Time in HH:MM format'),
   "frequency": zod.enum(['one_time', 'weekly', 'biweekly', 'monthly']),
   "estimatedPrice": zod.number().nullish(),
+  "priceBreakdown": zod.union([zod.object({
+  "hours": zod.number().optional().describe('Hours of cleaning quoted.'),
+  "hourlyRate": zod.number().optional().describe('Hourly rate used ($52.50 one cleaner, $105 two cleaners, or custom).'),
+  "baseAmount": zod.number().optional().describe('hours × hourlyRate before discounts.'),
+  "manualPrice": zod.number().optional().describe('Manually entered quoted price before discounts, recorded instead of hours\/hourlyRate\/baseAmount when the dispatcher typed the price directly rather than deriving it from hours × rate.\n'),
+  "leadSource": zod.string().nullish().describe('Where the customer heard about us, if recorded.'),
+  "leadDiscount": zod.number().optional().describe('Lead-source thank-you discount amount ($10 when applied).'),
+  "quickDiscountTens": zod.number().optional().describe('Number of −$10 quick discounts applied.'),
+  "quickDiscountTwenties": zod.number().optional().describe('Number of −$20 quick discounts applied.'),
+  "loyaltyDiscount": zod.number().optional().describe('Dollar amount of the 10% loyalty discount, if applied.'),
+  "fuelSurcharge": zod.number().optional().describe('Fuel surcharge added to the quote.'),
+  "total": zod.number().describe('Final quoted price including the fuel surcharge.')
+}).describe('Itemized breakdown of how a quoted price was built: hours × rate, each discount applied, and the fuel surcharge.\n'),zod.null()]).optional().describe('Itemized quote breakdown recorded at booking creation. Null for older bookings.'),
   "notes": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']),
   "jobberJobId": zod.string().nullish(),
@@ -445,6 +534,19 @@ export const GetStaffScheduleResponseItem = zod.object({
   "scheduledTime": zod.string().describe('Time in HH:MM format'),
   "frequency": zod.enum(['one_time', 'weekly', 'biweekly', 'monthly']),
   "estimatedPrice": zod.number().nullish(),
+  "priceBreakdown": zod.union([zod.object({
+  "hours": zod.number().optional().describe('Hours of cleaning quoted.'),
+  "hourlyRate": zod.number().optional().describe('Hourly rate used ($52.50 one cleaner, $105 two cleaners, or custom).'),
+  "baseAmount": zod.number().optional().describe('hours × hourlyRate before discounts.'),
+  "manualPrice": zod.number().optional().describe('Manually entered quoted price before discounts, recorded instead of hours\/hourlyRate\/baseAmount when the dispatcher typed the price directly rather than deriving it from hours × rate.\n'),
+  "leadSource": zod.string().nullish().describe('Where the customer heard about us, if recorded.'),
+  "leadDiscount": zod.number().optional().describe('Lead-source thank-you discount amount ($10 when applied).'),
+  "quickDiscountTens": zod.number().optional().describe('Number of −$10 quick discounts applied.'),
+  "quickDiscountTwenties": zod.number().optional().describe('Number of −$20 quick discounts applied.'),
+  "loyaltyDiscount": zod.number().optional().describe('Dollar amount of the 10% loyalty discount, if applied.'),
+  "fuelSurcharge": zod.number().optional().describe('Fuel surcharge added to the quote.'),
+  "total": zod.number().describe('Final quoted price including the fuel surcharge.')
+}).describe('Itemized breakdown of how a quoted price was built: hours × rate, each discount applied, and the fuel surcharge.\n'),zod.null()]).optional().describe('Itemized quote breakdown recorded at booking creation. Null for older bookings.'),
   "notes": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']),
   "jobberJobId": zod.string().nullish(),
@@ -511,6 +613,19 @@ export const GetDayScheduleResponseItem = zod.object({
   "scheduledTime": zod.string().describe('Time in HH:MM format'),
   "frequency": zod.enum(['one_time', 'weekly', 'biweekly', 'monthly']),
   "estimatedPrice": zod.number().nullish(),
+  "priceBreakdown": zod.union([zod.object({
+  "hours": zod.number().optional().describe('Hours of cleaning quoted.'),
+  "hourlyRate": zod.number().optional().describe('Hourly rate used ($52.50 one cleaner, $105 two cleaners, or custom).'),
+  "baseAmount": zod.number().optional().describe('hours × hourlyRate before discounts.'),
+  "manualPrice": zod.number().optional().describe('Manually entered quoted price before discounts, recorded instead of hours\/hourlyRate\/baseAmount when the dispatcher typed the price directly rather than deriving it from hours × rate.\n'),
+  "leadSource": zod.string().nullish().describe('Where the customer heard about us, if recorded.'),
+  "leadDiscount": zod.number().optional().describe('Lead-source thank-you discount amount ($10 when applied).'),
+  "quickDiscountTens": zod.number().optional().describe('Number of −$10 quick discounts applied.'),
+  "quickDiscountTwenties": zod.number().optional().describe('Number of −$20 quick discounts applied.'),
+  "loyaltyDiscount": zod.number().optional().describe('Dollar amount of the 10% loyalty discount, if applied.'),
+  "fuelSurcharge": zod.number().optional().describe('Fuel surcharge added to the quote.'),
+  "total": zod.number().describe('Final quoted price including the fuel surcharge.')
+}).describe('Itemized breakdown of how a quoted price was built: hours × rate, each discount applied, and the fuel surcharge.\n'),zod.null()]).optional().describe('Itemized quote breakdown recorded at booking creation. Null for older bookings.'),
   "notes": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']),
   "jobberJobId": zod.string().nullish(),
@@ -523,5 +638,3 @@ export const GetDayScheduleResponseItem = zod.object({
 }))
 })
 export const GetDayScheduleResponse = zod.array(GetDayScheduleResponseItem)
-
-

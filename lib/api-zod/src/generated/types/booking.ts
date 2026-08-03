@@ -9,6 +9,7 @@ import type { BookingFrequency } from './bookingFrequency';
 import type { BookingJobberSyncStatus } from './bookingJobberSyncStatus';
 import type { BookingServiceType } from './bookingServiceType';
 import type { BookingStatus } from './bookingStatus';
+import type { PriceBreakdown } from './priceBreakdown';
 
 export interface Booking {
   id: number;
@@ -35,6 +36,8 @@ export interface Booking {
   frequency: BookingFrequency;
   /** @nullable */
   estimatedPrice?: number | null;
+  /** Itemized quote breakdown recorded at booking creation. Null for older bookings. */
+  priceBreakdown?: PriceBreakdown | null;
   /** @nullable */
   notes?: string | null;
   status: BookingStatus;

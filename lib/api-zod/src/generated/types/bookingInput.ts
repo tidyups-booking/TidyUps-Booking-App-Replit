@@ -8,6 +8,7 @@
 import type { BookingInputFrequency } from './bookingInputFrequency';
 import type { BookingInputServiceType } from './bookingInputServiceType';
 import type { BookingInputStatus } from './bookingInputStatus';
+import type { PriceBreakdown } from './priceBreakdown';
 
 export interface BookingInput {
   staffId?: number;
@@ -40,6 +41,7 @@ export interface BookingInput {
   scheduledTime: string;
   frequency: BookingInputFrequency;
   estimatedPrice?: number;
+  priceBreakdown?: PriceBreakdown;
   notes?: string;
   status?: BookingInputStatus;
   /** Full transcript of the inbound call that generated this booking. */

@@ -89,6 +89,36 @@ export const BookingJobberSyncStatus = {
   failed: 'failed',
 } as const;
 
+/**
+ * Itemized breakdown of how a quoted price was built: hours × rate, each discount applied, and the fuel surcharge.
+ */
+export interface PriceBreakdown {
+  /** Hours of cleaning quoted. */
+  hours?: number;
+  /** Hourly rate used ($52.50 one cleaner, $105 two cleaners, or custom). */
+  hourlyRate?: number;
+  /** hours × hourlyRate before discounts. */
+  baseAmount?: number;
+  /** Manually entered quoted price before discounts, recorded instead of hours/hourlyRate/baseAmount when the dispatcher typed the price directly rather than deriving it from hours × rate. */
+  manualPrice?: number;
+  /**
+     * Where the customer heard about us, if recorded.
+     * @nullable
+     */
+  leadSource?: string | null;
+  /** Lead-source thank-you discount amount ($10 when applied). */
+  leadDiscount?: number;
+  /** Number of −$10 quick discounts applied. */
+  quickDiscountTens?: number;
+  /** Number of −$20 quick discounts applied. */
+  quickDiscountTwenties?: number;
+  /** Dollar amount of the 10% loyalty discount, if applied. */
+  loyaltyDiscount?: number;
+  /** Fuel surcharge added to the quote. */
+  fuelSurcharge?: number;
+  /** Final quoted price including the fuel surcharge. */
+  total: number;
+}
 export interface Booking {
   id: number;
   /** @nullable */
@@ -114,6 +144,8 @@ export interface Booking {
   frequency: BookingFrequency;
   /** @nullable */
   estimatedPrice?: number | null;
+  /** Itemized quote breakdown recorded at booking creation. Null for older bookings. */
+  priceBreakdown?: PriceBreakdown | null;
   /** @nullable */
   notes?: string | null;
   status: BookingStatus;
@@ -205,6 +237,7 @@ export interface BookingInput {
   scheduledTime: string;
   frequency: BookingInputFrequency;
   estimatedPrice?: number;
+  priceBreakdown?: PriceBreakdown;
   notes?: string;
   status?: BookingInputStatus;
   /** Full transcript of the inbound call that generated this booking. */
@@ -266,6 +299,8 @@ export interface BookingUpdate {
   scheduledTime?: string;
   frequency?: BookingUpdateFrequency;
   estimatedPrice?: number | null;
+  /** Itemized quote breakdown. Send null to clear it (e.g. when the quoted price is edited and the old itemization no longer applies). */
+  priceBreakdown?: PriceBreakdown | null;
   notes?: string | null;
   status?: BookingUpdateStatus;
   jobberJobId?: string;
@@ -400,4 +435,3 @@ export type GetDayScheduleParams = {
  */
 date: string;
 };
-

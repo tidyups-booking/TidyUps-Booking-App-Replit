@@ -538,6 +538,11 @@ components:
           enum: [one_time, weekly, biweekly, monthly]
         estimatedPrice:
           type: ["number", "null"]
+        priceBreakdown:
+          oneOf:
+            - $ref: "#/components/schemas/PriceBreakdown"
+            - type: "null"
+          description: Itemized quote breakdown recorded at booking creation. Null for older bookings.
         notes:
           type: ["string", "null"]
         status:
@@ -568,6 +573,52 @@ components:
         hasTranscript:
           type: boolean
           description: True when at least one call transcript is attached to this booking.
+
+    PriceBreakdown:
+      type: object
+      description: >
+        Itemized breakdown of how a quoted price was built: hours × rate,
+        each discount applied, and the fuel surcharge.
+      required: [total]
+      properties:
+        hours:
+          type: number
+          description: Hours of cleaning quoted.
+        hourlyRate:
+          type: number
+          description: Hourly rate used ($52.50 one cleaner, $105 two cleaners, or custom).
+        baseAmount:
+          type: number
+          description: hours × hourlyRate before discounts.
+        manualPrice:
+          type: number
+          description: >
+            Manually entered quoted price before discounts, recorded instead of
+            hours/hourlyRate/baseAmount when the dispatcher typed the price
+            directly rather than deriving it from hours × rate.
+        leadSource:
+          type: ["string", "null"]
+          description: Where the customer heard about us, if recorded.
+        leadDiscount:
+          type: number
+          description: Lead-source thank-you discount amount ($10 when applied).
+        quickDiscountTens:
+          type: number
+          description: Number of −$10 quick discounts applied.
+        quickDiscountTwenties:
+          type: number
+          description: Number of −$20 quick discounts applied.
+        loyaltyDiscount:
+          type: number
+          description: Dollar amount of the 10% loyalty discount, if applied.
+        fuelSurcharge:
+          type: number
+          description: Fuel surcharge added to the quote.
+        total:
+          # Required — see the `required` list below; the API also verifies
+          # that the itemized lines reconcile to this total server-side.
+          type: number
+          description: Final quoted price including the fuel surcharge.
 
     BookingInput:
       type: object
@@ -636,6 +687,8 @@ components:
           enum: [one_time, weekly, biweekly, monthly]
         estimatedPrice:
           type: number
+        priceBreakdown:
+          $ref: "#/components/schemas/PriceBreakdown"
         notes:
           type: string
         status:
@@ -700,6 +753,13 @@ components:
         estimatedPrice:
           type: number
           nullable: true
+        priceBreakdown:
+          oneOf:
+            - $ref: "#/components/schemas/PriceBreakdown"
+            - type: "null"
+          description: >
+            Itemized quote breakdown. Send null to clear it (e.g. when the
+            quoted price is edited and the old itemization no longer applies).
         notes:
           type: string
           nullable: true

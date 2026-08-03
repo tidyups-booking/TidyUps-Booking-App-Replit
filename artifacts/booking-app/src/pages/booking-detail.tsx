@@ -30,7 +30,7 @@ import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { 
   ArrowLeft, MapPin, Phone, Mail, Home, Clock, Calendar, 
   Edit3, Trash2, CheckCircle2, AlertCircle, FileText, 
-  User, ChevronDown, ChevronUp, Mic, X, Save, Users
+  User, ChevronDown, ChevronUp, Mic, X, Save, Users, DollarSign
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { JobberSyncCard, type JobberSyncStatus } from "@/components/jobber-sync-card";
@@ -324,6 +324,10 @@ export default function BookingDetail() {
       scheduledTime: data.scheduledTime,
       frequency: data.frequency as (typeof BookingUpdateFrequency)[keyof typeof BookingUpdateFrequency],
       estimatedPrice: (data.estimatedPrice !== undefined && !isNaN(data.estimatedPrice)) ? data.estimatedPrice : null,
+      // The saved itemized breakdown can't be reconstructed here — clear it
+      // whenever the quoted price changes so it never contradicts the total.
+      ...((((data.estimatedPrice !== undefined && !isNaN(data.estimatedPrice)) ? data.estimatedPrice : null) !==
+        ((booking as any)?.estimatedPrice ?? null)) ? { priceBreakdown: null } : {}),
       notes: data.notes?.trim() || null,
       staffId: data.staffId || null,
       // Coordinates — send null when no autocomplete selection was made (address text unchanged)
@@ -979,6 +983,61 @@ export default function BookingDetail() {
 
             </CardContent>
           </Card>
+
+          {/* Price breakdown */}
+          {(() => {
+            const pb = (booking as any).priceBreakdown as {
+              hours?: number; hourlyRate?: number; baseAmount?: number; manualPrice?: number;
+              leadSource?: string | null; leadDiscount?: number;
+              quickDiscountTens?: number; quickDiscountTwenties?: number;
+              loyaltyDiscount?: number; fuelSurcharge?: number; total?: number;
+            } | null | undefined;
+            if (!pb) return null;
+            const row = (label: React.ReactNode, amount: number, opts?: { discount?: boolean }) => (
+              <div className="flex justify-between items-center py-1.5 text-sm">
+                <span className="text-muted-foreground">{label}</span>
+                <span className={cn("font-semibold tabular-nums", opts?.discount && "text-green-700 dark:text-green-400")}>
+                  {opts?.discount ? "−" : ""}{formatCurrency(Math.abs(amount))}
+                </span>
+              </div>
+            );
+            return (
+              <Card className="shadow-md">
+                <CardHeader className="bg-muted/30 border-b pb-4">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <DollarSign className="w-5 h-5" /> Price Breakdown
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-6">
+                  <div className="divide-y">
+                    {pb.hours != null && pb.hourlyRate != null && pb.baseAmount != null &&
+                      row(<>Cleaning — {pb.hours} hr{pb.hours !== 1 ? "s" : ""} × {formatCurrency(pb.hourlyRate)}/hr</>, pb.baseAmount)}
+                    {pb.manualPrice != null &&
+                      row("Quoted price (entered manually)", pb.manualPrice)}
+                    {pb.leadDiscount != null && pb.leadDiscount > 0 &&
+                      row(<>Thank-you discount{pb.leadSource ? ` (${pb.leadSource})` : ""}</>, pb.leadDiscount, { discount: true })}
+                    {!!pb.quickDiscountTens &&
+                      row(<>Quick discount −$10{pb.quickDiscountTens > 1 ? ` ×${pb.quickDiscountTens}` : ""}</>, pb.quickDiscountTens * 10, { discount: true })}
+                    {!!pb.quickDiscountTwenties &&
+                      row(<>Quick discount −$20{pb.quickDiscountTwenties > 1 ? ` ×${pb.quickDiscountTwenties}` : ""}</>, pb.quickDiscountTwenties * 20, { discount: true })}
+                    {pb.loyaltyDiscount != null && pb.loyaltyDiscount > 0 &&
+                      row("Loyalty discount (10%)", pb.loyaltyDiscount, { discount: true })}
+                    {pb.fuelSurcharge != null && pb.fuelSurcharge > 0 &&
+                      row("Fuel surcharge", pb.fuelSurcharge)}
+                    {pb.total != null && (
+                      <div className="flex justify-between items-center pt-3 mt-1">
+                        <span className="font-bold">Total quoted</span>
+                        <span className="font-black text-primary text-lg tabular-nums">{formatCurrency(pb.total)}</span>
+                      </div>
+                    )}
+                  </div>
+                  {pb.leadSource && (
+                    <p className="text-xs text-muted-foreground mt-3">Heard about us via {pb.leadSource}</p>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })()}
 
           {/* Jobber sync */}
           <JobberSyncCard

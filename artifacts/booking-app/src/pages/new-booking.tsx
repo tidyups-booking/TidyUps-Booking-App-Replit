@@ -19,6 +19,7 @@ import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { BookingMiniMap } from "@/components/booking-mini-map";
 import { EmailAutocomplete } from "@/components/email-autocomplete";
 import { CustomerAutocomplete, type CustomerRecord } from "@/components/customer-autocomplete";
+import { buildPriceBreakdown } from "@/lib/price-breakdown";
 
 const bookingSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
@@ -216,6 +217,27 @@ export default function NewBooking() {
   // True once a returning customer was detected/filled — enables the loyalty discount button
   const [loyaltyEligible, setLoyaltyEligible] = useState(false);
   const [discountApplied, setDiscountApplied] = useState(false);
+  // Dollar amount of the 10% loyalty discount when applied — saved in the price breakdown
+  const [loyaltyAmount, setLoyaltyAmount] = useState(0);
+  // Mirror of loyalty state for use inside the phone-lookup effect (whose
+  // closure only tracks phoneValue) so withdrawal can restore the quote.
+  const loyaltyStateRef = useRef({ applied: false, amount: 0 });
+  useEffect(() => {
+    loyaltyStateRef.current = { applied: discountApplied, amount: loyaltyAmount };
+  }, [discountApplied, loyaltyAmount]);
+
+  // Withdraw the loyalty discount AND add its amount back onto the quote so
+  // the price never silently retains a discount that no longer applies.
+  const withdrawLoyalty = useCallback(() => {
+    const { applied, amount } = loyaltyStateRef.current;
+    if (applied && amount > 0) {
+      const current = parseFloat(String(form.getValues("estimatedPrice")));
+      if (isFinite(current)) form.setValue("estimatedPrice", (Math.round((current + amount) * 100) / 100) as any);
+    }
+    setDiscountApplied(false);
+    setLoyaltyAmount(0);
+  }, [form]);
+
   const acknowledgedPhoneRef = useRef<string | null>(null); // digits already filled/dismissed
   const returningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const returningGenRef = useRef(0);
@@ -230,7 +252,7 @@ export default function NewBooking() {
       // withdraw the loyalty discount unless it's the acknowledged returning customer
       if (digits !== acknowledgedPhoneRef.current) {
         setLoyaltyEligible(false);
-        setDiscountApplied(false);
+        withdrawLoyalty();
       }
       return;
     }
@@ -245,7 +267,7 @@ export default function NewBooking() {
         );
         setReturningMatch(match ?? null);
         setLoyaltyEligible(!!match);
-        if (!match) setDiscountApplied(false);
+        if (!match) withdrawLoyalty();
       } catch { /* ignore */ }
     }, 400);
     return () => { if (returningTimerRef.current) clearTimeout(returningTimerRef.current); };
@@ -406,12 +428,26 @@ export default function NewBooking() {
   const [hourlyRate, setHourlyRate] = useState(RATE_TWO);
   const [hours, setHours] = useState("1");
 
+  // True when the dispatcher typed the price directly — the saved breakdown
+  // then records the manual price instead of a stale hours × rate amount.
+  const [manualPriceEntered, setManualPriceEntered] = useState(false);
+
   const recomputePrice = (h: number, rate: number) => {
     if (!isFinite(h) || h <= 0) return;
     let price = Math.round(h * rate * 100) / 100;
-    if (leadDiscountApplied) price = Math.max(0, price - 10);
+    if (leadDiscountApplied) {
+      if (price >= 10) {
+        price = Math.round((price - 10) * 100) / 100;
+      } else {
+        // Quote too small to absorb the $10 discount — drop it rather than
+        // clamping to zero, so the saved breakdown always reconciles.
+        setLeadDiscountApplied(false);
+        toast({ title: "Thank-you discount removed", description: "The new quote is below $10, so the $10 discount no longer applies." });
+      }
+    }
     form.setValue("estimatedPrice", price as any);
-    setDiscountApplied(false);
+    setManualPriceEntered(false);
+    setDiscountApplied(false); setLoyaltyAmount(0);
     // Recomputing from hours × rate starts a fresh price — quick discounts are cleared
     setTenCount(0);
     setTwentyCount(0);
@@ -449,20 +485,41 @@ export default function NewBooking() {
   const [tenCount, setTenCount] = useState(0);
   const [twentyCount, setTwentyCount] = useState(0);
 
-  const adjustPrice = (delta: number) => {
+  // Returns false (and applies nothing) when a negative delta would push the
+  // price below zero — discounts are refused rather than clamped, so the
+  // persisted breakdown always reconciles with the total.
+  const adjustPrice = (delta: number): boolean => {
     const current = parseFloat(String(form.getValues("estimatedPrice")));
-    if (!isFinite(current)) return;
-    form.setValue("estimatedPrice", Math.max(0, Math.round((current + delta) * 100) / 100) as any);
+    if (!isFinite(current)) return false;
+    const next = Math.round((current + delta) * 100) / 100;
+    if (next < 0) {
+      toast({ title: "Price too low for this discount", description: `The quote must be at least $${Math.abs(delta)} to apply it.` });
+      return false;
+    }
+    form.setValue("estimatedPrice", next as any);
+    return true;
+  };
+
+  // Canonical discount ordering: the 10% loyalty discount is always applied
+  // LAST. While it's active, other discount controls are blocked so the saved
+  // breakdown lines always reconcile (base − flat discounts, then 10%).
+  const guardLoyaltyLast = (): boolean => {
+    if (discountApplied) {
+      toast({ title: "Remove the loyalty discount first", description: "The 10% loyalty discount is applied last — remove it, adjust the price, then re-apply it." });
+      return true;
+    }
+    return false;
   };
 
   const handleLeadSource = (src: string) => {
+    if (guardLoyaltyLast()) return;
     if (leadSource === src) {
       // Unselecting: remove the $10 thank-you discount if it was applied
       setLeadSource(null);
       if (leadDiscountApplied) { adjustPrice(10); setLeadDiscountApplied(false); }
     } else {
       setLeadSource(src);
-      if (!leadDiscountApplied) { adjustPrice(-10); setLeadDiscountApplied(true); }
+      if (!leadDiscountApplied && adjustPrice(-10)) setLeadDiscountApplied(true);
     }
   };
 
@@ -481,6 +538,23 @@ export default function NewBooking() {
       if (isFinite(base) && isFinite(fuel) && fuel > 0) {
         submitData.estimatedPrice = Math.round((base + fuel) * 100) / 100;
       }
+    }
+    // Persist the itemized price breakdown so dispatchers can see how the quote was built
+    if (submitData.estimatedPrice !== undefined) {
+      submitData.priceBreakdown = buildPriceBreakdown({
+        // estimatedPrice already includes the fuel surcharge at this point
+        finalPrice: submitData.estimatedPrice - (parseFloat(fuelSurcharge) > 0 ? parseFloat(fuelSurcharge) : 0),
+        hours: parseFloat(hours),
+        hourlyRate,
+        leadSource,
+        leadDiscountApplied,
+        tenCount,
+        twentyCount,
+        loyaltyApplied: discountApplied,
+        loyaltyAmount,
+        fuelSurcharge: parseFloat(fuelSurcharge),
+        manualPriceEntered,
+      });
     }
     if (submitData.email === "") submitData.email = undefined;
     if (submitData.postalCode === "") submitData.postalCode = undefined;
@@ -928,7 +1002,7 @@ export default function NewBooking() {
                           <Input type="number" placeholder="105.00"
                             className="pl-10 text-xl font-bold border-primary/30 focus-visible:ring-primary"
                             {...field}
-                            onChange={(e) => { setDiscountApplied(false); setTenCount(0); setTwentyCount(0); field.onChange(e); }}
+                            onChange={(e) => { setManualPriceEntered(true); setLeadDiscountApplied(false); setDiscountApplied(false); setLoyaltyAmount(0); setTenCount(0); setTwentyCount(0); field.onChange(e); }}
                           />
                         </div>
                       </div>
@@ -943,7 +1017,7 @@ export default function NewBooking() {
                           >{src}</button>
                         ))}
                       </div>
-                      {leadSource && (
+                      {leadDiscountApplied && (
                         <p className="text-xs text-green-700 dark:text-green-400 flex items-center gap-1">
                           <CheckCircle2 className="w-3.5 h-3.5" /> $10 thank-you discount applied
                         </p>
@@ -954,9 +1028,11 @@ export default function NewBooking() {
                         <div key={off} className="flex items-center gap-1">
                           <button type="button"
                             onClick={() => {
+                              if (guardLoyaltyLast()) return;
                               const current = parseFloat(String(field.value));
                               if (!isFinite(current) || current <= 0) { toast({ title: "Enter a price first", description: "Type the quoted price, then apply the discount." }); return; }
-                              field.onChange((Math.round(Math.max(0, current - off) * 100) / 100).toString());
+                              if (current - off < 0) { toast({ title: "Price too low for this discount", description: `The quote must be at least $${off} to apply it.` }); return; }
+                              field.onChange((Math.round((current - off) * 100) / 100).toString());
                               setCount(count + 1);
                             }}
                             className={cn("text-xs font-semibold rounded-full px-3 py-1 border transition-colors",
@@ -964,7 +1040,7 @@ export default function NewBooking() {
                           >−${off} off{count > 0 && ` ×${count}`}</button>
                           {count > 0 && (
                             <button type="button"
-                              onClick={() => { const current = parseFloat(String(field.value)); if (!isFinite(current)) return; field.onChange((Math.round((current + off) * 100) / 100).toString()); setCount(count - 1); }}
+                              onClick={() => { if (guardLoyaltyLast()) return; const current = parseFloat(String(field.value)); if (!isFinite(current)) return; field.onChange((Math.round((current + off) * 100) / 100).toString()); setCount(count - 1); }}
                               className="text-xs text-muted-foreground border border-border rounded-full px-2 py-1 hover:bg-muted transition-colors"
                               title={`Undo one −$${off}`}
                             >↩ undo</button>
@@ -991,14 +1067,26 @@ export default function NewBooking() {
                     {loyaltyEligible && (
                       discountApplied ? (
                         <p className="text-xs font-medium text-green-600 dark:text-green-400 flex items-center gap-1 mt-2">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> 10% loyalty discount applied
+                          <CheckCircle2 className="w-3.5 h-3.5" /> 10% loyalty discount applied (−${loyaltyAmount.toFixed(2)})
+                          <button type="button"
+                            onClick={() => {
+                              const current = parseFloat(String(field.value));
+                              if (isFinite(current)) field.onChange((Math.round((current + loyaltyAmount) * 100) / 100).toString());
+                              setDiscountApplied(false);
+                              setLoyaltyAmount(0);
+                            }}
+                            className="ml-1 text-muted-foreground border border-border rounded-full px-2 py-0.5 hover:bg-muted transition-colors"
+                            title="Remove the loyalty discount"
+                          >↩ remove</button>
                         </p>
                       ) : (
                         <button type="button"
                           onClick={() => {
                             const current = parseFloat(String(field.value));
                             if (!isFinite(current) || current <= 0) { toast({ title: "Enter a price first", description: "Type the quoted price, then apply the discount." }); return; }
-                            field.onChange((Math.round(current * 0.9 * 100) / 100).toString());
+                            const discounted = Math.round(current * 0.9 * 100) / 100;
+                            field.onChange(discounted.toString());
+                            setLoyaltyAmount(Math.round((current - discounted) * 100) / 100);
                             setDiscountApplied(true);
                           }}
                           className="text-xs font-semibold text-green-700 dark:text-green-400 border border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-950/30 rounded-full px-3 py-1 hover:bg-green-100 dark:hover:bg-green-900/40 transition-colors mt-2"
