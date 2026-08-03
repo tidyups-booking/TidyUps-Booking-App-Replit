@@ -541,6 +541,9 @@ router.post("/jobber/sync-calendar", requireAuth, async (req, res) => {
 
 export default router;
 
+/** Alias used at the callback site — consumes the nonce and returns validity. */
+const validateOAuthState = consumeOAuthState;
+
 function consumeOAuthState(state: string): boolean {
   const expiry = pendingOAuthStates.get(state);
   if (expiry === undefined) return false;
