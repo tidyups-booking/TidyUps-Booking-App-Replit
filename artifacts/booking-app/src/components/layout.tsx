@@ -6,11 +6,22 @@ import { LiveCallProvider, useLiveCall } from "@/contexts/live-call-context";
 import { CallAlertBanner } from "@/components/call-alert-banner";
 import { SiteFooter } from "@/components/footer";
 import logoImg from "@assets/833tidyups-logo.png";
+import {
 
 function LayoutInner({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const { bannerVisible } = useLiveCall();
+  // Poll every 30s so a new public contact submission surfaces in the badge
+  // without the dispatcher needing to refocus or navigate.
+  const { data: contactMessages } = useListContactMessages({
+    query: {
+      queryKey: getListContactMessagesQueryKey(),
+      refetchInterval: 30_000,
+      refetchOnWindowFocus: true,
+    },
+  });
+  const unreadCount = contactMessages?.filter((m) => !m.handledAt).length ?? 0;
 
   const navItems = [
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -19,10 +30,9 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
     { href: "/schedule", label: "Schedule", icon: CalendarDays },
     { href: "/bookings", label: "All Bookings", icon: List },
     { href: "/staff", label: "Staff", icon: Users },
-    { href: "/messages", label: "Messages", icon: Inbox },
+    { href: "/messages", label: "Messages", icon: Inbox, badge: unreadCount > 0 ? unreadCount : undefined },
     { href: "/settings", label: "Settings", icon: Settings },
   ];
-
   return (
     <div className={cn("min-h-[100dvh] flex flex-col bg-background", bannerVisible && "pt-11")}>
       <header className="sticky top-0 z-50 w-full border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/60 shadow-sm">
@@ -62,6 +72,11 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
                 >
                   <Icon className="w-4 h-4" />
                   {item.label}
+                  {item.badge !== undefined && (
+                    <span className="ml-0.5 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-primary text-white text-xs font-semibold leading-none">
+                      {item.badge > 99 ? "99+" : item.badge}
+                    </span>
+                  )}
                   {isActive && (
                     <span className="absolute bottom-0 left-0 right-0 h-0.5 brand-gradient rounded-t-full" />
                   )}
@@ -99,6 +114,11 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
                   >
                     <Icon className="w-5 h-5" />
                     {item.label}
+                    {item.badge !== undefined && (
+                      <span className="ml-auto inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-primary text-white text-xs font-semibold leading-none">
+                        {item.badge > 99 ? "99+" : item.badge}
+                      </span>
+                    )}
                   </Link>
                 );
               })}
