@@ -1,7 +1,8 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { eq, and, gte, lte } from "drizzle-orm";
 import { getAuth } from "@clerk/express";
 import { db, staffTable, bookingsTable, cleanerLocationsTable } from "@workspace/db";
+import { requireAuth } from "../app.js";
 
 const router: IRouter = Router();
 
@@ -143,6 +144,89 @@ router.get("/map/data", async (req, res): Promise<void> => {
   // The client will geocode booking addresses and compute proximity —
   // but we also return which staff have positions so the client can rank them.
   res.json({ staff: staffWithPosition, bookings, isToday });
+});
+
+/**
+ * Validates a YYYY-MM-DD string as a real calendar date.
+ * Rejects impossible dates like 2025-02-31 by parsing through Date and
+ * verifying the ISO string round-trips to the same value.
+ */
+function isRealCalendarDate(s: string): boolean {
+  if (!/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(s)) return false;
+  const d = new Date(s + "T12:00:00Z"); // noon UTC avoids timezone day-shift
+  return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+}
+
+function validateDateRange(
+  startDate: string | null,
+  endDate: string | null,
+): string | null {
+  if (!startDate || !endDate) return "startDate and endDate are required";
+  if (!isRealCalendarDate(startDate) || !isRealCalendarDate(endDate))
+    return "Dates must be valid calendar dates in YYYY-MM-DD format";
+  if (startDate > endDate) return "startDate must be on or before endDate";
+  return null;
+}
+
+// GET /map/counts?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
+// Returns {[date]: bookingCount} for the given range (used by month calendar view)
+router.get("/map/counts", requireAuth, async (req, res): Promise<void> => {
+  const startDate = typeof req.query.startDate === "string" ? req.query.startDate.trim() : null;
+  const endDate = typeof req.query.endDate === "string" ? req.query.endDate.trim() : null;
+
+  const rangeErr = validateDateRange(startDate, endDate);
+  if (rangeErr) {
+    res.status(400).json({ error: rangeErr });
+    return;
+  }
+  // After validateDateRange returns null, both values are non-null valid dates.
+  const start = startDate as string;
+  const end = endDate as string;
+
+  const rows = await db
+    .select({ scheduledDate: bookingsTable.scheduledDate })
+    .from(bookingsTable)
+    .where(and(
+      gte(bookingsTable.scheduledDate, start),
+      lte(bookingsTable.scheduledDate, end),
+    ));
+
+  const counts: Record<string, number> = {};
+  for (const row of rows) {
+    counts[row.scheduledDate] = (counts[row.scheduledDate] ?? 0) + 1;
+  }
+  res.json(counts);
+});
+
+// GET /map/range?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
+// Returns bookings grouped by date (used by week / 3-day calendar views)
+router.get("/map/range", requireAuth, async (req, res): Promise<void> => {
+  const startDate = typeof req.query.startDate === "string" ? req.query.startDate.trim() : null;
+  const endDate = typeof req.query.endDate === "string" ? req.query.endDate.trim() : null;
+
+  const rangeErr2 = validateDateRange(startDate, endDate);
+  if (rangeErr2) {
+    res.status(400).json({ error: rangeErr2 });
+    return;
+  }
+  const start2 = startDate as string;
+  const end2 = endDate as string;
+
+  const rows = await db
+    .select()
+    .from(bookingsTable)
+    .where(and(
+      gte(bookingsTable.scheduledDate, start2),
+      lte(bookingsTable.scheduledDate, end2),
+    ))
+    .orderBy(bookingsTable.scheduledDate, bookingsTable.scheduledTime);
+
+  const byDate: Record<string, typeof rows> = {};
+  for (const row of rows) {
+    if (!byDate[row.scheduledDate]) byDate[row.scheduledDate] = [];
+    byDate[row.scheduledDate].push(row);
+  }
+  res.json(byDate);
 });
 
 export default router;

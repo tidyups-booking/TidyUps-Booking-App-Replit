@@ -5,9 +5,12 @@ import { useListStaff } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { MapPin, Navigation, Users, Home, Clock, Wifi, WifiOff, ChevronLeft, ChevronRight, Calendar } from "lucide-react";
+import { MapPin, Navigation, Users, Home, Clock, Wifi, WifiOff, ChevronLeft, ChevronRight, Calendar, RefreshCw, CalendarDays, LayoutGrid } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { format, addDays, subDays, parseISO, isToday as dateFnsIsToday } from "date-fns";
+import { format, addDays, subDays, parseISO, isToday as dateFnsIsToday, startOfMonth, endOfMonth, addMonths } from "date-fns";
+import { MonthCalendar, ColumnCalendar, type CalendarBooking } from "@/components/map-calendar";
+
+type CalendarView = "day" | "3day" | "week" | "month";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -74,6 +77,27 @@ function makeCleanerIcon(s: StaffEntry, isStale: boolean) {
         border-top:7px solid ${color};margin-top:-1px;"></div>
     </div>`;
   return L.divIcon({ html, className: "", iconSize: [44, 52], iconAnchor: [22, 52], popupAnchor: [0, -54] });
+}
+
+/** Small house pin — always-on home address marker for each staff member. */
+function makeHomeIcon(s: StaffEntry) {
+  const color = cleanerColor(s.id);
+  const ini = initials(s.name);
+  const html = `
+    <div style="width:36px;height:44px;display:flex;flex-direction:column;align-items:center;">
+      <div style="width:32px;height:32px;border-radius:50% 50% 50% 4px;
+        background:white;color:${color};
+        border:2px dashed ${color};
+        box-shadow:0 1px 6px rgba(0,0,0,0.18);
+        display:flex;align-items:center;justify-content:center;
+        font-family:sans-serif;font-size:11px;font-weight:700;flex-shrink:0;">
+        ${ini}
+      </div>
+      <div style="width:0;height:0;
+        border-left:4px solid transparent;border-right:4px solid transparent;
+        border-top:6px solid ${color};margin-top:-1px;opacity:0.6;"></div>
+    </div>`;
+  return L.divIcon({ html, className: "", iconSize: [36, 44], iconAnchor: [18, 44], popupAnchor: [0, -46] });
 }
 
 function makeJobIcon(borderColor: string, isNearest: boolean) {
@@ -194,6 +218,14 @@ export default function MapPage() {
   const [geoError, setGeoError] = useState<string | null>(null);
   const watchIdRef = useRef<number | null>(null);
 
+  // ── Calendar view state ───────────────────────────────────────────────────────
+  const [calendarView, setCalendarView] = useState<CalendarView>("day");
+  const [calendarMonth, setCalendarMonth] = useState<Date>(() => startOfMonth(new Date()));
+  const [dayCounts, setDayCounts] = useState<Record<string, number>>({});
+  const [bookingsByDate, setBookingsByDate] = useState<Record<string, CalendarBooking[]>>({});
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+
   const { data: allStaff = [] } = useListStaff({ activeOnly: true });
   const baseUrl = getBaseUrl();
 
@@ -227,6 +259,108 @@ export default function MapPage() {
     return () => clearInterval(interval);
   }, [fetchMapData, selectedDate]);
 
+  // ── Calendar helper functions ─────────────────────────────────────────────────
+
+  function getViewDates(): Date[] {
+    const anchor = parseISO(selectedDate);
+    if (calendarView === "3day") {
+      return [-1, 0, 1].map(d => addDays(anchor, d));
+    }
+    if (calendarView === "week") {
+      const dayOfWeek = (anchor.getDay() + 6) % 7; // 0=Mon
+      const monday = subDays(anchor, dayOfWeek);
+      return Array.from({ length: 7 }, (_, i) => addDays(monday, i));
+    }
+    return [];
+  }
+
+  const fetchCounts = useCallback(async (monthDate: Date) => {
+    const startDate = format(startOfMonth(monthDate), "yyyy-MM-dd");
+    const endDate = format(endOfMonth(monthDate), "yyyy-MM-dd");
+    try {
+      const res = await fetch(`${baseUrl}/api/map/counts?startDate=${startDate}&endDate=${endDate}`, {
+        credentials: "include",
+      });
+      if (res.ok) setDayCounts(await res.json());
+    } catch { /* ignore */ }
+  }, [baseUrl]);
+
+  const fetchRange = useCallback(async (dates: Date[]) => {
+    if (dates.length === 0) return;
+    const startDate = format(dates[0], "yyyy-MM-dd");
+    const endDate = format(dates[dates.length - 1], "yyyy-MM-dd");
+    try {
+      const res = await fetch(`${baseUrl}/api/map/range?startDate=${startDate}&endDate=${endDate}`, {
+        credentials: "include",
+      });
+      if (res.ok) setBookingsByDate(await res.json());
+    } catch { /* ignore */ }
+  }, [baseUrl]);
+
+  const syncFromJobber = useCallback(async () => {
+    setSyncing(true);
+    setSyncMsg(null);
+    let startDate: string, endDate: string;
+    if (calendarView === "month") {
+      startDate = format(startOfMonth(calendarMonth), "yyyy-MM-dd");
+      endDate = format(endOfMonth(calendarMonth), "yyyy-MM-dd");
+    } else {
+      const viewDates = getViewDates();
+      startDate = viewDates.length > 0 ? format(viewDates[0], "yyyy-MM-dd") : selectedDate;
+      endDate = viewDates.length > 0 ? format(viewDates[viewDates.length - 1], "yyyy-MM-dd") : selectedDate;
+    }
+    try {
+      const res = await fetch(
+        `${baseUrl}/api/jobber/sync-calendar`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ startDate, endDate }),
+        }
+      );
+      const data = await res.json();
+      // Always refresh calendar data — even when there's a warning the server
+      // may have imported/updated records (e.g. first 500 of a large range).
+      if (calendarView === "month") fetchCounts(calendarMonth);
+      else fetchRange(getViewDates());
+      fetchMapData(selectedDate);
+
+      if (data.warning) {
+        const parts = [];
+        if (data.jobberCount > 0) parts.push(`${data.jobberCount} jobs`);
+        if (data.synced > 0) parts.push(`${data.synced} updated`);
+        if (data.imported > 0) parts.push(`${data.imported} imported`);
+        const summary = parts.length > 0 ? `${parts.join(" · ")} · ` : "";
+        setSyncMsg(`⚠ ${summary}${data.warning}`);
+      } else {
+        const parts = [`${data.jobberCount} Jobber jobs`];
+        if (data.synced > 0) parts.push(`${data.synced} updated`);
+        if (data.imported > 0) parts.push(`${data.imported} imported`);
+        if (data.skipped > 0) parts.push(`${data.skipped} skipped`);
+        setSyncMsg(`✓ ${parts.join(" · ")}`);
+      }
+    } catch {
+      setSyncMsg("⚠ Sync failed — check your connection");
+    } finally {
+      setSyncing(false);
+      setTimeout(() => setSyncMsg(null), 5000);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseUrl, calendarView, calendarMonth, selectedDate, fetchCounts, fetchRange, fetchMapData]);
+
+  // Fetch calendar data when view or anchor changes
+  useEffect(() => {
+    if (calendarView === "month") fetchCounts(calendarMonth);
+  }, [calendarView, calendarMonth, fetchCounts]);
+
+  useEffect(() => {
+    if (calendarView === "3day" || calendarView === "week") {
+      fetchRange(getViewDates());
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calendarView, selectedDate]);
+
   // ── Init Leaflet ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!mapElRef.current || mapRef.current) return;
@@ -238,49 +372,76 @@ export default function MapPage() {
     return () => { map.remove(); mapRef.current = null; };
   }, []);
 
-  // ── Update cleaner markers ───────────────────────────────────────────────────
+  // ── Update staff markers ─────────────────────────────────────────────────────
+  // Two independent layers:
+  //   home-{id}  — permanent pin at home address; visible by default whenever
+  //                homeLat/homeLng are saved, regardless of live-sharing status.
+  //   live-{id}  — larger pin at current GPS position; only shown while a
+  //                cleaner is actively sharing location (≤5 min ago).
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    const seen = new Set<string>();
+
+    const seenHome = new Set<string>();
+    const seenLive = new Set<string>();
 
     staffData.forEach((s) => {
-      if (!s.position) return;
-      const key = `cleaner-${s.id}`;
-      seen.add(key);
+      const color = cleanerColor(s.id);
 
-      const stale = s.position.source === "live" && s.liveLocation
-        ? secondsAgo(s.liveLocation.updatedAt) > 300
-        : false;
-      const icon = makeCleanerIcon(s, stale);
+      // ── Home pin (always on) ─────────────────────────────────────────────────
+      if (s.homeLat != null && s.homeLng != null) {
+        const homeKey = `home-${s.id}`;
+        seenHome.add(homeKey);
+        const homePopup = `
+          <div style="font-family:sans-serif;min-width:150px;">
+            <strong style="color:${color}">${s.name}</strong><br/>
+            <span style="color:#888;font-size:12px;">${s.role.replace("_", " ")}</span><br/>
+            <span style="font-size:12px;">🏠 Home address</span>
+            ${s.homeAddress ? `<br/><span style="font-size:11px;color:#aaa;">📍 ${s.homeAddress}</span>` : ""}
+          </div>`;
+        const homeIcon = makeHomeIcon(s);
+        const existingHome = markersRef.current.get(homeKey);
+        if (existingHome) {
+          existingHome.setLatLng([s.homeLat, s.homeLng]);
+          existingHome.setIcon(homeIcon);
+          existingHome.setPopupContent(homePopup);
+        } else {
+          const m = L.marker([s.homeLat, s.homeLng], { icon: homeIcon })
+            .addTo(map).bindPopup(homePopup);
+          markersRef.current.set(homeKey, m);
+        }
+      }
 
-      const sourceLabel = s.position.source === "live"
-        ? `📡 Live · updated ${s.liveLocation ? formatAgo(s.liveLocation.updatedAt) : "recently"}`
-        : `🏠 Home address`;
-
-      const popup = `
-        <div style="font-family:sans-serif;min-width:150px;">
-          <strong style="color:${cleanerColor(s.id)}">${s.name}</strong><br/>
-          <span style="color:#888;font-size:12px;">${s.role.replace("_", " ")}</span><br/>
-          <span style="font-size:12px;">${sourceLabel}</span>
-          ${s.homeAddress ? `<br/><span style="font-size:11px;color:#aaa;">📍 ${s.homeAddress}</span>` : ""}
-        </div>`;
-
-      const existing = markersRef.current.get(key);
-      if (existing) {
-        existing.setLatLng([s.position.lat, s.position.lng]);
-        existing.setIcon(icon);
-        existing.setPopupContent(popup);
-      } else {
-        const m = L.marker([s.position.lat, s.position.lng], { icon })
-          .addTo(map).bindPopup(popup);
-        markersRef.current.set(key, m);
+      // ── Live pin (only when actively sharing) ────────────────────────────────
+      const isLive = s.liveLocation != null && secondsAgo(s.liveLocation.updatedAt) <= 300;
+      if (isLive && s.liveLocation) {
+        const liveKey = `live-${s.id}`;
+        seenLive.add(liveKey);
+        const liveIcon = makeCleanerIcon(s, false);
+        const livePopup = `
+          <div style="font-family:sans-serif;min-width:150px;">
+            <strong style="color:${color}">${s.name}</strong><br/>
+            <span style="color:#888;font-size:12px;">${s.role.replace("_", " ")}</span><br/>
+            <span style="font-size:12px;">📡 Live · updated ${formatAgo(s.liveLocation.updatedAt)}</span>
+            ${s.homeAddress ? `<br/><span style="font-size:11px;color:#aaa;">📍 ${s.homeAddress}</span>` : ""}
+          </div>`;
+        const existingLive = markersRef.current.get(liveKey);
+        if (existingLive) {
+          existingLive.setLatLng([s.liveLocation.lat, s.liveLocation.lng]);
+          existingLive.setIcon(liveIcon);
+          existingLive.setPopupContent(livePopup);
+        } else {
+          const m = L.marker([s.liveLocation.lat, s.liveLocation.lng], { icon: liveIcon })
+            .addTo(map).bindPopup(livePopup);
+          markersRef.current.set(liveKey, m);
+        }
       }
     });
 
-    // Remove missing cleaner markers
+    // Remove markers for staff no longer in the dataset
     markersRef.current.forEach((m, key) => {
-      if (key.startsWith("cleaner-") && !seen.has(key)) { m.remove(); markersRef.current.delete(key); }
+      if (key.startsWith("home-") && !seenHome.has(key)) { m.remove(); markersRef.current.delete(key); }
+      if (key.startsWith("live-") && !seenLive.has(key)) { m.remove(); markersRef.current.delete(key); }
     });
   }, [staffData]);
 
@@ -307,13 +468,15 @@ export default function MapPage() {
       }
       if (!coords || !mapRef.current) return;
 
-      // Compute proximity ranking for all staff that have a position
+      // Compute proximity ranking — always uses home address coords so the
+      // distance reflects how far each cleaner's home is from the job site,
+      // regardless of whether they are currently sharing live GPS.
       const ranking = staffData
-        .filter(s => s.position != null)
+        .filter(s => s.homeLat != null && s.homeLng != null)
         .map(s => ({
           id: s.id,
           name: s.name,
-          km: haversineKm(coords[0], coords[1], s.position!.lat, s.position!.lng),
+          km: haversineKm(coords[0], coords[1], s.homeLat!, s.homeLng!),
         }))
         .sort((a, b) => a.km - b.km);
 
@@ -398,8 +561,15 @@ export default function MapPage() {
 
   // ── Stats ────────────────────────────────────────────────────────────────────
   const onlineCount = staffData.filter(s => s.liveLocation && secondsAgo(s.liveLocation.updatedAt) < 300).length;
-  const positionedCount = staffData.filter(s => s.position != null).length;
+  const homeCount = staffData.filter(s => s.homeLat != null && s.homeLng != null).length;
   const myStaff = allStaff.find((s: any) => s.id === myStaffId);
+
+  const VIEW_TABS: { id: CalendarView; label: string; icon: React.ReactNode }[] = [
+    { id: "day",   label: "Day",   icon: <Calendar className="w-3.5 h-3.5" /> },
+    { id: "3day",  label: "3-Day", icon: <CalendarDays className="w-3.5 h-3.5" /> },
+    { id: "week",  label: "Week",  icon: <CalendarDays className="w-3.5 h-3.5" /> },
+    { id: "month", label: "Month", icon: <LayoutGrid className="w-3.5 h-3.5" /> },
+  ];
 
   return (
     <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-500">
@@ -407,19 +577,52 @@ export default function MapPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-3xl font-bold tracking-tight brand-gradient-text">Live Map</h1>
-          <p className="text-muted-foreground">Cleaner positions · today's jobs · month schedule</p>
+          <p className="text-muted-foreground">Cleaner positions · schedule · Jobber sync</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {isToday ? (
-            <Badge variant="outline" className="gap-1.5 px-3 py-1.5">
-              <Wifi className="w-3.5 h-3.5 text-green-500" />
-              {onlineCount} live · {positionedCount} visible
-            </Badge>
-          ) : (
-            <Badge variant="outline" className="gap-1.5 px-3 py-1.5">
-              <Home className="w-3.5 h-3.5" />
-              {positionedCount} home addresses
-            </Badge>
+          {/* View toggle */}
+          <div className="flex items-center gap-0.5 p-0.5 bg-muted rounded-lg border">
+            {VIEW_TABS.map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setCalendarView(tab.id)}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
+                  calendarView === tab.id
+                    ? "bg-white dark:bg-card shadow-sm text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {tab.icon}
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Sync from Jobber */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={syncFromJobber}
+            disabled={syncing}
+            className="gap-1.5 text-xs h-8"
+          >
+            <RefreshCw className={cn("w-3.5 h-3.5", syncing && "animate-spin")} />
+            {syncing ? "Syncing…" : "Sync Jobber"}
+          </Button>
+
+          {calendarView === "day" && (
+            isToday ? (
+              <Badge variant="outline" className="gap-1.5 px-3 py-1.5">
+                <Wifi className="w-3.5 h-3.5 text-green-500" />
+                {onlineCount} live · {homeCount} home pins
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="gap-1.5 px-3 py-1.5">
+                <Home className="w-3.5 h-3.5" />
+                {homeCount} home pins
+              </Badge>
+            )
           )}
           <Badge variant="outline" className="gap-1.5 px-3 py-1.5">
             <Calendar className="w-3.5 h-3.5" />
@@ -428,7 +631,42 @@ export default function MapPage() {
         </div>
       </div>
 
-      {/* Date picker */}
+      {/* Sync result message */}
+      {syncMsg && (
+        <div className={cn(
+          "px-4 py-2 rounded-lg text-sm font-medium",
+          syncMsg.startsWith("✓") ? "bg-green-50 text-green-700 border border-green-200" : "bg-amber-50 text-amber-700 border border-amber-200"
+        )}>
+          {syncMsg}
+        </div>
+      )}
+
+      {/* ── Calendar view ──────────────────────────────────────────────────────── */}
+
+      {calendarView === "month" && (
+        <MonthCalendar
+          selectedDate={selectedDate}
+          onDateSelect={(date) => {
+            setSelectedDate(date);
+            setCalendarView("day");
+          }}
+          counts={dayCounts}
+          currentMonth={calendarMonth}
+          onMonthChange={(delta) => setCalendarMonth(m => addMonths(m, delta))}
+        />
+      )}
+
+      {(calendarView === "3day" || calendarView === "week") && (
+        <ColumnCalendar
+          dates={getViewDates()}
+          selectedDate={selectedDate}
+          onDateSelect={setSelectedDate}
+          bookingsByDate={bookingsByDate}
+        />
+      )}
+
+      {/* ── Day view: date strip ───────────────────────────────────────────────── */}
+      {calendarView === "day" && (
       <Card className="shadow-sm overflow-hidden">
         <CardContent className="p-3">
           <div className="flex items-center gap-2">
@@ -485,9 +723,10 @@ export default function MapPage() {
           </div>
         </CardContent>
       </Card>
+      )}
 
       {/* Future date info banner */}
-      {!isSelectedToday && (
+      {calendarView === "day" && !isSelectedToday && (
         <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 text-sm">
           <Home className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
           <div>
@@ -590,7 +829,9 @@ export default function MapPage() {
                 <button
                   key={s.id}
                   onClick={() => {
-                    const marker = markersRef.current.get(`cleaner-${s.id}`);
+                    // Prefer live marker; fall back to home pin
+                    const marker = markersRef.current.get(`live-${s.id}`)
+                      ?? markersRef.current.get(`home-${s.id}`);
                     if (marker && mapRef.current) {
                       mapRef.current.setView(marker.getLatLng(), 14, { animate: true });
                       marker.openPopup();

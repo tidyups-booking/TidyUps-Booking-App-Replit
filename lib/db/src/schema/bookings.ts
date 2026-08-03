@@ -6,7 +6,9 @@ import {
   integer,
   timestamp,
   pgEnum,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { staffTable } from "./staff";
@@ -58,15 +60,26 @@ export const bookingsTable = pgTable("bookings", {
   status: bookingStatusEnum("status").notNull().default("pending"),
   addressLat: real("address_lat"),
   addressLng: real("address_lng"),
+  // Stores the Jobber REQUEST ID returned by requestCreate (outbound booking sync).
+  // Never used for calendar-sync job IDs — see jobberSyncedJobId below.
   jobberJobId: text("jobber_job_id"),
   jobberSyncStatus: text("jobber_sync_status")
     .notNull()
     .default("not_started"),
   jobberSyncError: text("jobber_sync_error"),
+  // Stores the Jobber JOB ID imported by calendar sync (POST /jobber/sync-calendar).
+  // Kept separate from jobberJobId to avoid identity collisions between Jobber
+  // request IDs and Jobber job IDs, which are distinct namespaces.
+  jobberSyncedJobId: text("jobber_synced_job_id"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
-});
+}, (table) => ({
+  // Unique index on jobberSyncedJobId prevents duplicate calendar imports.
+  // PostgreSQL allows multiple NULLs in a non-partial unique index.
+  jobberSyncedJobIdUnique: uniqueIndex("bookings_jobber_synced_job_id_unique")
+    .on(table.jobberSyncedJobId),
+}));
 
 export const insertBookingSchema = createInsertSchema(bookingsTable).omit({
   id: true,
