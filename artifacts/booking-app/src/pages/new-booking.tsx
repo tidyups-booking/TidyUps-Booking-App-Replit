@@ -11,7 +11,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Phone, User, Home, MapPin, CalendarClock, DollarSign, CheckCircle2, Users, Navigation, Lock } from "lucide-react";
+import { Phone, User, Home, MapPin, CalendarClock, DollarSign, CheckCircle2, Users, Navigation, Lock, FileText } from "lucide-react";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
 import { LiveCallPanel } from "@/components/live-call-panel";
@@ -548,10 +548,8 @@ export default function NewBooking() {
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
 
+          {/* ── Row 1: Customer Info | Location ── */}
           <div className="grid md:grid-cols-2 gap-6 items-start">
-            {/* Left column: Customer Info + Job Scope */}
-            <div className="space-y-6">
-            {/* Customer Details */}
             <Card className="border-t-4 border-t-primary shadow-md">
               <CardHeader className="pb-4">
                 <CardTitle className="text-lg flex items-center gap-2"><User className="w-5 h-5 text-primary" /> Customer Info</CardTitle>
@@ -606,7 +604,7 @@ export default function NewBooking() {
                   )} />
                 </div>
 
-                {/* Returning-customer banner: phone number matches a past booking */}
+                {/* Returning-customer banner */}
                 {returningMatch && (
                   <div className="rounded-lg border border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-950/30 p-3 space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-300">
                     <div className="flex items-center gap-2 text-sm">
@@ -619,123 +617,15 @@ export default function NewBooking() {
                       Last appointment {new Date(returningMatch.lastBookingDate).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })} — consider offering a 10% loyalty discount.
                     </p>
                     <div className="flex gap-3 pt-0.5">
-                      <button
-                        type="button"
-                        onClick={() => handleSelectCustomer(returningMatch)}
-                        className="text-xs font-semibold text-green-700 dark:text-green-400 hover:underline"
-                      >
-                        Fill their info →
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          acknowledgedPhoneRef.current = returningMatch.phone.replace(/\D/g, "");
-                          setReturningMatch(null);
-                        }}
-                        className="text-xs text-muted-foreground hover:underline"
-                      >
-                        Dismiss
-                      </button>
+                      <button type="button" onClick={() => handleSelectCustomer(returningMatch)} className="text-xs font-semibold text-green-700 dark:text-green-400 hover:underline">Fill their info →</button>
+                      <button type="button" onClick={() => { acknowledgedPhoneRef.current = returningMatch.phone.replace(/\D/g, ""); setReturningMatch(null); }} className="text-xs text-muted-foreground hover:underline">Dismiss</button>
                     </div>
                   </div>
                 )}
               </CardContent>
             </Card>
 
-            {/* Job Details */}
-            <Card className="shadow-md">
-              <CardHeader className="pb-4 border-b">
-                <CardTitle className="text-lg flex items-center gap-2"><Home className="w-5 h-5 text-foreground" /> Job Scope</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4 pt-4">
-                <FormField control={form.control} name="serviceType" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Service Type<LockedBadge name="serviceType" /></FormLabel>
-                    <FormControl>
-                      <NativeSelect
-                        {...field}
-                        onChange={(e) => { markEdited("serviceType"); field.onChange(e); }}
-                        className={cn("h-12 text-base font-medium", fieldClass("serviceType"))}
-                      >
-                        <option value="standard_clean">Standard Clean</option>
-                        <option value="deep_clean">Deep Clean</option>
-                        <option value="move_in">Move-In Cleaning Service</option>
-                        <option value="move_out">Move-Out Cleaning Service</option>
-                        <option value="post_construction">Post-Construction</option>
-                      </NativeSelect>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField control={form.control} name="bedrooms" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Bedrooms<LockedBadge name="bedrooms" /></FormLabel>
-                      <FormControl>
-                        <Input type="number" min="0" max="10" className={cn("text-center font-bold text-lg", fieldClass("bedrooms"))} {...field} onChange={(e) => { markEdited("bedrooms"); field.onChange(e); }} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="bathrooms" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Bathrooms<LockedBadge name="bathrooms" /></FormLabel>
-                      <FormControl>
-                        <Input type="number" min="1" max="10" step="0.5" className={cn("text-center font-bold text-lg", fieldClass("bathrooms"))} {...field} onChange={(e) => { markEdited("bathrooms"); field.onChange(e); }} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                </div>
-
-                <FormField control={form.control} name="extras" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Extras<LockedBadge name="extras" /></FormLabel>
-                    <FormControl>
-                      <div className={cn(
-                          "flex flex-wrap gap-2 pt-1 rounded-lg transition-all duration-300 p-1",
-                          highlightedFields.has("extras")
-                            ? "ring-2 ring-green-400 bg-green-50 dark:bg-green-950/30"
-                            : (lockedFields.has("extras") || aiFilledFields.has("extras"))
-                              && "ring-2 ring-amber-400 bg-amber-50 dark:bg-amber-950/30"
-                        )}>
-                        {EXTRAS_OPTIONS.map(extra => {
-                          const isSelected = field.value.includes(extra);
-                          return (
-                            <button
-                              type="button"
-                              key={extra}
-                              onClick={() => {
-                                markEdited("extras");
-                                const newValue = isSelected
-                                  ? field.value.filter(v => v !== extra)
-                                  : [...field.value, extra];
-                                field.onChange(newValue);
-                              }}
-                              className={cn(
-                                "px-3 py-1.5 rounded-full text-sm font-medium border transition-all duration-200 active:scale-95",
-                                isSelected
-                                  ? "bg-primary text-white border-primary shadow-sm shadow-primary/20"
-                                  : "bg-background text-muted-foreground border-border hover:border-primary/50"
-                              )}
-                            >
-                              {extra}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-              </CardContent>
-            </Card>
-            </div>
-
-            {/* Right column: Location + Scheduling + Price */}
-            <div className="space-y-6">
-            {/* Location Details */}
+            {/* Location */}
             <Card className="border-t-4 border-t-secondary shadow-md">
               <CardHeader className="pb-4">
                 <CardTitle className="text-lg flex items-center gap-2"><MapPin className="w-5 h-5 text-secondary" /> Location</CardTitle>
@@ -748,22 +638,13 @@ export default function NewBooking() {
                       <AddressAutocomplete
                         value={field.value}
                         onChange={field.onChange}
-                        onManualChange={() => {
-                          markEdited("address");
-                          // Manual typing invalidates the exact Places coordinates
-                          form.setValue("addressLat", undefined);
-                          form.setValue("addressLng", undefined);
-                        }}
+                        onManualChange={() => { markEdited("address"); form.setValue("addressLat", undefined); form.setValue("addressLng", undefined); }}
                         onPlaceSelect={(place) => {
                           form.setValue("address", place.address, { shouldValidate: true });
                           if (place.city) form.setValue("city", place.city, { shouldValidate: true });
                           if (place.province) form.setValue("province", place.province);
                           if (place.postalCode) form.setValue("postalCode", place.postalCode, { shouldValidate: true });
-                          if (place.lat && place.lng) {
-                            form.setValue("addressLat", place.lat);
-                            form.setValue("addressLng", place.lng);
-                          }
-                          // Flash-highlight the auto-filled location fields green for 2 s
+                          if (place.lat && place.lng) { form.setValue("addressLat", place.lat); form.setValue("addressLng", place.lng); }
                           const placeFilled: string[] = ["address"];
                           if (place.city) placeFilled.push("city");
                           if (place.province) placeFilled.push("province");
@@ -782,9 +663,7 @@ export default function NewBooking() {
                   <FormField control={form.control} name="city" render={({ field }) => (
                     <FormItem>
                       <FormLabel>City<LockedBadge name="city" /></FormLabel>
-                      <FormControl>
-                        <Input placeholder="Edmonton" className={fieldClass("city")} {...field} onChange={(e) => { markEdited("city"); field.onChange(e); }} />
-                      </FormControl>
+                      <FormControl><Input placeholder="Edmonton" className={fieldClass("city")} {...field} onChange={(e) => { markEdited("city"); field.onChange(e); }} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )} />
@@ -805,368 +684,333 @@ export default function NewBooking() {
                   <FormField control={form.control} name="postalCode" render={({ field }) => (
                     <FormItem>
                       <FormLabel>Postal<LockedBadge name="postalCode" /></FormLabel>
-                      <FormControl>
-                        <Input placeholder="T5J" className={cn(fieldClass("postalCode"), "uppercase")} {...field} onChange={(e) => { markEdited("postalCode"); field.onChange(e); }} />
-                      </FormControl>
+                      <FormControl><Input placeholder="T5J" className={cn(fieldClass("postalCode"), "uppercase")} {...field} onChange={(e) => { markEdited("postalCode"); field.onChange(e); }} /></FormControl>
                       <FormMessage />
                     </FormItem>
                   )} />
                 </div>
-
-                {/* Live mini-map: caller's location vs cleaners, while on the phone */}
                 {miniMapCoords && (
-                  <BookingMiniMap
-                    lat={miniMapCoords[0]}
-                    lng={miniMapCoords[1]}
-                    baseUrl={getBaseUrl().replace(/\/$/, "")}
-                  />
+                  <BookingMiniMap lat={miniMapCoords[0]} lng={miniMapCoords[1]} baseUrl={getBaseUrl().replace(/\/$/, "")} />
                 )}
               </CardContent>
             </Card>
-
-              <Card className="shadow-md">
-                <CardHeader className="pb-4 border-b">
-                  <CardTitle className="text-lg flex items-center gap-2"><CalendarClock className="w-5 h-5 text-foreground" /> Scheduling</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4 pt-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField control={form.control} name="scheduledDate" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Date<LockedBadge name="scheduledDate" /></FormLabel>
-                        <FormControl>
-                          <Input type="date" className={cn("font-medium", fieldClass("scheduledDate"))} {...field} onChange={(e) => { markEdited("scheduledDate"); field.onChange(e); }} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )} />
-                    <FormField control={form.control} name="scheduledTime" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Time<LockedBadge name="scheduledTime" /></FormLabel>
-                        <FormControl>
-                          <Input type="time" className={cn("font-medium", fieldClass("scheduledTime"))} {...field} onChange={(e) => { markEdited("scheduledTime"); field.onChange(e); }} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )} />
-                  </div>
-
-                  <FormField control={form.control} name="frequency" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Frequency<LockedBadge name="frequency" /></FormLabel>
-                      <FormControl>
-                        <NativeSelect
-                          {...field}
-                          onChange={(e) => { markEdited("frequency"); field.onChange(e); }}
-                          className={cn(fieldClass("frequency"))}
-                        >
-                          <option value="one_time">One Time</option>
-                          <option value="weekly">Weekly</option>
-                          <option value="biweekly">Bi-Weekly</option>
-                          <option value="monthly">Monthly</option>
-                        </NativeSelect>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-
-                  {/* Cleaner assignment */}
-                  <FormField control={form.control} name="staffId" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="flex items-center gap-1.5">
-                        <Users className="w-4 h-4" />
-                        Assign Cleaner <span className="text-muted-foreground font-normal">(Optional)</span>
-                      </FormLabel>
-                      {nearestCleaner && (
-                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 text-sm">
-                          <Navigation className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
-                          <span className="text-green-700 dark:text-green-400 font-medium">
-                            Closest available: {nearestCleaner.name}
-                          </span>
-                          <span className="text-green-600/70 dark:text-green-500/70">
-                            {nearestCleaner.km.toFixed(1)} km away
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => field.onChange(nearestCleaner.id)}
-                            className="ml-auto text-xs font-semibold text-green-700 dark:text-green-400 hover:underline"
-                          >
-                            Assign →
-                          </button>
-                        </div>
-                      )}
-                      <FormControl>
-                        <NativeSelect
-                          value={field.value ?? ""}
-                          onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)}
-                          className={cn(fieldClass("staffId"))}
-                        >
-                          <option value="">Unassigned</option>
-                          {staff.map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.name} ({s.role === "lead_cleaner" ? "Lead" : s.role === "supervisor" ? "Supervisor" : "Cleaner"})
-                            </option>
-                          ))}
-                        </NativeSelect>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                </CardContent>
-              </Card>
-
-              <Card className="shadow-md border-primary/20 bg-primary/5">
-                <CardContent className="p-4">
-                  <div className="flex gap-4">
-                    <FormField control={form.control} name="estimatedPrice" render={({ field }) => (
-                      <FormItem className="flex-1">
-                        <FormLabel className="text-primary-foreground/70 dark:text-primary">Quoted Price ($)</FormLabel>
-                        <FormControl>
-                          <div className="space-y-2">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <div className="flex items-center gap-1">
-                                <span className="text-xs text-muted-foreground mr-1">Hours:</span>
-                                {[1, 2, 3, 4, 5].map((h) => (
-                                  <button
-                                    key={h}
-                                    type="button"
-                                    onClick={() => handleHoursChange(String(h))}
-                                    className={cn(
-                                      "w-9 h-9 rounded-lg text-sm font-bold border transition-colors",
-                                      parseFloat(hours) === h
-                                        ? "bg-primary text-white border-primary"
-                                        : "bg-background text-foreground border-border hover:border-primary/50"
-                                    )}
-                                  >
-                                    {h}
-                                  </button>
-                                ))}
-                                <button
-                                  type="button"
-                                  onClick={toggleHalfHour}
-                                  className={cn(
-                                    "w-9 h-9 rounded-lg text-sm font-bold border transition-colors",
-                                    (parseFloat(hours) || 0) % 1 !== 0
-                                      ? "bg-primary text-white border-primary"
-                                      : "bg-background text-foreground border-border hover:border-primary/50"
-                                  )}
-                                  title="Add half an hour"
-                                >
-                                  +½
-                                </button>
-                                {(parseFloat(hours) || 0) % 1 !== 0 && (
-                                  <span className="text-xs font-semibold text-primary ml-1">{hours} hrs</span>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-1">
-                                {[{ rate: RATE_ONE, label: "1 cleaner $52.50/hr" }, { rate: RATE_TWO, label: "2 cleaners $105/hr" }].map(({ rate, label }) => (
-                                  <button
-                                    key={rate}
-                                    type="button"
-                                    onClick={() => handleRateChange(rate)}
-                                    className={cn(
-                                      "text-xs font-semibold rounded-full px-3 py-1.5 border transition-colors whitespace-nowrap",
-                                      !customRateActive && hourlyRate === rate
-                                        ? "bg-primary text-white border-primary"
-                                        : "bg-background text-muted-foreground border-border hover:border-primary/50"
-                                    )}
-                                  >
-                                    {label}
-                                  </button>
-                                ))}
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setCustomRateActive(!customRateActive);
-                                    if (customRateActive) handleRateChange(RATE_TWO);
-                                  }}
-                                  className={cn(
-                                    "text-xs font-semibold rounded-full px-3 py-1.5 border transition-colors whitespace-nowrap",
-                                    customRateActive
-                                      ? "bg-primary text-white border-primary"
-                                      : "bg-background text-muted-foreground border-border hover:border-primary/50"
-                                  )}
-                                >
-                                  Custom $/hr
-                                </button>
-                                {customRateActive && (
-                                  <Input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    placeholder="75.00"
-                                    value={customRate}
-                                    onChange={(e) => handleCustomRateChange(e.target.value)}
-                                    className="h-8 w-24 text-sm font-semibold border-primary/30"
-                                    autoFocus
-                                  />
-                                )}
-                              </div>
-                            </div>
-                            <div className="relative">
-                              <DollarSign className="w-5 h-5 absolute left-3 top-3 text-primary" />
-                              <Input
-                                type="number"
-                                placeholder="105.00"
-                                className="pl-10 text-xl font-bold border-primary/30 focus-visible:ring-primary"
-                                {...field}
-                                onChange={(e) => { setDiscountApplied(false); setTenCount(0); setTwentyCount(0); field.onChange(e); }}
-                              />
-                            </div>
-                          </div>
-                        </FormControl>
-                        <div className="space-y-1">
-                          <p className="text-xs font-medium text-muted-foreground">How did they hear about us?</p>
-                          <div className="flex flex-wrap gap-1.5">
-                            {LEAD_SOURCES.map((src) => (
-                              <button
-                                key={src}
-                                type="button"
-                                onClick={() => handleLeadSource(src)}
-                                className={cn(
-                                  "text-xs font-medium rounded-full px-3 py-1 border transition-colors",
-                                  leadSource === src
-                                    ? "bg-primary text-white border-primary"
-                                    : "bg-background text-muted-foreground border-border hover:border-primary/50"
-                                )}
-                              >
-                                {src}
-                              </button>
-                            ))}
-                          </div>
-                          {leadSource && (
-                            <p className="text-xs text-green-700 dark:text-green-400 flex items-center gap-1">
-                              <CheckCircle2 className="w-3.5 h-3.5" /> $10 thank-you discount applied
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          {[{ off: 10, count: tenCount, setCount: setTenCount }, { off: 20, count: twentyCount, setCount: setTwentyCount }].map(({ off, count, setCount }) => (
-                            <div key={off} className="flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const current = parseFloat(String(field.value));
-                                  if (!isFinite(current) || current <= 0) {
-                                    toast({ title: "Enter a price first", description: "Type the quoted price, then apply the discount." });
-                                    return;
-                                  }
-                                  field.onChange((Math.round(Math.max(0, current - off) * 100) / 100).toString());
-                                  setCount(count + 1);
-                                }}
-                                className={cn(
-                                  "text-xs font-semibold rounded-full px-3 py-1 border transition-colors",
-                                  count > 0
-                                    ? "bg-primary text-white border-primary"
-                                    : "text-primary border-primary/30 bg-background hover:bg-primary/10"
-                                )}
-                              >
-                                −${off} off{count > 0 && ` ×${count}`}
-                              </button>
-                              {count > 0 && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const current = parseFloat(String(field.value));
-                                    if (!isFinite(current)) return;
-                                    field.onChange((Math.round((current + off) * 100) / 100).toString());
-                                    setCount(count - 1);
-                                  }}
-                                  className="text-xs text-muted-foreground border border-border rounded-full px-2 py-1 hover:bg-muted transition-colors"
-                                  title={`Undo one −$${off}`}
-                                >
-                                  ↩ undo
-                                </button>
-                              )}
-                            </div>
-                          ))}
-                          {(tenCount > 0 || twentyCount > 0) && (
-                            <span className="text-xs font-medium text-green-700 dark:text-green-400">
-                              −${tenCount * 10 + twentyCount * 20} in quick discounts
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 text-sm">
-                          <span className="text-muted-foreground">+ Fuel surcharge $</span>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={fuelSurcharge}
-                            onChange={(e) => setFuelSurcharge(e.target.value)}
-                            className="h-8 w-24 text-sm font-semibold border-primary/30"
-                          />
-                          {(() => {
-                            const base = parseFloat(String(field.value));
-                            const fuel = parseFloat(fuelSurcharge) || 0;
-                            return isFinite(base) && base > 0 ? (
-                              <span className="ml-auto font-bold text-primary">
-                                Total: ${(Math.round((base + fuel) * 100) / 100).toFixed(2)}
-                              </span>
-                            ) : null;
-                          })()}
-                        </div>
-                        {loyaltyEligible && (
-                          discountApplied ? (
-                            <p className="text-xs font-medium text-green-600 dark:text-green-400 flex items-center gap-1">
-                              <CheckCircle2 className="w-3.5 h-3.5" /> 10% loyalty discount applied
-                            </p>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const current = parseFloat(String(field.value));
-                                if (!isFinite(current) || current <= 0) {
-                                  toast({ title: "Enter a price first", description: "Type the quoted price, then apply the discount." });
-                                  return;
-                                }
-                                field.onChange((Math.round(current * 0.9 * 100) / 100).toString());
-                                setDiscountApplied(true);
-                              }}
-                              className="text-xs font-semibold text-green-700 dark:text-green-400 border border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-950/30 rounded-full px-3 py-1 hover:bg-green-100 dark:hover:bg-green-900/40 transition-colors"
-                            >
-                              Apply 10% loyalty discount
-                            </button>
-                          )
-                        )}
-                        <FormMessage />
-                      </FormItem>
-                    )} />
-                    <FormField control={form.control} name="status" render={({ field }) => (
-                      <FormItem className="flex-1">
-                        <FormLabel className="text-primary-foreground/70 dark:text-primary">Initial Status</FormLabel>
-                        <FormControl>
-                          <NativeSelect {...field} className="border-primary/30 font-medium">
-                            <option value="pending">Pending</option>
-                            <option value="confirmed">Confirmed</option>
-                          </NativeSelect>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )} />
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
           </div>
 
-          <Card className="shadow-md">
-            <CardContent className="p-4">
-              <FormField control={form.control} name="notes" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Internal Notes / Entry Instructions<LockedBadge name="notes" /></FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder="e.g. Key under mat, dog in backyard..."
-                      className={cn("min-h-[100px]", fieldClass("notes"))}
-                      {...field}
-                      onChange={(e) => { markEdited("notes"); field.onChange(e); }}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
-            </CardContent>
-          </Card>
+          {/* ── Row 2: Job Scope | Scheduling — matched height ── */}
+          <div className="grid md:grid-cols-2 gap-6 items-stretch">
+            <Card className="shadow-md flex flex-col">
+              <CardHeader className="pb-4 border-b">
+                <CardTitle className="text-lg flex items-center gap-2"><Home className="w-5 h-5 text-foreground" /> Job Scope</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4 pt-4 flex-1">
+                <FormField control={form.control} name="serviceType" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Service Type<LockedBadge name="serviceType" /></FormLabel>
+                    <FormControl>
+                      <NativeSelect {...field} onChange={(e) => { markEdited("serviceType"); field.onChange(e); }} className={cn("h-12 text-base font-medium", fieldClass("serviceType"))}>
+                        <option value="standard_clean">Standard Clean</option>
+                        <option value="deep_clean">Deep Clean</option>
+                        <option value="move_in">Move-In Cleaning Service</option>
+                        <option value="move_out">Move-Out Cleaning Service</option>
+                        <option value="post_construction">Post-Construction</option>
+                      </NativeSelect>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField control={form.control} name="bedrooms" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Bedrooms<LockedBadge name="bedrooms" /></FormLabel>
+                      <FormControl><Input type="number" min="0" max="10" className={cn("text-center font-bold text-lg", fieldClass("bedrooms"))} {...field} onChange={(e) => { markEdited("bedrooms"); field.onChange(e); }} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="bathrooms" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Bathrooms<LockedBadge name="bathrooms" /></FormLabel>
+                      <FormControl><Input type="number" min="1" max="10" step="0.5" className={cn("text-center font-bold text-lg", fieldClass("bathrooms"))} {...field} onChange={(e) => { markEdited("bathrooms"); field.onChange(e); }} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
+                <FormField control={form.control} name="extras" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Extras<LockedBadge name="extras" /></FormLabel>
+                    <FormControl>
+                      <div className={cn("flex flex-wrap gap-2 pt-1 rounded-lg transition-all duration-300 p-1",
+                          highlightedFields.has("extras") ? "ring-2 ring-green-400 bg-green-50 dark:bg-green-950/30"
+                            : (lockedFields.has("extras") || aiFilledFields.has("extras")) && "ring-2 ring-amber-400 bg-amber-50 dark:bg-amber-950/30")}>
+                        {EXTRAS_OPTIONS.map(extra => {
+                          const isSelected = field.value.includes(extra);
+                          return (
+                            <button type="button" key={extra}
+                              onClick={() => { markEdited("extras"); field.onChange(isSelected ? field.value.filter(v => v !== extra) : [...field.value, extra]); }}
+                              className={cn("px-3 py-1.5 rounded-full text-sm font-medium border transition-all duration-200 active:scale-95",
+                                isSelected ? "bg-primary text-white border-primary shadow-sm shadow-primary/20" : "bg-background text-muted-foreground border-border hover:border-primary/50")}
+                            >{extra}</button>
+                          );
+                        })}
+                      </div>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-md flex flex-col">
+              <CardHeader className="pb-4 border-b">
+                <CardTitle className="text-lg flex items-center gap-2"><CalendarClock className="w-5 h-5 text-foreground" /> Scheduling</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4 pt-4 flex-1">
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField control={form.control} name="scheduledDate" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Date<LockedBadge name="scheduledDate" /></FormLabel>
+                      <FormControl><Input type="date" className={cn("font-medium", fieldClass("scheduledDate"))} {...field} onChange={(e) => { markEdited("scheduledDate"); field.onChange(e); }} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="scheduledTime" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Time<LockedBadge name="scheduledTime" /></FormLabel>
+                      <FormControl><Input type="time" className={cn("font-medium", fieldClass("scheduledTime"))} {...field} onChange={(e) => { markEdited("scheduledTime"); field.onChange(e); }} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
+                <FormField control={form.control} name="frequency" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Frequency<LockedBadge name="frequency" /></FormLabel>
+                    <FormControl>
+                      <NativeSelect {...field} onChange={(e) => { markEdited("frequency"); field.onChange(e); }} className={cn(fieldClass("frequency"))}>
+                        <option value="one_time">One Time</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="biweekly">Bi-Weekly</option>
+                        <option value="monthly">Monthly</option>
+                      </NativeSelect>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="staffId" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="flex items-center gap-1.5">
+                      <Users className="w-4 h-4" />
+                      Assign Cleaner <span className="text-muted-foreground font-normal">(Optional)</span>
+                    </FormLabel>
+                    {nearestCleaner && (
+                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 text-sm">
+                        <Navigation className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
+                        <span className="text-green-700 dark:text-green-400 font-medium">Closest available: {nearestCleaner.name}</span>
+                        <span className="text-green-600/70 dark:text-green-500/70">{nearestCleaner.km.toFixed(1)} km away</span>
+                        <button type="button" onClick={() => field.onChange(nearestCleaner.id)} className="ml-auto text-xs font-semibold text-green-700 dark:text-green-400 hover:underline">Assign →</button>
+                      </div>
+                    )}
+                    <FormControl>
+                      <NativeSelect value={field.value ?? ""} onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : undefined)} className={cn(fieldClass("staffId"))}>
+                        <option value="">Unassigned</option>
+                        {staff.map((s) => (
+                          <option key={s.id} value={s.id}>{s.name} ({s.role === "lead_cleaner" ? "Lead" : s.role === "supervisor" ? "Supervisor" : "Cleaner"})</option>
+                        ))}
+                      </NativeSelect>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* ── Row 3: Notes + Status | Price ── */}
+          <div className="grid md:grid-cols-2 gap-6 items-stretch">
+            {/* Internal Notes + Status badges */}
+            <Card className="shadow-md flex flex-col">
+              <CardHeader className="pb-4 border-b">
+                <CardTitle className="text-lg flex items-center gap-2"><FileText className="w-5 h-5 text-foreground" /> Notes &amp; Status</CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 flex flex-col gap-4 flex-1">
+                <FormField control={form.control} name="status" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Booking Status</FormLabel>
+                    <div className="grid grid-cols-2 gap-3 mt-1">
+                      <button
+                        type="button"
+                        onClick={() => field.onChange("confirmed")}
+                        className={cn(
+                          "py-3 rounded-xl font-semibold text-sm transition-colors border",
+                          field.value === "confirmed"
+                            ? "bg-green-600 text-white border-green-600 shadow-sm"
+                            : "bg-muted text-muted-foreground border-border hover:bg-green-50 hover:text-green-700 hover:border-green-300"
+                        )}
+                      >
+                        ✓ Confirmed
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => field.onChange("pending")}
+                        className={cn(
+                          "py-3 rounded-xl font-semibold text-sm transition-colors border",
+                          field.value === "pending"
+                            ? "bg-red-700 text-white border-red-700 shadow-sm"
+                            : "bg-muted text-muted-foreground border-border hover:bg-red-50 hover:text-red-700 hover:border-red-300"
+                        )}
+                      >
+                        ⏳ Pending
+                      </button>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="notes" render={({ field }) => (
+                  <FormItem className="flex flex-col flex-1">
+                    <FormLabel>Internal Notes / Entry Instructions<LockedBadge name="notes" /></FormLabel>
+                    <FormControl>
+                      <Textarea
+                        placeholder="e.g. Key under mat, dog in backyard..."
+                        className={cn("flex-1 min-h-[120px]", fieldClass("notes"))}
+                        {...field}
+                        onChange={(e) => { markEdited("notes"); field.onChange(e); }}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              </CardContent>
+            </Card>
+
+            {/* Price */}
+            <Card className="shadow-md border-primary/20 bg-primary/5">
+              <CardContent className="p-4">
+                <FormField control={form.control} name="estimatedPrice" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-primary-foreground/70 dark:text-primary">Quoted Price ($)</FormLabel>
+                    <FormControl>
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-muted-foreground mr-1">Hours:</span>
+                            {[1, 2, 3, 4, 5].map((h) => (
+                              <button key={h} type="button" onClick={() => handleHoursChange(String(h))}
+                                className={cn("w-9 h-9 rounded-lg text-sm font-bold border transition-colors",
+                                  parseFloat(hours) === h ? "bg-primary text-white border-primary" : "bg-background text-foreground border-border hover:border-primary/50")}
+                              >{h}</button>
+                            ))}
+                            <button type="button" onClick={toggleHalfHour}
+                              className={cn("w-9 h-9 rounded-lg text-sm font-bold border transition-colors",
+                                (parseFloat(hours) || 0) % 1 !== 0 ? "bg-primary text-white border-primary" : "bg-background text-foreground border-border hover:border-primary/50")}
+                              title="Add half an hour">+½</button>
+                            {(parseFloat(hours) || 0) % 1 !== 0 && (
+                              <span className="text-xs font-semibold text-primary ml-1">{hours} hrs</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1">
+                            {[{ rate: RATE_ONE, label: "1 cleaner $52.50/hr" }, { rate: RATE_TWO, label: "2 cleaners $105/hr" }].map(({ rate, label }) => (
+                              <button key={rate} type="button" onClick={() => handleRateChange(rate)}
+                                className={cn("text-xs font-semibold rounded-full px-3 py-1.5 border transition-colors whitespace-nowrap",
+                                  !customRateActive && hourlyRate === rate ? "bg-primary text-white border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/50")}
+                              >{label}</button>
+                            ))}
+                            <button type="button" onClick={() => { setCustomRateActive(!customRateActive); if (customRateActive) handleRateChange(RATE_TWO); }}
+                              className={cn("text-xs font-semibold rounded-full px-3 py-1.5 border transition-colors whitespace-nowrap",
+                                customRateActive ? "bg-primary text-white border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/50")}
+                            >Custom $/hr</button>
+                            {customRateActive && (
+                              <Input type="number" min="0" step="0.01" placeholder="75.00" value={customRate}
+                                onChange={(e) => handleCustomRateChange(e.target.value)}
+                                className="h-8 w-24 text-sm font-semibold border-primary/30" autoFocus />
+                            )}
+                          </div>
+                        </div>
+                        <div className="relative">
+                          <DollarSign className="w-5 h-5 absolute left-3 top-3 text-primary" />
+                          <Input type="number" placeholder="105.00"
+                            className="pl-10 text-xl font-bold border-primary/30 focus-visible:ring-primary"
+                            {...field}
+                            onChange={(e) => { setDiscountApplied(false); setTenCount(0); setTwentyCount(0); field.onChange(e); }}
+                          />
+                        </div>
+                      </div>
+                    </FormControl>
+                    <div className="space-y-1 mt-2">
+                      <p className="text-xs font-medium text-muted-foreground">How did they hear about us?</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {LEAD_SOURCES.map((src) => (
+                          <button key={src} type="button" onClick={() => handleLeadSource(src)}
+                            className={cn("text-xs font-medium rounded-full px-3 py-1 border transition-colors",
+                              leadSource === src ? "bg-primary text-white border-primary" : "bg-background text-muted-foreground border-border hover:border-primary/50")}
+                          >{src}</button>
+                        ))}
+                      </div>
+                      {leadSource && (
+                        <p className="text-xs text-green-700 dark:text-green-400 flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> $10 thank-you discount applied
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 mt-2">
+                      {[{ off: 10, count: tenCount, setCount: setTenCount }, { off: 20, count: twentyCount, setCount: setTwentyCount }].map(({ off, count, setCount }) => (
+                        <div key={off} className="flex items-center gap-1">
+                          <button type="button"
+                            onClick={() => {
+                              const current = parseFloat(String(field.value));
+                              if (!isFinite(current) || current <= 0) { toast({ title: "Enter a price first", description: "Type the quoted price, then apply the discount." }); return; }
+                              field.onChange((Math.round(Math.max(0, current - off) * 100) / 100).toString());
+                              setCount(count + 1);
+                            }}
+                            className={cn("text-xs font-semibold rounded-full px-3 py-1 border transition-colors",
+                              count > 0 ? "bg-primary text-white border-primary" : "text-primary border-primary/30 bg-background hover:bg-primary/10")}
+                          >−${off} off{count > 0 && ` ×${count}`}</button>
+                          {count > 0 && (
+                            <button type="button"
+                              onClick={() => { const current = parseFloat(String(field.value)); if (!isFinite(current)) return; field.onChange((Math.round((current + off) * 100) / 100).toString()); setCount(count - 1); }}
+                              className="text-xs text-muted-foreground border border-border rounded-full px-2 py-1 hover:bg-muted transition-colors"
+                              title={`Undo one −$${off}`}
+                            >↩ undo</button>
+                          )}
+                        </div>
+                      ))}
+                      {(tenCount > 0 || twentyCount > 0) && (
+                        <span className="text-xs font-medium text-green-700 dark:text-green-400">
+                          −${tenCount * 10 + twentyCount * 20} in quick discounts
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 text-sm mt-2">
+                      <span className="text-muted-foreground">+ Fuel surcharge $</span>
+                      <Input type="number" step="0.01" min="0" value={fuelSurcharge} onChange={(e) => setFuelSurcharge(e.target.value)} className="h-8 w-24 text-sm font-semibold border-primary/30" />
+                      {(() => {
+                        const base = parseFloat(String(field.value));
+                        const fuel = parseFloat(fuelSurcharge) || 0;
+                        return isFinite(base) && base > 0 ? (
+                          <span className="ml-auto font-bold text-primary">Total: ${(Math.round((base + fuel) * 100) / 100).toFixed(2)}</span>
+                        ) : null;
+                      })()}
+                    </div>
+                    {loyaltyEligible && (
+                      discountApplied ? (
+                        <p className="text-xs font-medium text-green-600 dark:text-green-400 flex items-center gap-1 mt-2">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> 10% loyalty discount applied
+                        </p>
+                      ) : (
+                        <button type="button"
+                          onClick={() => {
+                            const current = parseFloat(String(field.value));
+                            if (!isFinite(current) || current <= 0) { toast({ title: "Enter a price first", description: "Type the quoted price, then apply the discount." }); return; }
+                            field.onChange((Math.round(current * 0.9 * 100) / 100).toString());
+                            setDiscountApplied(true);
+                          }}
+                          className="text-xs font-semibold text-green-700 dark:text-green-400 border border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-950/30 rounded-full px-3 py-1 hover:bg-green-100 dark:hover:bg-green-900/40 transition-colors mt-2"
+                        >Apply 10% loyalty discount</button>
+                      )
+                    )}
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              </CardContent>
+            </Card>
+          </div>
 
           {/* Sticky Footer */}
           <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur-md border-t shadow-[0_-10px_40px_rgba(0,0,0,0.1)] z-40 md:relative md:bg-transparent md:border-0 md:shadow-none md:p-0 md:backdrop-blur-none">
