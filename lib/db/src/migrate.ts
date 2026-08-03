@@ -37,6 +37,17 @@ const MIGRATIONS: { name: string; sql: string }[] = [
       );
     `,
   },
+  {
+    // Bootstrap the owner's dispatcher access. Without at least one allowlisted
+    // dispatcher, every route returns 403 and the app appears empty.
+    // A Clerk user ID is an identifier, not a secret.
+    name: "003_seed_owner_dispatcher",
+    sql: `
+      INSERT INTO dispatcher_allowlist (clerk_user_id)
+      VALUES ('user_3HLfIvfWjzve8TpHZXXhKZVSTzx')
+      ON CONFLICT DO NOTHING;
+    `,
+  },
 ];
 
 /**
