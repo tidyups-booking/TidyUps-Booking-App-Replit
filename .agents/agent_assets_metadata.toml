@@ -1,0 +1,9 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "2siPSizB-gXSPSQQX1mtY"
+uri = "file://.agents/outputs/apple-csr/CertificateSigningRequest.certSigningRequest"
+type = "unspecified"
+title = "Certificate Signing Request"
+description = "Upload this file at developer.apple.com when creating your Apple Distribution certificate for app.book.Cleaning."
