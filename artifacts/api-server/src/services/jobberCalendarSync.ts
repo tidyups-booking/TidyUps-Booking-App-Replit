@@ -90,6 +90,7 @@ export interface CalendarSyncResult {
   synced: number;
   imported: number;
   skipped: number;
+  cancelled: number;
   jobberCount: number;
   hitPageLimit: boolean;
 }
@@ -264,7 +265,45 @@ export async function runCalendarSync(
     }
   }
 
-  return { synced, imported, skipped, jobberCount: jobberJobs.length, hitPageLimit };
+  // ── Cancellation sweep ──────────────────────────────────────────────────────
+  // Any local booking that was imported from Jobber (jobber_synced_job_id set),
+  // falls inside this sync window, and no longer appears in the Jobber results
+  // was cancelled/deleted in Jobber. Mark it cancelled locally (never delete —
+  // history is preserved). Skipped entirely when the page limit was hit, since
+  // the Jobber list would be incomplete and we could wrongly cancel bookings.
+  let cancelled = 0;
+  if (!hitPageLimit) {
+    try {
+      const jobIdSet = jobberJobs.map((j) => j.id);
+      const result = await db.execute<{ id: string; jobber_synced_job_id: string }>(sql`
+        UPDATE bookings
+        SET status = 'cancelled'
+        WHERE jobber_synced_job_id IS NOT NULL
+          AND scheduled_date >= ${startDate}
+          AND scheduled_date <= ${endDate}
+          AND status <> 'cancelled'
+          AND NOT (jobber_synced_job_id = ANY(${sql.param(jobIdSet)}::text[]))
+        RETURNING id, jobber_synced_job_id
+      `);
+      cancelled = result.rows.length;
+      if (cancelled > 0) {
+        log.warn(
+          {
+            cancelled,
+            jobberJobIds: result.rows.map((r) => r.jobber_synced_job_id),
+          },
+          "Jobber calendar sync: marked bookings cancelled (no longer in Jobber)"
+        );
+      }
+    } catch (cancelErr: any) {
+      log.warn(
+        { err: cancelErr.message },
+        "Jobber calendar sync: cancellation sweep failed"
+      );
+    }
+  }
+
+  return { synced, imported, skipped, cancelled, jobberCount: jobberJobs.length, hitPageLimit };
 }
 
 // ── Background auto-sync poller ───────────────────────────────────────────────
@@ -319,10 +358,15 @@ async function autoSyncTick(): Promise<void> {
     autoSyncStatus.lastError = null;
     autoSyncStatus.lastResult = result;
 
-    if (result.imported > 0) {
+    if (result.imported > 0 || result.cancelled > 0) {
       logger.info(
-        { imported: result.imported, updated: result.synced, jobberCount: result.jobberCount },
-        "Jobber auto-sync: imported new appointments"
+        {
+          imported: result.imported,
+          updated: result.synced,
+          cancelled: result.cancelled,
+          jobberCount: result.jobberCount,
+        },
+        "Jobber auto-sync: calendar changes applied"
       );
     } else {
       logger.debug(
