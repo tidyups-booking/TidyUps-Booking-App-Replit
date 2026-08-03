@@ -60,7 +60,7 @@ const editSchema = z.object({
   city: z.string().min(1, "City is required"),
   province: z.string().default("AB"),
   postalCode: z.string().optional().or(z.literal("")),
-  serviceType: z.enum(["standard_clean", "deep_clean", "move_in_out", "post_construction"]),
+  serviceType: z.enum(["standard_clean", "deep_clean", "move_in_out", "move_in", "move_out", "post_construction"]),
   bedrooms: z.coerce.number().min(0).max(10),
   bathrooms: z.coerce.number().min(1).max(10),
   scheduledDate: z.string().min(1, "Date is required"),
@@ -487,7 +487,9 @@ export default function BookingDetail() {
                         <NativeSelect {...field} className="h-12 text-base font-medium">
                           <option value="standard_clean">Standard Clean</option>
                           <option value="deep_clean">Deep Clean</option>
-                          <option value="move_in_out">Move In/Out</option>
+                          <option value="move_in">Move-In Cleaning Service</option>
+                          <option value="move_out">Move-Out Cleaning Service</option>
+                          <option value="move_in_out">Move In/Out (legacy)</option>
                           <option value="post_construction">Post-Construction</option>
                         </NativeSelect>
                       </FormControl>

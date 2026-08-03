@@ -31,6 +31,8 @@ function formatService(type: string) {
     standard_clean: 'Standard Clean',
     deep_clean: 'Deep Clean',
     move_in_out: 'Move In/Out',
+    move_in: 'Move-In Clean',
+    move_out: 'Move-Out Clean',
     post_construction: 'Post Construction',
   };
   return map[type] ?? type;

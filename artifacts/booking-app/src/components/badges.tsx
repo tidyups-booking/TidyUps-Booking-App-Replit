@@ -43,6 +43,8 @@ export function ServiceTypeBadge({ type, className }: { type: string; className?
       case "standard_clean": return "Standard Clean";
       case "deep_clean": return "Deep Clean";
       case "move_in_out": return "Move In/Out";
+      case "move_in": return "Move-In Clean";
+      case "move_out": return "Move-Out Clean";
       case "post_construction": return "Post-Construction";
       default: return t;
     }

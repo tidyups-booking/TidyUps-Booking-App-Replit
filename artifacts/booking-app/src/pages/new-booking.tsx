@@ -18,6 +18,7 @@ import { LiveCallPanel } from "@/components/live-call-panel";
 import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { BookingMiniMap } from "@/components/booking-mini-map";
 import { EmailAutocomplete } from "@/components/email-autocomplete";
+import { CustomerAutocomplete, type CustomerRecord } from "@/components/customer-autocomplete";
 
 const bookingSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
@@ -28,7 +29,7 @@ const bookingSchema = z.object({
   city: z.string().min(1, "City is required"),
   province: z.string().default("AB"),
   postalCode: z.string().optional().or(z.literal("")),
-  serviceType: z.enum(["standard_clean", "deep_clean", "move_in_out", "post_construction"]),
+  serviceType: z.enum(["standard_clean", "deep_clean", "move_in", "move_out", "post_construction"]),
   bedrooms: z.coerce.number().min(0).max(10).default(1),
   bathrooms: z.coerce.number().min(1).max(10).default(1),
   scheduledDate: z.string().min(1, "Date is required"),
@@ -294,6 +295,32 @@ export default function NewBooking() {
     [form, lockedFields]
   );
 
+  // Fill the whole form from a returning customer's last booking
+  const handleSelectCustomer = useCallback((c: CustomerRecord) => {
+    form.setValue("firstName", c.firstName, { shouldValidate: true });
+    form.setValue("lastName", c.lastName, { shouldValidate: true });
+    form.setValue("phone", c.phone, { shouldValidate: true });
+    if (c.email) form.setValue("email", c.email);
+    form.setValue("address", c.address, { shouldValidate: true });
+    form.setValue("city", c.city, { shouldValidate: true });
+    form.setValue("province", c.province || "AB");
+    if (c.postalCode) form.setValue("postalCode", c.postalCode);
+    if (c.addressLat != null && c.addressLng != null) {
+      form.setValue("addressLat", c.addressLat);
+      form.setValue("addressLng", c.addressLng);
+    }
+    form.setValue("bedrooms", c.bedrooms);
+    form.setValue("bathrooms", c.bathrooms);
+    // Legacy service type is no longer offered on new bookings
+    if (c.serviceType && c.serviceType !== "move_in_out") {
+      form.setValue("serviceType", c.serviceType as any);
+    }
+    // Green flash on everything that was just filled
+    const filled = ["firstName", "lastName", "phone", "email", "address", "city", "province", "postalCode", "bedrooms", "bathrooms", "serviceType"];
+    setHighlightedFields(new Set(filled));
+    setTimeout(() => setHighlightedFields(new Set()), 2000);
+  }, [form]);
+
   // Clears the AI indicator for a field when the dispatcher edits it manually (visual only)
   const markEdited = useCallback((name: string) => {
     setAiFilledFields((prev) => {
@@ -395,7 +422,7 @@ export default function NewBooking() {
                     <FormItem>
                       <FormLabel>First Name<LockedBadge name="firstName" /></FormLabel>
                       <FormControl>
-                        <Input placeholder="Jane" {...field} onChange={(e) => { markEdited("firstName"); field.onChange(e); }} className={fieldClass("firstName")} />
+                        <CustomerAutocomplete placeholder="Jane" value={field.value} onChange={(v) => { markEdited("firstName"); field.onChange(v); }} onSelectCustomer={handleSelectCustomer} baseUrl={getBaseUrl()} className={fieldClass("firstName")} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -404,7 +431,7 @@ export default function NewBooking() {
                     <FormItem>
                       <FormLabel>Last Name<LockedBadge name="lastName" /></FormLabel>
                       <FormControl>
-                        <Input placeholder="Doe" {...field} onChange={(e) => { markEdited("lastName"); field.onChange(e); }} className={fieldClass("lastName")} />
+                        <CustomerAutocomplete placeholder="Doe" value={field.value} onChange={(v) => { markEdited("lastName"); field.onChange(v); }} onSelectCustomer={handleSelectCustomer} baseUrl={getBaseUrl()} className={fieldClass("lastName")} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -416,8 +443,8 @@ export default function NewBooking() {
                       <FormLabel>Phone Number<LockedBadge name="phone" /></FormLabel>
                       <FormControl>
                         <div className="relative">
-                          <Phone className="w-4 h-4 absolute left-3 top-3.5 text-muted-foreground" />
-                          <Input type="tel" placeholder="(780) 555-1234" className={cn("pl-9", fieldClass("phone"))} {...field} onChange={(e) => { markEdited("phone"); field.onChange(e); }} />
+                          <Phone className="w-4 h-4 absolute left-3 top-3.5 text-muted-foreground z-10" />
+                          <CustomerAutocomplete type="tel" placeholder="(780) 555-1234" className={cn("pl-9", fieldClass("phone"))} value={field.value} onChange={(v) => { markEdited("phone"); field.onChange(v); }} onSelectCustomer={handleSelectCustomer} baseUrl={getBaseUrl()} />
                         </div>
                       </FormControl>
                       <FormMessage />
@@ -549,7 +576,8 @@ export default function NewBooking() {
                       >
                         <option value="standard_clean">Standard Clean</option>
                         <option value="deep_clean">Deep Clean</option>
-                        <option value="move_in_out">Move In/Out</option>
+                        <option value="move_in">Move-In Cleaning Service</option>
+                        <option value="move_out">Move-Out Cleaning Service</option>
                         <option value="post_construction">Post-Construction</option>
                       </NativeSelect>
                     </FormControl>

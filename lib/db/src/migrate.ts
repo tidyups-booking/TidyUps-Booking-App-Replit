@@ -183,6 +183,15 @@ const MIGRATIONS: { name: string; sql: string }[] = [
       ON CONFLICT DO NOTHING;
     `,
   },
+  {
+    // Move-in and move-out are separate services; move_in_out is kept for
+    // legacy rows but no longer offered in the booking forms.
+    name: "004_split_move_in_out_service_types",
+    sql: `
+      ALTER TYPE service_type ADD VALUE IF NOT EXISTS 'move_in';
+      ALTER TYPE service_type ADD VALUE IF NOT EXISTS 'move_out';
+    `,
+  },
 ];
 
 /**

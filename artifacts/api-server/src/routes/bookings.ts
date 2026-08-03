@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, gte, lte, and, sql, inArray } from "drizzle-orm";
+import { eq, gte, lte, and, or, ilike, desc, sql, inArray } from "drizzle-orm";
 import { getAuth } from "@clerk/express";
 import { db, bookingsTable, callTranscriptsTable, staffTable } from "@workspace/db";
 import { syncBookingToJobber, getStoredTokens } from "../services/jobber.js";
@@ -118,6 +118,66 @@ router.get("/bookings/upcoming", async (req, res): Promise<void> => {
     .orderBy(bookingsTable.scheduledDate, bookingsTable.scheduledTime);
 
   res.json(GetUpcomingBookingsResponse.parse(bookings));
+});
+
+// GET /bookings/customers/search — dispatcher only.
+// Returning-customer autocomplete for the New Booking form: matches previous
+// bookings by name, phone, or address and returns one entry per customer
+// (their most recent booking's details) so the whole form can be pre-filled.
+router.get("/bookings/customers/search", async (req, res): Promise<void> => {
+  if (await guardDispatcher(req, res)) return;
+  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  if (q.length < 2) {
+    res.json({ customers: [] });
+    return;
+  }
+  const pattern = `%${q}%`;
+  const digits = q.replace(/\D/g, "");
+  const phonePattern = digits.length >= 3 ? `%${digits.split("").join("%")}%` : null;
+
+  const conditions = [
+    ilike(bookingsTable.firstName, pattern),
+    ilike(bookingsTable.lastName, pattern),
+    ilike(sql`${bookingsTable.firstName} || ' ' || ${bookingsTable.lastName}`, pattern),
+    ilike(bookingsTable.address, pattern),
+    ilike(bookingsTable.phone, pattern),
+  ];
+  if (phonePattern) conditions.push(ilike(bookingsTable.phone, phonePattern));
+
+  const rows = await db
+    .select()
+    .from(bookingsTable)
+    .where(or(...conditions))
+    .orderBy(desc(bookingsTable.id))
+    .limit(50);
+
+  // One suggestion per customer — keyed by phone (fallback: name+address)
+  const seen = new Set<string>();
+  const customers: any[] = [];
+  for (const r of rows) {
+    const key = r.phone?.replace(/\D/g, "") || `${r.firstName} ${r.lastName} ${r.address}`.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    customers.push({
+      firstName: r.firstName,
+      lastName: r.lastName,
+      phone: r.phone,
+      email: r.email,
+      address: r.address,
+      city: r.city,
+      province: r.province,
+      postalCode: r.postalCode,
+      addressLat: r.addressLat,
+      addressLng: r.addressLng,
+      bedrooms: r.bedrooms,
+      bathrooms: r.bathrooms,
+      serviceType: r.serviceType,
+      frequency: r.frequency,
+      lastBookingDate: r.scheduledDate,
+    });
+    if (customers.length >= 6) break;
+  }
+  res.json({ customers });
 });
 
 // GET /bookings — dispatcher only

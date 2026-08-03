@@ -450,7 +450,7 @@ components:
           type: ["string", "null"]
         serviceType:
           type: string
-          enum: [standard_clean, deep_clean, move_in_out, post_construction]
+          enum: [standard_clean, deep_clean, move_in_out, move_in, move_out, post_construction]
         bedrooms:
           type: number
           format: int32
@@ -545,7 +545,7 @@ components:
           type: string
         serviceType:
           type: string
-          enum: [standard_clean, deep_clean, move_in_out, post_construction]
+          enum: [standard_clean, deep_clean, move_in_out, move_in, move_out, post_construction]
         bedrooms:
           type: number
           format: int32
@@ -615,7 +615,7 @@ components:
           nullable: true
         serviceType:
           type: string
-          enum: [standard_clean, deep_clean, move_in_out, post_construction]
+          enum: [standard_clean, deep_clean, move_in_out, move_in, move_out, post_construction]
         bedrooms:
           type: number
         bathrooms:

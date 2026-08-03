@@ -13,5 +13,7 @@ export const BookingUpdateServiceType = {
   standard_clean: 'standard_clean',
   deep_clean: 'deep_clean',
   move_in_out: 'move_in_out',
+  move_in: 'move_in',
+  move_out: 'move_out',
   post_construction: 'post_construction',
 } as const;

@@ -47,7 +47,7 @@ Return ONLY a valid JSON object with these optional fields (omit any field not c
   "address": string (street address only, no city),
   "city": string (default "Edmonton" if the caller is local and city not mentioned),
   "postalCode": string,
-  "serviceType": "standard_clean" | "deep_clean" | "move_in_out" | "post_construction",
+  "serviceType": "standard_clean" | "deep_clean" | "move_in" | "move_out" | "post_construction",
   "bedrooms": number (integer),
   "bathrooms": number (can be 0.5 increments),
   "scheduledDate": string (YYYY-MM-DD, interpret relative dates like "next Tuesday" using today's date),
@@ -60,7 +60,8 @@ Return ONLY a valid JSON object with these optional fields (omit any field not c
 Service type clues:
 - "standard" or "regular" → standard_clean
 - "deep" or "thorough" → deep_clean
-- "moving", "move in", "move out" → move_in_out
+- "moving in", "move in" → move_in
+- "moving out", "move out" → move_out
 - "construction", "renovation", "builder" → post_construction`,
         },
         {

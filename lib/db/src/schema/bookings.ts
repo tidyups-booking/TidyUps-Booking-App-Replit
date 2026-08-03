@@ -16,7 +16,9 @@ import { staffTable } from "./staff";
 export const serviceTypeEnum = pgEnum("service_type", [
   "standard_clean",
   "deep_clean",
-  "move_in_out",
+  "move_in_out", // legacy — kept for old rows; new bookings use move_in / move_out
+  "move_in",
+  "move_out",
   "post_construction",
 ]);
 

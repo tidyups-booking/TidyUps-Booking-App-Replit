@@ -225,6 +225,8 @@ const SERVICE_LABELS: Record<string, string> = {
   standard_clean: "Standard Clean",
   deep_clean: "Deep Clean",
   move_in_out: "Move In/Out Clean",
+  move_in: "Move-In Cleaning Service",
+  move_out: "Move-Out Cleaning Service",
   post_construction: "Post-Construction Clean",
 };
 
