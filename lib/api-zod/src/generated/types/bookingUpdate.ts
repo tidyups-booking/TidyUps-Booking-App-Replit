@@ -10,15 +10,15 @@ import type { BookingUpdateServiceType } from './bookingUpdateServiceType';
 import type { BookingUpdateStatus } from './bookingUpdateStatus';
 
 export interface BookingUpdate {
-  staffId?: number;
+  staffId?: number | null;
   firstName?: string;
   lastName?: string;
   phone?: string;
-  email?: string;
+  email?: string | null;
   address?: string;
   city?: string;
   province?: string;
-  postalCode?: string;
+  postalCode?: string | null;
   serviceType?: BookingUpdateServiceType;
   bedrooms?: number;
   bathrooms?: number;
@@ -26,8 +26,12 @@ export interface BookingUpdate {
   scheduledDate?: string;
   scheduledTime?: string;
   frequency?: BookingUpdateFrequency;
-  estimatedPrice?: number;
-  notes?: string;
+  estimatedPrice?: number | null;
+  notes?: string | null;
   status?: BookingUpdateStatus;
   jobberJobId?: string;
+  /** Latitude from Google Places autocomplete. */
+  addressLat?: number | null;
+  /** Longitude from Google Places autocomplete. */
+  addressLng?: number | null;
 }

@@ -47,6 +47,16 @@ export interface Booking {
      * @nullable
      */
   jobberSyncError?: string | null;
+  /**
+     * Latitude from Google Places autocomplete, if captured.
+     * @nullable
+     */
+  addressLat?: number | null;
+  /**
+     * Longitude from Google Places autocomplete, if captured.
+     * @nullable
+     */
+  addressLng?: number | null;
   createdAt: Date;
   /** True when at least one call transcript is attached to this booking. */
   hasTranscript?: boolean;

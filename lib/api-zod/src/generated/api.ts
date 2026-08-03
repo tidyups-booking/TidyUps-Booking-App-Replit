@@ -55,6 +55,8 @@ export const ListBookingsResponseItem = zod.object({
   "jobberJobId": zod.string().nullish(),
   "jobberSyncStatus": zod.enum(['not_started', 'pending', 'synced', 'failed']).optional().describe('Jobber sync state. not_started = never attempted, pending = in progress, synced = succeeded, failed = error (see jobberSyncError).\n'),
   "jobberSyncError": zod.string().nullish().describe('Error message from the last failed Jobber sync attempt.'),
+  "addressLat": zod.number().nullish().describe('Latitude from Google Places autocomplete, if captured.'),
+  "addressLng": zod.number().nullish().describe('Longitude from Google Places autocomplete, if captured.'),
   "createdAt": zod.coerce.date(),
   "hasTranscript": zod.boolean().optional().describe('True when at least one call transcript is attached to this booking.')
 })
@@ -128,6 +130,8 @@ export const CreateBookingResponse = zod.object({
   "jobberJobId": zod.string().nullish(),
   "jobberSyncStatus": zod.enum(['not_started', 'pending', 'synced', 'failed']).optional().describe('Jobber sync state. not_started = never attempted, pending = in progress, synced = succeeded, failed = error (see jobberSyncError).\n'),
   "jobberSyncError": zod.string().nullish().describe('Error message from the last failed Jobber sync attempt.'),
+  "addressLat": zod.number().nullish().describe('Latitude from Google Places autocomplete, if captured.'),
+  "addressLng": zod.number().nullish().describe('Longitude from Google Places autocomplete, if captured.'),
   "createdAt": zod.coerce.date(),
   "hasTranscript": zod.boolean().optional().describe('True when at least one call transcript is attached to this booking.')
 })
@@ -175,6 +179,8 @@ export const GetUpcomingBookingsResponseItem = zod.object({
   "jobberJobId": zod.string().nullish(),
   "jobberSyncStatus": zod.enum(['not_started', 'pending', 'synced', 'failed']).optional().describe('Jobber sync state. not_started = never attempted, pending = in progress, synced = succeeded, failed = error (see jobberSyncError).\n'),
   "jobberSyncError": zod.string().nullish().describe('Error message from the last failed Jobber sync attempt.'),
+  "addressLat": zod.number().nullish().describe('Latitude from Google Places autocomplete, if captured.'),
+  "addressLng": zod.number().nullish().describe('Longitude from Google Places autocomplete, if captured.'),
   "createdAt": zod.coerce.date(),
   "hasTranscript": zod.boolean().optional().describe('True when at least one call transcript is attached to this booking.')
 })
@@ -212,6 +218,8 @@ export const GetBookingResponse = zod.object({
   "jobberJobId": zod.string().nullish(),
   "jobberSyncStatus": zod.enum(['not_started', 'pending', 'synced', 'failed']).optional().describe('Jobber sync state. not_started = never attempted, pending = in progress, synced = succeeded, failed = error (see jobberSyncError).\n'),
   "jobberSyncError": zod.string().nullish().describe('Error message from the last failed Jobber sync attempt.'),
+  "addressLat": zod.number().nullish().describe('Latitude from Google Places autocomplete, if captured.'),
+  "addressLng": zod.number().nullish().describe('Longitude from Google Places autocomplete, if captured.'),
   "createdAt": zod.coerce.date(),
   "hasTranscript": zod.boolean().optional().describe('True when at least one call transcript is attached to this booking.')
 })
@@ -245,8 +253,8 @@ export const UpdateBookingBody = zod.object({
   "notes": zod.string().nullish(),
   "status": zod.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']).optional(),
   "jobberJobId": zod.string().optional(),
-  "addressLat": zod.number().nullish(),
-  "addressLng": zod.number().nullish()
+  "addressLat": zod.number().nullish().describe('Latitude from Google Places autocomplete.'),
+  "addressLng": zod.number().nullish().describe('Longitude from Google Places autocomplete.')
 })
 
 export const UpdateBookingResponse = zod.object({
@@ -273,6 +281,8 @@ export const UpdateBookingResponse = zod.object({
   "jobberJobId": zod.string().nullish(),
   "jobberSyncStatus": zod.enum(['not_started', 'pending', 'synced', 'failed']).optional().describe('Jobber sync state. not_started = never attempted, pending = in progress, synced = succeeded, failed = error (see jobberSyncError).\n'),
   "jobberSyncError": zod.string().nullish().describe('Error message from the last failed Jobber sync attempt.'),
+  "addressLat": zod.number().nullish().describe('Latitude from Google Places autocomplete, if captured.'),
+  "addressLng": zod.number().nullish().describe('Longitude from Google Places autocomplete, if captured.'),
   "createdAt": zod.coerce.date(),
   "hasTranscript": zod.boolean().optional().describe('True when at least one call transcript is attached to this booking.')
 })
@@ -408,6 +418,8 @@ export const GetStaffScheduleResponseItem = zod.object({
   "jobberJobId": zod.string().nullish(),
   "jobberSyncStatus": zod.enum(['not_started', 'pending', 'synced', 'failed']).optional().describe('Jobber sync state. not_started = never attempted, pending = in progress, synced = succeeded, failed = error (see jobberSyncError).\n'),
   "jobberSyncError": zod.string().nullish().describe('Error message from the last failed Jobber sync attempt.'),
+  "addressLat": zod.number().nullish().describe('Latitude from Google Places autocomplete, if captured.'),
+  "addressLng": zod.number().nullish().describe('Longitude from Google Places autocomplete, if captured.'),
   "createdAt": zod.coerce.date(),
   "hasTranscript": zod.boolean().optional().describe('True when at least one call transcript is attached to this booking.')
 })
@@ -472,6 +484,8 @@ export const GetDayScheduleResponseItem = zod.object({
   "jobberJobId": zod.string().nullish(),
   "jobberSyncStatus": zod.enum(['not_started', 'pending', 'synced', 'failed']).optional().describe('Jobber sync state. not_started = never attempted, pending = in progress, synced = succeeded, failed = error (see jobberSyncError).\n'),
   "jobberSyncError": zod.string().nullish().describe('Error message from the last failed Jobber sync attempt.'),
+  "addressLat": zod.number().nullish().describe('Latitude from Google Places autocomplete, if captured.'),
+  "addressLng": zod.number().nullish().describe('Longitude from Google Places autocomplete, if captured.'),
   "createdAt": zod.coerce.date(),
   "hasTranscript": zod.boolean().optional().describe('True when at least one call transcript is attached to this booking.')
 }))

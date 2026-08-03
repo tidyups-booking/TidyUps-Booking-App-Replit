@@ -488,6 +488,14 @@ components:
         jobberSyncError:
           type: ["string", "null"]
           description: Error message from the last failed Jobber sync attempt.
+        addressLat:
+          type: ["number", "null"]
+          format: float
+          description: Latitude from Google Places autocomplete, if captured.
+        addressLng:
+          type: ["number", "null"]
+          format: float
+          description: Longitude from Google Places autocomplete, if captured.
         createdAt:
           type: string
           format: date-time

@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { JobberSyncCard, type JobberSyncStatus } from "@/components/jobber-sync-card";
+import { BookingMiniMap } from "@/components/booking-mini-map";
 
 function getBaseUrl() {
   const base = import.meta.env.BASE_URL ?? "/";
@@ -307,9 +308,13 @@ export default function BookingDetail() {
     );
   }
 
+  const apiBaseUrl = getBaseUrl().replace(/\/$/, "");
+
   // ── Edit mode ──────────────────────────────────────────────────────────────
   if (isEditing) {
     const extras = form.watch("extras") ?? [];
+    const editLat = form.watch("addressLat");
+    const editLng = form.watch("addressLng");
     const toggleExtra = (extra: string) => {
       const current = form.getValues("extras") ?? [];
       form.setValue(
@@ -459,6 +464,9 @@ export default function BookingDetail() {
                       </FormItem>
                     )} />
                   </div>
+                  {editLat != null && editLng != null && (
+                    <BookingMiniMap lat={editLat} lng={editLng} baseUrl={apiBaseUrl} />
+                  )}
                 </CardContent>
               </Card>
             </div>
@@ -729,6 +737,13 @@ export default function BookingDetail() {
                       </div>
                     </div>
                   </div>
+                  {booking.addressLat != null && booking.addressLng != null && (
+                    <BookingMiniMap
+                      lat={booking.addressLat}
+                      lng={booking.addressLng}
+                      baseUrl={apiBaseUrl}
+                    />
+                  )}
                 </div>
               </div>
             </CardContent>
