@@ -208,6 +208,37 @@ export default function NewBooking() {
   const miniMapCoords: [number, number] | null =
     addressLat != null && addressLng != null ? [addressLat, addressLng] : geocodedCoords;
 
+  // Returning-customer detection: when the phone number matches a past customer
+  // (and the dispatcher didn't already pick them from the dropdown), show a banner.
+  const phoneValue = form.watch("phone");
+  const [returningMatch, setReturningMatch] = useState<CustomerRecord | null>(null);
+  const acknowledgedPhoneRef = useRef<string | null>(null); // digits already filled/dismissed
+  const returningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const returningGenRef = useRef(0);
+
+  useEffect(() => {
+    const digits = (phoneValue ?? "").replace(/\D/g, "");
+    if (returningTimerRef.current) clearTimeout(returningTimerRef.current);
+    const gen = ++returningGenRef.current;
+    if (digits.length < 7 || digits === acknowledgedPhoneRef.current) {
+      setReturningMatch(null);
+      return;
+    }
+    returningTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`${getBaseUrl()}api/bookings/customers/search?q=${encodeURIComponent(digits)}`, { credentials: "include" });
+        if (gen !== returningGenRef.current || !res.ok) return;
+        const data = await res.json();
+        if (gen !== returningGenRef.current) return;
+        const match = (data.customers ?? []).find(
+          (c: CustomerRecord) => c.phone.replace(/\D/g, "") === digits
+        );
+        setReturningMatch(match ?? null);
+      } catch { /* ignore */ }
+    }, 400);
+    return () => { if (returningTimerRef.current) clearTimeout(returningTimerRef.current); };
+  }, [phoneValue]);
+
   // Called by LiveCallPanel when AI extracts fields
   const handleFieldsExtracted = useCallback(
     async (fields: Record<string, any>, newKeys: string[]) => {
@@ -319,6 +350,9 @@ export default function NewBooking() {
     const filled = ["firstName", "lastName", "phone", "email", "address", "city", "province", "postalCode", "bedrooms", "bathrooms", "serviceType"];
     setHighlightedFields(new Set(filled));
     setTimeout(() => setHighlightedFields(new Set()), 2000);
+    // Their info is in the form now — no need to keep flagging the phone match
+    acknowledgedPhoneRef.current = c.phone.replace(/\D/g, "");
+    setReturningMatch(null);
   }, [form]);
 
   // Clears the AI indicator for a field when the dispatcher edits it manually (visual only)
@@ -467,6 +501,40 @@ export default function NewBooking() {
                     </FormItem>
                   )} />
                 </div>
+
+                {/* Returning-customer banner: phone number matches a past booking */}
+                {returningMatch && (
+                  <div className="rounded-lg border border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-950/30 p-3 space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-300">
+                    <div className="flex items-center gap-2 text-sm">
+                      <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
+                      <span className="font-semibold text-green-800 dark:text-green-300">
+                        Returning customer: {returningMatch.firstName} {returningMatch.lastName}
+                      </span>
+                    </div>
+                    <p className="text-xs text-green-700 dark:text-green-400">
+                      Last appointment {new Date(returningMatch.lastBookingDate).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })} — consider offering a 10% loyalty discount.
+                    </p>
+                    <div className="flex gap-3 pt-0.5">
+                      <button
+                        type="button"
+                        onClick={() => handleSelectCustomer(returningMatch)}
+                        className="text-xs font-semibold text-green-700 dark:text-green-400 hover:underline"
+                      >
+                        Fill their info →
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          acknowledgedPhoneRef.current = returningMatch.phone.replace(/\D/g, "");
+                          setReturningMatch(null);
+                        }}
+                        className="text-xs text-muted-foreground hover:underline"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
