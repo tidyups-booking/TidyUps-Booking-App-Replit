@@ -59,6 +59,72 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /contact/messages:
+    get:
+      operationId: listContactMessages
+      tags: [contact]
+      summary: List contact form messages (dispatcher only), newest first
+      responses:
+        "200":
+          description: Contact messages, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ContactMessage"
+
+  /contact/messages/{id}:
+    patch:
+      operationId: updateContactMessage
+      tags: [contact]
+      summary: Mark a contact message handled or unhandled (dispatcher only)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContactMessageStatusUpdate"
+      responses:
+        "200":
+          description: Updated contact message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactMessage"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    delete:
+      operationId: deleteContactMessage
+      tags: [contact]
+      summary: Delete a contact message (dispatcher only)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: number
+      responses:
+        "204":
+          description: Message deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /bookings:
     get:
       operationId: listBookings
@@ -437,7 +503,7 @@ components:
 
     ContactMessage:
       type: object
-      required: [id, name, email, message, createdAt]
+      required: [id, name, email, message, createdAt, handledAt]
       properties:
         id:
           type: number
@@ -453,6 +519,16 @@ components:
         createdAt:
           type: string
           format: date-time
+        handledAt:
+          type: ["string", "null"]
+          format: date-time
+
+    ContactMessageStatusUpdate:
+      type: object
+      required: [handled]
+      properties:
+        handled:
+          type: boolean
 
     ContactMessageInput:
       type: object

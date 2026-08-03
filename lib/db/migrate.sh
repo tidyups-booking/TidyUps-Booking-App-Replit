@@ -42,6 +42,12 @@ psql "$DATABASE_URL" -q -c "
   WHERE EXISTS (SELECT 1 FROM _migrations WHERE name = '005_add_price_breakdown')
   ON CONFLICT (name) DO NOTHING;
 "
+psql "$DATABASE_URL" -q -c "
+  INSERT INTO _migrations (name)
+  SELECT '007_add_contact_message_handled_at'
+  WHERE EXISTS (SELECT 1 FROM _migrations WHERE name = '006_add_contact_message_handled_at')
+  ON CONFLICT (name) DO NOTHING;
+"
 
 echo "Running migrations from $MIGRATIONS_DIR"
 

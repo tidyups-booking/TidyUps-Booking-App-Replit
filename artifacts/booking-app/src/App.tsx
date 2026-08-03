@@ -26,6 +26,7 @@ import BookingDetail from "@/pages/booking-detail";
 import Schedule from "@/pages/schedule";
 import StaffManagement from "@/pages/staff";
 import MapPage from "@/pages/map";
+import MessagesPage from "@/pages/messages";
 import SupportPage from "@/pages/support";
 import ContactPage from "@/pages/contact";
 import PrivacyPage from "@/pages/privacy";
@@ -306,6 +307,9 @@ function AppRouter() {
             </Route>
             <Route path="/map">
               <ProtectedRoute component={MapPage} />
+            </Route>
+            <Route path="/messages">
+              <ProtectedRoute component={MessagesPage} />
             </Route>
             <Route component={NotFound} />
           </Switch>

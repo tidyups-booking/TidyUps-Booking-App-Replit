@@ -25,6 +25,8 @@ const RENAMED_MIGRATIONS: { oldName: string; newName: string }[] = [
   { oldName: "002_add_jobber_job_id_unique_index", newName: "003_add_jobber_synced_job_id" },
   // Renumbered during rebase: main took 005 for contact_messages
   { oldName: "005_add_price_breakdown", newName: "006_add_price_breakdown" },
+  // Renumbered during rebase: main took 006 for price_breakdown
+  { oldName: "006_add_contact_message_handled_at", newName: "007_add_contact_message_handled_at" },
 ];
 
 const MIGRATIONS: { name: string; sql: string }[] = [
@@ -217,6 +219,15 @@ const MIGRATIONS: { name: string; sql: string }[] = [
     name: "006_add_price_breakdown",
     sql: `
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS price_breakdown JSONB;
+    `,
+  },
+  {
+    // Dispatcher inbox: track when a contact message was marked handled.
+    // NULL = new/unread. Mirrors lib/db/migrations/007_add_contact_message_handled_at.sql.
+    // (Renumbered from 006 during rebase: main added 006_add_price_breakdown.)
+    name: "007_add_contact_message_handled_at",
+    sql: `
+      ALTER TABLE contact_messages ADD COLUMN IF NOT EXISTS handled_at TIMESTAMPTZ;
     `,
   },
 ];

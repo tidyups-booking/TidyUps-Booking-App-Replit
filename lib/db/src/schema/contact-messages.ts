@@ -9,11 +9,14 @@ export const contactMessagesTable = pgTable("contact_messages", {
   phone: text("phone"),
   message: text("message").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  // NULL = new/unread; set when a dispatcher marks the message handled.
+  handledAt: timestamp("handled_at", { withTimezone: true }),
 });
 
 export const insertContactMessageSchema = createInsertSchema(contactMessagesTable).omit({
   id: true,
   createdAt: true,
+  handledAt: true,
 });
 export type InsertContactMessage = z.infer<typeof insertContactMessageSchema>;
 export type ContactMessage = typeof contactMessagesTable.$inferSelect;

@@ -47,10 +47,22 @@ export const SubmitContactMessageResponse = zod.object({
   "email": zod.string(),
   "phone": zod.string().nullish(),
   "message": zod.string(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "handledAt": zod.coerce.date().nullable()
 })
 
-
+/**
+ * @summary List contact form messages (dispatcher only), newest first
+ */
+export const ListContactMessagesResponseItem = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "phone": zod.string().nullish(),
+  "message": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "handledAt": zod.coerce.date().nullable()
+})
 /**
  * @summary List all bookings
  */
@@ -641,3 +653,35 @@ export const GetDayScheduleResponseItem = zod.object({
 }))
 })
 export const GetDayScheduleResponse = zod.array(GetDayScheduleResponseItem)
+
+export const ListContactMessagesResponse = zod.array(ListContactMessagesResponseItem)
+
+/**
+ * @summary Delete a contact message (dispatcher only)
+ */
+export const DeleteContactMessageParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteContactMessageResponse = zod.void()
+
+export const UpdateContactMessageBody = zod.object({
+  "handled": zod.boolean()
+})
+
+/**
+ * @summary Mark a contact message handled or unhandled (dispatcher only)
+ */
+export const UpdateContactMessageParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateContactMessageResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "email": zod.string(),
+  "phone": zod.string().nullish(),
+  "message": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "handledAt": zod.coerce.date().nullable()
+})

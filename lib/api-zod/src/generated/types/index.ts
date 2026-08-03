@@ -22,6 +22,7 @@ export * from './bookingUpdateServiceType';
 export * from './bookingUpdateStatus';
 export * from './contactMessage';
 export * from './contactMessageInput';
+export * from './contactMessageStatusUpdate';
 export * from './errorResponse';
 export * from './getDayScheduleParams';
 export * from './getStaffScheduleParams';

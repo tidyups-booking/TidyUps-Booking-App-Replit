@@ -21,8 +21,13 @@ export interface ContactMessage {
   phone?: string | null;
   message: string;
   createdAt: string;
+  /** @nullable */
+  handledAt: string | null;
 }
 
+export interface ContactMessageStatusUpdate {
+  handled: boolean;
+}
 export interface ContactMessageInput {
   /**
      * @minLength 1

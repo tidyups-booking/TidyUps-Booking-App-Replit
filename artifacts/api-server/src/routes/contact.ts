@@ -5,8 +5,12 @@ import {
   SubmitContactMessageResponse,
 } from "@workspace/api-zod";
 import { logger } from "../lib/logger.js";
+import { desc, eq } from "drizzle-orm";
+import { guardDispatcher } from "../lib/callerRole.js";
 
 const router: IRouter = Router();
+
+export const contactMessagesRouter: IRouter = Router();
 
 // --- Per-IP rate limiting for the public contact form -----------------------
 // Simple in-memory sliding window: max MAX_SUBMISSIONS per WINDOW_MS per IP.
@@ -96,3 +100,10 @@ router.post("/contact", async (req, res): Promise<void> => {
 });
 
 export default router;
+
+  const id = Number(req.params.id);
+
+  const rows = await db
+    .select()
+    .from(contactMessagesTable)
+    .orderBy(desc(contactMessagesTable.createdAt), desc(contactMessagesTable.id));
