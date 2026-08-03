@@ -11,6 +11,11 @@
  *   - 403 after revoke
  *   - 409 when removing the last dispatcher
  *
+ * It also verifies the cleaner role boundary: a +clerk_test user linked to a
+ * temporary staff record gets 403 on all dispatcher-only routes (dispatcher
+ * management, staff admin, full schedule, Jobber/Twilio config) but 200 on
+ * their own schedule endpoint. The temporary staff record is removed after.
+ *
  * Cleanup: the allowlist is snapshotted up-front and restored in `finally`,
  * so the table always returns to its prior state (owner can't be locked out).
  *
@@ -18,7 +23,7 @@
  * Run: npx tsx e2e-dispatcher-access-check.mts  (from artifacts/api-server)
  */
 import { eq, inArray } from "drizzle-orm";
-import { db, dispatcherAllowlistTable } from "@workspace/db";
+import { db, dispatcherAllowlistTable, staffTable } from "@workspace/db";
 
 const API_BASE = process.env.E2E_API_BASE ?? "http://127.0.0.1:8080/api";
 const CLERK_API = "https://api.clerk.com";
@@ -174,6 +179,95 @@ try {
     snapshot.every((r) => restoredIds.has(r.clerkUserId)) &&
     !(!snapshot.some((r) => r.clerkUserId === testUserId) && restoredIds.has(testUserId));
   check("allowlist restored to prior state", ok);
+}
+
+// ---------------------------------------------------------------------------
+// Cleaner role boundary: a Clerk user linked to a staff record must get 403 on
+// dispatcher-only routes, but 200 on their own schedule endpoint.
+
+const CLEANER_EMAIL = "cleaner-e2e+clerk_test@example.com";
+
+async function ensureCleanerTestUser(): Promise<string> {
+  const existing = await clerk(`/v1/users?email_address=${encodeURIComponent(CLEANER_EMAIL)}`);
+  if (Array.isArray(existing) && existing.length > 0) return existing[0].id;
+  const created = await clerk(`/v1/users`, {
+    method: "POST",
+    body: JSON.stringify({
+      email_address: [CLEANER_EMAIL],
+      first_name: "Cleaner",
+      last_name: "E2E Check",
+      skip_password_requirement: true,
+    }),
+  });
+  return created.id;
+}
+
+const cleanerUserId = await ensureCleanerTestUser();
+console.log(`\nCleaner test Clerk user: ${cleanerUserId} (${CLEANER_EMAIL})`);
+
+let tempStaffId: number | null = null;
+try {
+  // The cleaner must NOT be a dispatcher.
+  await db
+    .delete(dispatcherAllowlistTable)
+    .where(eq(dispatcherAllowlistTable.clerkUserId, cleanerUserId));
+
+  // Link (or reuse) a temporary staff record for this Clerk user.
+  const existingStaff = await db
+    .select({ id: staffTable.id })
+    .from(staffTable)
+    .where(eq(staffTable.clerkUserId, cleanerUserId));
+  let staffId: number;
+  if (existingStaff.length > 0) {
+    staffId = existingStaff[0].id;
+  } else {
+    const [row] = await db
+      .insert(staffTable)
+      .values({ name: "Cleaner E2E Check", role: "cleaner", clerkUserId: cleanerUserId })
+      .returning({ id: staffTable.id });
+    staffId = row.id;
+    tempStaffId = staffId; // only delete rows we created
+  }
+
+  const cleanerJwt = await mintToken(cleanerUserId);
+
+  // Dispatcher-only routes must all return 403 for a cleaner.
+  const dispatcherOnly: [string, string][] = [
+    ["GET", "/dispatchers"],
+    ["GET", "/dispatchers/clerk-users"],
+    ["POST", "/dispatchers"],
+    ["GET", "/staff"],
+    ["POST", "/staff"],
+    ["GET", "/schedule?date=2026-01-01"],
+    ["GET", "/jobber/auth"],
+    ["GET", "/twilio/webhook-url"],
+  ];
+  for (const [method, path] of dispatcherOnly) {
+    const res = await api(method, path, cleanerJwt, method === "POST" ? {} : undefined);
+    check(`cleaner gets 403 on ${method} ${path}`, res.status === 403, `status=${res.status}`);
+  }
+
+  // But the cleaner CAN read their own schedule.
+  const today = new Date().toISOString().slice(0, 10);
+  const own = await api("GET", `/staff/${staffId}/schedule?date=${today}`, cleanerJwt);
+  check("cleaner gets 200 on own schedule", own.status === 200, `status=${own.status}`);
+
+  // And NOT another staff member's schedule.
+  const other = await api("GET", `/staff/${staffId + 999999}/schedule?date=${today}`, cleanerJwt);
+  check(
+    "cleaner gets 403 on another staff member's schedule",
+    other.status === 403,
+    `status=${other.status}`,
+  );
+} finally {
+  if (tempStaffId !== null) {
+    await db.delete(staffTable).where(eq(staffTable.id, tempStaffId));
+    const leftover = await db
+      .select({ id: staffTable.id })
+      .from(staffTable)
+      .where(eq(staffTable.id, tempStaffId));
+    check("temporary staff record cleaned up", leftover.length === 0);
+  }
 }
 
 console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);
