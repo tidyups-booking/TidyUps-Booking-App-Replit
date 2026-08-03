@@ -98,6 +98,109 @@ export interface CalendarSyncResult {
 /** Max pages of 100 jobs fetched per sync. */
 const MAX_PAGES = 5;
 
+// ── Shared upsert ─────────────────────────────────────────────────────────────
+
+/** GraphQL selection set for a Jobber job — shared by list and single-job queries. */
+const JOB_FIELDS = `
+  id
+  title
+  startAt
+  client {
+    firstName
+    lastName
+    phone
+    email
+  }
+  property {
+    address {
+      street
+      city
+      province
+      postalCode
+    }
+  }`;
+
+/**
+ * Upserts one Jobber job into the bookings table keyed on jobber_synced_job_id.
+ * Returns false when the job has no startAt (nothing to place on the calendar).
+ * Throws on database errors — callers decide how to count/log failures.
+ */
+async function upsertJobberJob(job: JobberJob): Promise<boolean> {
+  if (!job.startAt) return false;
+
+  const { date, time } = parseEdmontonDateTime(job.startAt);
+
+  // Derive display values with safe fallbacks so scheduled jobs always
+  // appear on the calendar even when optional Jobber fields are absent.
+  const firstName = job.client?.firstName ?? job.title ?? "Jobber";
+  const lastName = job.client?.lastName ?? "Job";
+  const phone = job.client?.phone ?? "";
+  const email = job.client?.email ?? null;
+  const street = job.property?.address?.street ?? "Address not provided";
+  const city = job.property?.address?.city ?? "Edmonton";
+  const province = job.property?.address?.province ?? "AB";
+  const postalCode = job.property?.address?.postalCode ?? null;
+
+  // Raw SQL upsert on jobber_synced_job_id to avoid stale Drizzle types.
+  // ON CONFLICT uses the unique index created in migration 002.
+  await db.execute(sql`
+    INSERT INTO bookings (
+      first_name, last_name, phone, email,
+      address, city, province, postal_code,
+      service_type, bedrooms, bathrooms, extras,
+      scheduled_date, scheduled_time,
+      frequency, status,
+      jobber_synced_job_id, jobber_sync_status
+    ) VALUES (
+      ${firstName}, ${lastName}, ${phone}, ${email},
+      ${street}, ${city}, ${province}, ${postalCode},
+      'standard_clean', 2, 1, '{}',
+      ${date}, ${time},
+      'one_time', 'confirmed',
+      ${job.id}, 'synced'
+    )
+    ON CONFLICT (jobber_synced_job_id) DO UPDATE SET
+      first_name         = EXCLUDED.first_name,
+      last_name          = EXCLUDED.last_name,
+      phone              = EXCLUDED.phone,
+      email              = EXCLUDED.email,
+      address            = EXCLUDED.address,
+      city               = EXCLUDED.city,
+      province           = EXCLUDED.province,
+      postal_code        = EXCLUDED.postal_code,
+      scheduled_date     = EXCLUDED.scheduled_date,
+      scheduled_time     = EXCLUDED.scheduled_time,
+      status             = EXCLUDED.status,
+      jobber_sync_status = 'synced'
+  `);
+  return true;
+}
+
+/**
+ * Targeted sync of a single Jobber job by ID — used by the webhook handler
+ * so JOB_CREATE / JOB_UPDATE events land on the calendar near-instantly
+ * without a full-window sync.
+ * Returns "upserted", "skipped" (no startAt), or "not_found".
+ * Throws if Jobber is not connected or the API call fails.
+ */
+export async function syncSingleJob(
+  jobId: string
+): Promise<"upserted" | "skipped" | "not_found"> {
+  const tokens = await getStoredTokens();
+  if (!tokens) throw new Error("Jobber not connected");
+
+  const data = await jobberGQL<{ job: JobberJob | null }>(
+    `query WebhookJob($id: EncodedId!) {
+      job(id: $id) {${JOB_FIELDS}
+      }
+    }`,
+    { id: jobId }
+  );
+
+  if (!data.job) return "not_found";
+  return (await upsertJobberJob(data.job)) ? "upserted" : "skipped";
+}
+
 // ── Core sync ─────────────────────────────────────────────────────────────────
 
 /**
@@ -202,58 +305,12 @@ export async function runCalendarSync(
   let skipped = 0;
 
   for (const job of jobberJobs) {
-    if (!job.startAt) {
-      skipped++;
-      continue; // skip unscheduled jobs (no appointment date to place on calendar)
-    }
-
-    const { date, time } = parseEdmontonDateTime(job.startAt);
-
-    // Derive display values with safe fallbacks so scheduled jobs always
-    // appear on the calendar even when optional Jobber fields are absent.
-    const firstName = job.client?.firstName ?? job.title ?? "Jobber";
-    const lastName = job.client?.lastName ?? "Job";
-    const phone = job.client?.phone ?? "";
-    const email = job.client?.email ?? null;
-    const street = job.property?.address?.street ?? "Address not provided";
-    const city = job.property?.address?.city ?? "Edmonton";
-    const province = job.property?.address?.province ?? "AB";
-    const postalCode = job.property?.address?.postalCode ?? null;
-
     try {
-      // Raw SQL upsert on jobber_synced_job_id to avoid stale Drizzle types.
-      // ON CONFLICT uses the unique index created in migration 002.
-      await db.execute(sql`
-        INSERT INTO bookings (
-          first_name, last_name, phone, email,
-          address, city, province, postal_code,
-          service_type, bedrooms, bathrooms, extras,
-          scheduled_date, scheduled_time,
-          frequency, status,
-          jobber_synced_job_id, jobber_sync_status
-        ) VALUES (
-          ${firstName}, ${lastName}, ${phone}, ${email},
-          ${street}, ${city}, ${province}, ${postalCode},
-          'standard_clean', 2, 1, '{}',
-          ${date}, ${time},
-          'one_time', 'confirmed',
-          ${job.id}, 'synced'
-        )
-        ON CONFLICT (jobber_synced_job_id) DO UPDATE SET
-          first_name         = EXCLUDED.first_name,
-          last_name          = EXCLUDED.last_name,
-          phone              = EXCLUDED.phone,
-          email              = EXCLUDED.email,
-          address            = EXCLUDED.address,
-          city               = EXCLUDED.city,
-          province           = EXCLUDED.province,
-          postal_code        = EXCLUDED.postal_code,
-          scheduled_date     = EXCLUDED.scheduled_date,
-          scheduled_time     = EXCLUDED.scheduled_time,
-          status             = EXCLUDED.status,
-          jobber_sync_status = 'synced'
-      `);
-
+      const upserted = await upsertJobberJob(job);
+      if (!upserted) {
+        skipped++; // unscheduled job — no appointment date to place on calendar
+        continue;
+      }
       if (existingIds.has(job.id)) synced++;
       else imported++;
     } catch (upsertErr: any) {

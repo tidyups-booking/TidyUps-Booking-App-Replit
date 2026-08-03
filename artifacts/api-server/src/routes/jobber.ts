@@ -11,8 +11,12 @@ import { db } from "@workspace/db";
 import { bookingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireDispatcherAuth } from "../lib/callerRole.js";
-import { randomBytes } from "crypto";
-import { runCalendarSync, getAutoSyncStatus } from "../services/jobberCalendarSync.js";
+import { randomBytes, createHmac, timingSafeEqual } from "crypto";
+import {
+  runCalendarSync,
+  getAutoSyncStatus,
+  syncSingleJob,
+} from "../services/jobberCalendarSync.js";
 
 const router = Router();
 
@@ -336,6 +340,74 @@ router.post("/jobber/sync-calendar", requireAuth, async (req, res) => {
     (req as any).log?.error({ err: err.message }, "Jobber sync-calendar: unexpected error");
     res.status(500).json({ error: "Sync failed — please try again" });
   }
+});
+
+// ---------------------------------------------------------------------------
+// POST /jobber/webhook — Jobber pushes JOB_CREATE / JOB_UPDATE events here.
+//
+// Public endpoint (Jobber's servers call it), authenticated via HMAC:
+// Jobber signs the raw request body with the app's client secret and sends
+// the base64 digest in the X-Jobber-Hmac-SHA256 header. We recompute it over
+// the exact raw bytes (captured by the json body-parser's verify hook) and
+// compare in constant time.
+//
+// On a valid JOB_* event we ACK immediately (Jobber expects a fast 2xx) and
+// run a targeted single-job sync in the background. The 5-minute poller
+// remains as a fallback for missed webhooks.
+// ---------------------------------------------------------------------------
+
+/** Verifies Jobber's HMAC-SHA256 webhook signature over the raw body. */
+function verifyJobberWebhookSignature(rawBody: Buffer, signature: string): boolean {
+  const secret = process.env.JOBBER_CLIENT_SECRET;
+  if (!secret) return false;
+  const expected = createHmac("sha256", secret).update(rawBody).digest("base64");
+  const a = Buffer.from(expected);
+  const b = Buffer.from(signature);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+router.post("/jobber/webhook", (req, res) => {
+  const rawBody: Buffer | undefined = (req as any).rawBody;
+  const signature = req.get("X-Jobber-Hmac-SHA256");
+
+  if (!rawBody || !signature || !verifyJobberWebhookSignature(rawBody, signature)) {
+    req.log.warn(
+      { hasBody: !!rawBody, hasSignature: !!signature },
+      "Jobber webhook: invalid or missing HMAC signature — rejected"
+    );
+    res.status(401).json({ error: "Invalid signature" });
+    return;
+  }
+
+  const event = req.body?.data?.webHookEvent as
+    | { topic?: string; itemId?: string }
+    | undefined;
+  const topic = event?.topic;
+  const itemId = event?.itemId;
+
+  // ACK immediately — Jobber retries/disables webhooks that respond slowly.
+  res.status(200).json({ received: true });
+
+  if (!topic || !itemId) {
+    req.log.warn({ topic, itemId }, "Jobber webhook: event missing topic or itemId");
+    return;
+  }
+  if (topic !== "JOB_CREATE" && topic !== "JOB_UPDATE") {
+    req.log.info({ topic }, "Jobber webhook: ignoring unhandled topic");
+    return;
+  }
+
+  // Targeted background sync of just this job
+  void syncSingleJob(itemId)
+    .then((outcome) => {
+      req.log.info({ topic, itemId, outcome }, "Jobber webhook: targeted sync finished");
+    })
+    .catch((err: any) => {
+      req.log.warn(
+        { topic, itemId, err: err.message },
+        "Jobber webhook: targeted sync failed — poller will catch up"
+      );
+    });
 });
 
 export default router;

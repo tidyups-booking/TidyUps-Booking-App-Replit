@@ -63,7 +63,16 @@ app.use(
 // 1 MB is well above any legitimate booking API payload (a few KB at most).
 // The largest expected body is a call transcript sent to /ai/extract-booking;
 // even a 30-minute call transcript is comfortably under 100 KB.
-app.use(express.json({ limit: "1mb" }));
+app.use(
+  express.json({
+    limit: "1mb",
+    // Keep the raw request bytes around so webhook handlers (e.g. Jobber)
+    // can verify HMAC signatures computed over the exact payload.
+    verify: (req, _res, buf) => {
+      (req as any).rawBody = buf;
+    },
+  }),
+);
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
 // Resolve publishable key from the request host so the same server can
