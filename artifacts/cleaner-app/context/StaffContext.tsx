@@ -13,6 +13,10 @@ interface StaffContextValue {
   staffId: number | null;
   /** Display name of the linked staff record. */
   staffName: string | null;
+  /** Phone number on the linked staff record. */
+  staffPhone: string | null;
+  /** Email address on the linked staff record. */
+  staffEmail: string | null;
   /** True once the /staff/me query has settled (success or 404). */
   isLoaded: boolean;
   /** True when a staff record is linked to the caller's Clerk account. */
@@ -24,6 +28,8 @@ interface StaffContextValue {
 const StaffContext = createContext<StaffContextValue>({
   staffId: null,
   staffName: null,
+  staffPhone: null,
+  staffEmail: null,
   isLoaded: false,
   isLinked: false,
   refetch: () => {},
@@ -43,6 +49,8 @@ export function StaffProvider({ children }: { children: ReactNode }) {
       value={{
         staffId: data?.id ?? null,
         staffName: data?.name ?? null,
+        staffPhone: (data as any)?.phone ?? null,
+        staffEmail: (data as any)?.email ?? null,
         isLoaded: !isLoading,
         isLinked: !!data,
         refetch,

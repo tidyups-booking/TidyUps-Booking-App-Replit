@@ -3,6 +3,7 @@ import { ShieldCheck, Building2, Leaf, CalendarClock, ArrowRight } from "lucide-
 import mascotCovered from "@assets/brand-doc/mascot-covered.jpeg";
 import sparkleLivingRoom from "@assets/brand-doc/sparkle-living-room.jpeg";
 import fleetTrucks from "@assets/brand-doc/fleet-trucks.jpg";
+import { Button } from "@/components/ui/button";
 
 const COMMERCIAL_PROMISES = [
   {
@@ -89,12 +90,11 @@ export function LandingSections() {
           </div>
 
           <div className="text-center">
-            <Link
-              href="/contact"
-              className="inline-flex items-center justify-center gap-2 rounded-md brand-gradient px-8 py-3 text-base font-semibold text-white shadow-md shadow-primary/20 transition-all hover:opacity-90 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            >
-              Get a Commercial Quote
-              <ArrowRight className="h-4 w-4" />
+            <Link href="/contact">
+              <Button size="lg" className="brand-gradient text-white shadow-md shadow-primary/20">
+                Get a Commercial Quote
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
             </Link>
           </div>
         </div>
