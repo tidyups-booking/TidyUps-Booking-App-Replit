@@ -23,7 +23,7 @@
  * Run: npx tsx e2e-dispatcher-access-check.mts  (from artifacts/api-server)
  */
 import { eq, inArray } from "drizzle-orm";
-import { db, dispatcherAllowlistTable, staffTable } from "@workspace/db";
+import { db, dispatcherAllowlistTable, staffTable, contactMessagesTable } from "@workspace/db";
 
 const API_BASE = process.env.E2E_API_BASE ?? "http://127.0.0.1:8080/api";
 const CLERK_API = "https://api.clerk.com";
@@ -241,9 +241,17 @@ try {
     ["GET", "/schedule?date=2026-01-01"],
     ["GET", "/jobber/auth"],
     ["GET", "/twilio/webhook-url"],
+    ["GET", "/contact/messages"],
+    ["PATCH", "/contact/messages/1"],
+    ["DELETE", "/contact/messages/1"],
   ];
   for (const [method, path] of dispatcherOnly) {
-    const res = await api(method, path, cleanerJwt, method === "POST" ? {} : undefined);
+    const res = await api(
+      method,
+      path,
+      cleanerJwt,
+      method === "POST" ? {} : method === "PATCH" ? { handled: true } : undefined,
+    );
     check(`cleaner gets 403 on ${method} ${path}`, res.status === 403, `status=${res.status}`);
   }
 
@@ -267,6 +275,68 @@ try {
       .from(staffTable)
       .where(eq(staffTable.id, tempStaffId));
     check("temporary staff record cleaned up", leftover.length === 0);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Contact-messages inbox: unauthenticated → 401, dispatcher → 200/204.
+// (Non-dispatcher 403 is covered by the cleaner section above.)
+
+console.log("\nContact messages inbox:");
+{
+  // Unauthenticated requests must get 401 (requireAuth middleware).
+  const unauthChecks: [string, string][] = [
+    ["GET", "/contact/messages"],
+    ["PATCH", "/contact/messages/1"],
+    ["DELETE", "/contact/messages/1"],
+  ];
+  for (const [method, path] of unauthChecks) {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: method === "PATCH" ? JSON.stringify({ handled: true }) : undefined,
+    });
+    check(`unauthenticated gets 401 on ${method} ${path}`, res.status === 401, `status=${res.status}`);
+  }
+
+  // A dispatcher can list, mark handled, and delete. Use a temporary message
+  // so the run doesn't touch real visitor data; DELETE removes it.
+  const [msg] = await db
+    .insert(contactMessagesTable)
+    .values({
+      name: "E2E Inbox Check",
+      email: "e2e-inbox-check@example.com",
+      message: "temporary message created by e2e-dispatcher-access-check",
+    })
+    .returning({ id: contactMessagesTable.id });
+  try {
+    const dispatcherJwt = await mintToken(admin.clerkUserId);
+
+    const list = await api("GET", "/contact/messages", dispatcherJwt);
+    check("dispatcher gets 200 on GET /contact/messages", list.status === 200, `status=${list.status}`);
+    if (list.status === 200) {
+      const rows = await list.json();
+      check(
+        "temporary message appears in the list",
+        Array.isArray(rows) && rows.some((r: any) => r.id === msg.id),
+      );
+    }
+
+    const patch = await api("PATCH", `/contact/messages/${msg.id}`, dispatcherJwt, { handled: true });
+    check("dispatcher gets 200 on PATCH mark-handled", patch.status === 200, `status=${patch.status}`);
+    if (patch.status === 200) {
+      const updated = await patch.json();
+      check("PATCH sets handledAt", updated.handledAt != null);
+    }
+
+    const del = await api("DELETE", `/contact/messages/${msg.id}`, dispatcherJwt);
+    check("dispatcher gets 204 on DELETE", del.status === 204, `status=${del.status}`);
+
+    const gone = await api("DELETE", `/contact/messages/${msg.id}`, dispatcherJwt);
+    check("deleting a missing message returns 404", gone.status === 404, `status=${gone.status}`);
+  } finally {
+    // Belt-and-braces cleanup in case an assertion failed before DELETE ran.
+    await db.delete(contactMessagesTable).where(eq(contactMessagesTable.id, msg.id));
   }
 }
 
