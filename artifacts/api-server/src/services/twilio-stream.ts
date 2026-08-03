@@ -130,7 +130,10 @@ Service type clues:
 
 async function transcribeWav(wav: Buffer): Promise<string> {
   try {
-    const text = await speechToText(wav, "wav");
+    // Language pinned to English: all callers are English-speaking (Canada),
+    // and without the pin the model occasionally mis-detects the language on
+    // noisy phone audio and emits garbled non-English text.
+    const text = await speechToText(wav, "wav", { language: "en" });
     return text.trim();
   } catch (err) {
     logger.warn({ err }, "Transcription error");

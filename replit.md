@@ -54,7 +54,7 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 - **(825) 533-4317** — the Twilio number. This is the ONLY number that activates the AI live-call panel; its voice webhook points at `https://bookcleaning.app/api/twilio/voice?sig=...` and calls forward to the business line.
 - **(780) 718-5092** — `BUSINESS_PHONE_NUMBER` (where Twilio forwards answered calls); also shown on the public site.
-- **833-843-9877** (advertised toll-free) and **587-900-7223** (advertised local) — owner must set up carrier-side call forwarding from these lines to (825) 533-4317 so real customer calls activate the AI panel. Neither is the 780 business line, so forwarding creates no loop. Until forwarding is confirmed by a test call, calls to these numbers bypass the app.
+- **833-843-9877** (advertised toll-free) and **587-900-7223** (advertised local) — carrier-side call forwarding to (825) 533-4317 is **confirmed live** (owner verified 2026-08-03). Calls to either advertised number now reach Twilio and ring through to (780) 718-5092.
 
 ## Gotchas
 

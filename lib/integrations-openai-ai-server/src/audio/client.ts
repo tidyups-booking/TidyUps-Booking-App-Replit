@@ -216,15 +216,20 @@ export async function textToSpeechStream(
   })();
 }
 
-/** Speech-to-Text using gpt-4o-mini-transcribe. */
+/** Speech-to-Text using gpt-4o-mini-transcribe.
+ *  Pass `options.language` (ISO-639-1, e.g. "en") to pin the transcription
+ *  language — prevents the model from guessing other languages on noisy audio. */
 export async function speechToText(
   audioBuffer: Buffer,
-  format: "wav" | "mp3" | "webm" = "wav"
+  format: "wav" | "mp3" | "webm" = "wav",
+  options?: { language?: string; prompt?: string }
 ): Promise<string> {
   const file = await toFile(audioBuffer, `audio.${format}`);
   const response = await openai.audio.transcriptions.create({
     file,
     model: "gpt-4o-mini-transcribe",
+    ...(options?.language ? { language: options.language } : {}),
+    ...(options?.prompt ? { prompt: options.prompt } : {}),
   });
   return response.text;
 }
