@@ -24,6 +24,10 @@ const JOBBER_AUTH_URL = "https://api.getjobber.com/api/oauth/authorize";
  * Using a module-level Map keeps this simple without requiring an extra DB table.
  */
 const pendingOAuthStates = new Map<string, number>(); // state → expiry timestamp (ms)
+
+// GET /jobber/status — check whether Jobber is connected
+router.get("/jobber/status", async (_req, res) => {
+  try {
     const tokens = await getStoredTokens();
     if (!tokens) {
       res.json({ connected: false });
@@ -41,7 +45,7 @@ const pendingOAuthStates = new Map<string, number>(); // state → expiry timest
   }
 });
 
-// GET /jobber/auth — dispatcher only
+// GET /jobber/auth — kick off OAuth (dispatcher only)
 router.get("/jobber/auth", async (req, res) => {
   if (await requireDispatcherAuth(req, res)) return;
   const clientId = process.env.JOBBER_CLIENT_ID;
@@ -51,6 +55,12 @@ router.get("/jobber/auth", async (req, res) => {
   }
 
   let callbackUrl: string;
+  try {
+    callbackUrl = getCallbackUrl(getClerkProxyHost(req));
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+    return;
+  }
 
   const state = generateOAuthState();
   const params = new URLSearchParams({
@@ -61,20 +71,34 @@ router.get("/jobber/auth", async (req, res) => {
     state,
   });
 
+  res.redirect(`${JOBBER_AUTH_URL}?${params.toString()}`);
+});
+
+// GET /jobber/callback — Jobber redirects here with ?code=
+router.get("/jobber/callback", async (req, res) => {
+  req.log.info({ query: req.query }, "Jobber OAuth callback received");
+
   const { code, error, error_description, state } = req.query as {
     code?: string;
     error?: string;
     error_description?: string;
     state?: string;
   };
+
+  if (error) {
     const reason = error_description ? `${error}: ${error_description}` : error;
     req.log.warn({ error, error_description }, "Jobber OAuth error");
-    res.redirect(`/?jobber=error&reason=${encodeURIComponent(reason)}`);
+    res.redirect(`/?jobber=error&reason=${encodeURIComponent(reason ?? "unknown")}`);
+    return;
+  }
+
+  if (state && !validateOAuthState(state)) {
+    req.log.warn({ state }, "Jobber OAuth: invalid or expired state nonce");
+    res.status(400).send("<h2>OAuth state mismatch — please try connecting again.</h2>");
     return;
   }
 
   if (!code) {
-    // Show a helpful page instead of blank 400
     const allParams = JSON.stringify(req.query, null, 2);
     res.status(400).send(`
       <h2>Jobber callback — no code received</h2>
@@ -90,9 +114,6 @@ router.get("/jobber/auth", async (req, res) => {
   try {
     const redirectUri = getCallbackUrl(getClerkProxyHost(req));
     await exchangeCodeForTokens(code, redirectUri);
-    // Serve a small page that signals the opener via BroadcastChannel then
-    // closes itself, so the original dashboard tab updates without a manual
-    // refresh (Jobber blocks iframe embedding so we open OAuth in a new tab).
     res.send(`<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8"><title>Jobber Connected</title>
@@ -115,7 +136,6 @@ router.get("/jobber/auth", async (req, res) => {
     ch.postMessage({ type: "connected" });
     ch.close();
   } catch (_) {}
-  // Fall back to localStorage for browsers that don't support BroadcastChannel
   try {
     localStorage.setItem("jobber_oauth_signal", Date.now().toString());
   } catch (_) {}
@@ -124,8 +144,7 @@ router.get("/jobber/auth", async (req, res) => {
 </body>
 </html>`);
   } catch (err: any) {
-    console.error("Jobber OAuth callback error:", err);
-    // Serve an error page that also signals the opener, then closes
+    req.log.error({ err: err.message }, "Jobber OAuth callback error");
     res.send(`<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8"><title>Jobber Error</title>

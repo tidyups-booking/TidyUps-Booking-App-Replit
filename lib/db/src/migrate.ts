@@ -17,7 +17,11 @@ const MIGRATIONS: { name: string; sql: string }[] = [
     name: "001_add_staff_clerk_user_id",
     sql: `
       ALTER TABLE staff ADD COLUMN IF NOT EXISTS clerk_user_id TEXT;
+      -- Drop both the constraint and any index with this name before re-adding,
+      -- because Drizzle may have created a unique INDEX rather than a CONSTRAINT
+      -- and DROP CONSTRAINT does not remove standalone indexes.
       ALTER TABLE staff DROP CONSTRAINT IF EXISTS staff_clerk_user_id_unique;
+      DROP INDEX IF EXISTS staff_clerk_user_id_unique;
       ALTER TABLE staff ADD CONSTRAINT staff_clerk_user_id_unique UNIQUE (clerk_user_id);
     `,
   },
