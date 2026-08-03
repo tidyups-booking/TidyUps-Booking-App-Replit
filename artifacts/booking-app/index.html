@@ -2,6 +2,21 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      // bookcleaning.app is the canonical domain: forward visits from the
+      // *.replit.app deployment URL there, preserving the full path.
+      (function () {
+        var h = window.location.hostname;
+        if (h.endsWith(".replit.app")) {
+          window.location.replace(
+            "https://bookcleaning.app" +
+              window.location.pathname +
+              window.location.search +
+              window.location.hash,
+          );
+        }
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
     <title>833 Tidyups Booking</title>
     <meta name="description" content="833 Tidyups Booking — built on Replit. Update this description to reflect the app." />
