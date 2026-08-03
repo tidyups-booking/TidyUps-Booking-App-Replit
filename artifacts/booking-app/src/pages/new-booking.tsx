@@ -212,6 +212,9 @@ export default function NewBooking() {
   // (and the dispatcher didn't already pick them from the dropdown), show a banner.
   const phoneValue = form.watch("phone");
   const [returningMatch, setReturningMatch] = useState<CustomerRecord | null>(null);
+  // True once a returning customer was detected/filled — enables the loyalty discount button
+  const [loyaltyEligible, setLoyaltyEligible] = useState(false);
+  const [discountApplied, setDiscountApplied] = useState(false);
   const acknowledgedPhoneRef = useRef<string | null>(null); // digits already filled/dismissed
   const returningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const returningGenRef = useRef(0);
@@ -234,6 +237,7 @@ export default function NewBooking() {
           (c: CustomerRecord) => c.phone.replace(/\D/g, "") === digits
         );
         setReturningMatch(match ?? null);
+        if (match) setLoyaltyEligible(true);
       } catch { /* ignore */ }
     }, 400);
     return () => { if (returningTimerRef.current) clearTimeout(returningTimerRef.current); };
@@ -353,6 +357,7 @@ export default function NewBooking() {
     // Their info is in the form now — no need to keep flagging the phone match
     acknowledgedPhoneRef.current = c.phone.replace(/\D/g, "");
     setReturningMatch(null);
+    setLoyaltyEligible(true);
   }, [form]);
 
   // Clears the AI indicator for a field when the dispatcher edits it manually (visual only)
@@ -819,9 +824,38 @@ export default function NewBooking() {
                         <FormControl>
                           <div className="relative">
                             <DollarSign className="w-5 h-5 absolute left-3 top-3 text-primary" />
-                            <Input type="number" placeholder="150.00" className="pl-10 text-xl font-bold border-primary/30 focus-visible:ring-primary" {...field} />
+                            <Input
+                              type="number"
+                              placeholder="150.00"
+                              className="pl-10 text-xl font-bold border-primary/30 focus-visible:ring-primary"
+                              {...field}
+                              onChange={(e) => { setDiscountApplied(false); field.onChange(e); }}
+                            />
                           </div>
                         </FormControl>
+                        {loyaltyEligible && (
+                          discountApplied ? (
+                            <p className="text-xs font-medium text-green-600 dark:text-green-400 flex items-center gap-1">
+                              <CheckCircle2 className="w-3.5 h-3.5" /> 10% loyalty discount applied
+                            </p>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const current = parseFloat(String(field.value));
+                                if (!isFinite(current) || current <= 0) {
+                                  toast({ title: "Enter a price first", description: "Type the quoted price, then apply the discount." });
+                                  return;
+                                }
+                                field.onChange((Math.round(current * 0.9 * 100) / 100).toString());
+                                setDiscountApplied(true);
+                              }}
+                              className="text-xs font-semibold text-green-700 dark:text-green-400 border border-green-300 dark:border-green-800 bg-green-50 dark:bg-green-950/30 rounded-full px-3 py-1 hover:bg-green-100 dark:hover:bg-green-900/40 transition-colors"
+                            >
+                              Apply 10% loyalty discount
+                            </button>
+                          )
+                        )}
                         <FormMessage />
                       </FormItem>
                     )} />
