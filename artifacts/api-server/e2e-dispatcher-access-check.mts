@@ -1,0 +1,180 @@
+/**
+ * End-to-end regression check for dispatcher access management
+ * (routes/dispatchers.ts + lib/callerRole.ts).
+ *
+ * Runs the same flow that was verified manually: creates/reuses a
+ * +clerk_test Clerk user, mints real session tokens via the Clerk backend
+ * API, and exercises /api/dispatchers on the running dev server:
+ *   - 403 before grant
+ *   - 201 on grant
+ *   - 200 after grant
+ *   - 403 after revoke
+ *   - 409 when removing the last dispatcher
+ *
+ * Cleanup: the allowlist is snapshotted up-front and restored in `finally`,
+ * so the table always returns to its prior state (owner can't be locked out).
+ *
+ * Requirements: dev API server running on port 8080, CLERK_SECRET_KEY set.
+ * Run: npx tsx e2e-dispatcher-access-check.mts  (from artifacts/api-server)
+ */
+import { eq, inArray } from "drizzle-orm";
+import { db, dispatcherAllowlistTable } from "@workspace/db";
+
+const API_BASE = process.env.E2E_API_BASE ?? "http://127.0.0.1:8080/api";
+const CLERK_API = "https://api.clerk.com";
+const SECRET = process.env.CLERK_SECRET_KEY;
+if (!SECRET) {
+  console.error("FAIL: CLERK_SECRET_KEY is not set");
+  process.exit(1);
+}
+
+const TEST_EMAIL = "dispatcher-e2e+clerk_test@example.com";
+
+let failures = 0;
+function check(name: string, ok: boolean, detail?: string) {
+  console.log(`${ok ? "PASS" : "FAIL"}: ${name}${detail ? ` — ${detail}` : ""}`);
+  if (!ok) failures++;
+}
+
+async function clerk(path: string, init?: RequestInit): Promise<any> {
+  const res = await fetch(`${CLERK_API}${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${SECRET}`,
+      "Content-Type": "application/json",
+      ...(init?.headers ?? {}),
+    },
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(`Clerk ${init?.method ?? "GET"} ${path} → ${res.status}: ${JSON.stringify(body)}`);
+  }
+  return body;
+}
+
+/** Create or reuse the +clerk_test user and return its Clerk user ID. */
+async function ensureTestUser(): Promise<string> {
+  const existing = await clerk(`/v1/users?email_address=${encodeURIComponent(TEST_EMAIL)}`);
+  if (Array.isArray(existing) && existing.length > 0) return existing[0].id;
+  const created = await clerk(`/v1/users`, {
+    method: "POST",
+    body: JSON.stringify({
+      email_address: [TEST_EMAIL],
+      first_name: "Dispatcher",
+      last_name: "E2E Check",
+      skip_password_requirement: true,
+    }),
+  });
+  return created.id;
+}
+
+/** Mint a fresh session JWT for a user via the Clerk backend API. */
+async function mintToken(userId: string): Promise<string> {
+  const session = await clerk(`/v1/sessions`, {
+    method: "POST",
+    body: JSON.stringify({ user_id: userId }),
+  });
+  const token = await clerk(`/v1/sessions/${session.id}/tokens`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+  return token.jwt;
+}
+
+async function api(method: string, path: string, jwt: string, body?: unknown) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${jwt}`,
+      "Content-Type": "application/json",
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  return res;
+}
+
+// ---------------------------------------------------------------------------
+
+// Snapshot the allowlist so we can always restore it, no matter what fails.
+const snapshot = await db.select().from(dispatcherAllowlistTable);
+if (snapshot.length === 0) {
+  console.error("FAIL: dispatcher_allowlist is empty — cannot run (no dispatcher to act as)");
+  process.exit(1);
+}
+
+const testUserId = await ensureTestUser();
+console.log(`Test Clerk user: ${testUserId} (${TEST_EMAIL})`);
+
+// Pick an existing dispatcher (not the test user) to act as the admin caller.
+const admin = snapshot.find((r) => r.clerkUserId !== testUserId);
+if (!admin) {
+  console.error("FAIL: the only dispatcher is the test user — refusing to run");
+  process.exit(1);
+}
+
+try {
+  // Make sure the test user starts outside the allowlist.
+  await db
+    .delete(dispatcherAllowlistTable)
+    .where(eq(dispatcherAllowlistTable.clerkUserId, testUserId));
+
+  const adminJwt = await mintToken(admin.clerkUserId);
+  let testJwt = await mintToken(testUserId);
+
+  // 1. 403 before grant
+  const before = await api("GET", "/dispatchers", testJwt);
+  check("403 before grant", before.status === 403, `status=${before.status}`);
+
+  // 2. 201 on grant (by an existing dispatcher)
+  const grant = await api("POST", "/dispatchers", adminJwt, { clerkUserId: testUserId });
+  check("201 on grant", grant.status === 201, `status=${grant.status}`);
+
+  // 3. 200 after grant (fresh token — session tokens expire in ~60s)
+  testJwt = await mintToken(testUserId);
+  const after = await api("GET", "/dispatchers", testJwt);
+  check("200 after grant", after.status === 200, `status=${after.status}`);
+  if (after.status === 200) {
+    const list = await after.json();
+    check(
+      "granted user appears in dispatcher list",
+      Array.isArray(list) && list.some((d: any) => d.clerkUserId === testUserId),
+    );
+  }
+
+  // 4. revoke, then 403
+  const revoke = await api("DELETE", `/dispatchers/${testUserId}`, adminJwt);
+  check("revoke succeeds", revoke.status === 200, `status=${revoke.status}`);
+  testJwt = await mintToken(testUserId);
+  const afterRevoke = await api("GET", "/dispatchers", testJwt);
+  check("403 after revoke", afterRevoke.status === 403, `status=${afterRevoke.status}`);
+
+  // 5. 409 when removing the last dispatcher.
+  // Make the test user the ONLY dispatcher (real rows are restored in finally),
+  // then have them try to remove themselves — the guard must refuse.
+  await db.delete(dispatcherAllowlistTable);
+  await db.insert(dispatcherAllowlistTable).values({ clerkUserId: testUserId });
+  testJwt = await mintToken(testUserId);
+  const last = await api("DELETE", `/dispatchers/${testUserId}`, testJwt);
+  check("409 removing the last dispatcher", last.status === 409, `status=${last.status}`);
+  const stillThere = await db
+    .select()
+    .from(dispatcherAllowlistTable)
+    .where(eq(dispatcherAllowlistTable.clerkUserId, testUserId));
+  check("last dispatcher row was NOT deleted", stillThere.length === 1);
+} finally {
+  // Restore the allowlist exactly as it was before the run.
+  await db.delete(dispatcherAllowlistTable);
+  if (snapshot.length > 0) {
+    await db.insert(dispatcherAllowlistTable).values(snapshot).onConflictDoNothing();
+  }
+  const restored = await db.select().from(dispatcherAllowlistTable);
+  const restoredIds = new Set(restored.map((r) => r.clerkUserId));
+  const ok =
+    restored.length === snapshot.length &&
+    snapshot.every((r) => restoredIds.has(r.clerkUserId)) &&
+    !(!snapshot.some((r) => r.clerkUserId === testUserId) && restoredIds.has(testUserId));
+  check("allowlist restored to prior state", ok);
+}
+
+console.log(failures === 0 ? "\nALL CHECKS PASSED" : `\n${failures} CHECK(S) FAILED`);
+process.exit(failures === 0 ? 0 : 1);

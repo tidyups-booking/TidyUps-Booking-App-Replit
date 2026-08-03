@@ -11,6 +11,26 @@ env = { "CI" = "true" }
 [workflows]
 runButton = "Project"
 
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "dispatcher-access-e2e"
+
+[[workflows.workflow]]
+name = "dispatcher-access-e2e"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd artifacts/api-server && pnpm exec tsx e2e-dispatcher-access-check.mts"
+
+[workflows.workflow.metadata]
+isValidation = true
+
 [agent]
 stack = "PNPM_WORKSPACE"
 expertMode = true
