@@ -9,6 +9,7 @@
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { getStoredTokens, jobberGQL } from "./jobber.js";
+import { geocodeToCoords, NO_ADDRESS_PLACEHOLDER } from "./geocode.js";
 import { logger } from "../lib/logger.js";
 
 // ── Date helpers (America/Edmonton, DST-aware) ────────────────────────────────
@@ -136,13 +137,47 @@ async function upsertJobberJob(job: JobberJob): Promise<boolean> {
   const lastName = job.client?.lastName ?? "Job";
   const phone = job.client?.phone ?? "";
   const email = job.client?.email ?? null;
-  const street = job.property?.address?.street ?? "Address not provided";
+  const street = job.property?.address?.street ?? NO_ADDRESS_PLACEHOLDER;
   const city = job.property?.address?.city ?? "Edmonton";
   const province = job.property?.address?.province ?? "AB";
   const postalCode = job.property?.address?.postalCode ?? null;
 
+  // Geocode once at sync time so map pins render instantly, without the
+  // client falling back to throttled Nominatim lookups. Only call the API
+  // when needed: new booking, address changed, or coords still missing.
+  // Geocode failures never block the upsert — coords stay null and the
+  // client-side fallback (plus the next sync) covers it.
+  let coords: { lat: number; lng: number } | null = null;
+  try {
+    const existing = await db.execute<{
+      address: string;
+      city: string;
+      address_lat: number | null;
+    }>(sql`
+      SELECT address, city, address_lat FROM bookings
+      WHERE jobber_synced_job_id = ${job.id}
+    `);
+    const row = existing.rows[0];
+    const needsGeocode =
+      !row ||
+      row.address_lat == null ||
+      row.address !== street ||
+      row.city !== city;
+    if (needsGeocode) {
+      coords = await geocodeToCoords(street, city, province, postalCode);
+    }
+  } catch (geoErr: any) {
+    logger.warn(
+      { err: geoErr.message, jobId: job.id },
+      "Jobber sync: geocoding step failed — continuing without coords"
+    );
+  }
+
   // Raw SQL upsert on jobber_synced_job_id to avoid stale Drizzle types.
   // ON CONFLICT uses the unique index created in migration 002.
+  // Coordinate columns: prefer freshly geocoded values; otherwise keep the
+  // existing coords only while the address is unchanged (an address change
+  // with a failed geocode must not leave a stale pin location).
   await db.execute(sql`
     INSERT INTO bookings (
       first_name, last_name, phone, email,
@@ -150,14 +185,16 @@ async function upsertJobberJob(job: JobberJob): Promise<boolean> {
       service_type, bedrooms, bathrooms, extras,
       scheduled_date, scheduled_time,
       frequency, status,
-      jobber_synced_job_id, jobber_sync_status
+      jobber_synced_job_id, jobber_sync_status,
+      address_lat, address_lng
     ) VALUES (
       ${firstName}, ${lastName}, ${phone}, ${email},
       ${street}, ${city}, ${province}, ${postalCode},
       'standard_clean', 2, 1, '{}',
       ${date}, ${time},
       'one_time', 'confirmed',
-      ${job.id}, 'synced'
+      ${job.id}, 'synced',
+      ${coords?.lat ?? null}, ${coords?.lng ?? null}
     )
     ON CONFLICT (jobber_synced_job_id) DO UPDATE SET
       first_name         = EXCLUDED.first_name,
@@ -171,7 +208,17 @@ async function upsertJobberJob(job: JobberJob): Promise<boolean> {
       scheduled_date     = EXCLUDED.scheduled_date,
       scheduled_time     = EXCLUDED.scheduled_time,
       status             = EXCLUDED.status,
-      jobber_sync_status = 'synced'
+      jobber_sync_status = 'synced',
+      address_lat = COALESCE(
+        EXCLUDED.address_lat,
+        CASE WHEN bookings.address = EXCLUDED.address AND bookings.city = EXCLUDED.city
+             THEN bookings.address_lat END
+      ),
+      address_lng = COALESCE(
+        EXCLUDED.address_lng,
+        CASE WHEN bookings.address = EXCLUDED.address AND bookings.city = EXCLUDED.city
+             THEN bookings.address_lng END
+      )
   `);
   return true;
 }
