@@ -1,7 +1,12 @@
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { type Response } from "express";
 import { getAuth, clerkClient } from "@clerk/express";
-import { db, staffTable, dispatcherAllowlistTable } from "@workspace/db";
+import {
+  db,
+  staffTable,
+  dispatcherAllowlistTable,
+  dispatcherInvitesTable,
+} from "@workspace/db";
 
 /**
  * Caller roles in the system
@@ -53,20 +58,29 @@ export async function resolveCallerRole(callerId: string): Promise<CallerRole> {
 }
 
 /**
- * Environment-portable dispatcher bootstrap.
+ * Email-based dispatcher bootstrap. Two sources of matching emails:
  *
- * Clerk user IDs differ between development and production (separate user
- * stores), so an allowlist seeded in one environment does not carry over to
- * the other — which locks the owner out of the deployed app. To fix this,
- * `DISPATCHER_EMAILS` (comma-separated) names owner emails that always get
- * dispatcher access: when an authenticated caller is not in the allowlist,
- * we check their VERIFIED Clerk emails against the list and, on match,
- * insert them into `dispatcher_allowlist` (self-healing, one-time per user).
+ * 1. `DISPATCHER_EMAILS` env (comma-separated) — environment-portable owner
+ *    rescue list. Clerk user IDs differ between development and production
+ *    (separate user stores), so an allowlist seeded in one environment does
+ *    not carry over to the other — which locks the owner out of the deployed
+ *    app. Emails on this list always get dispatcher access.
  *
- * Unmatched callers are cached per process so repeated denied requests do
- * not hammer the Clerk API.
+ * 2. `dispatcher_invites` rows — pending invites created by a dispatcher
+ *    from the Staff page ("add by name + email"). Claiming an invite also
+ *    stamps `claimed_at`/`claimed_clerk_user_id` so it disappears from the
+ *    pending list.
+ *
+ * In both cases only VERIFIED Clerk emails count (verification is what
+ * proves the caller owns the address), and on match the caller is inserted
+ * into `dispatcher_allowlist` (self-healing, one-time per user).
+ *
+ * Unmatched callers are negative-cached with a short TTL so repeated denied
+ * requests do not hammer the Clerk API, while a freshly created invite still
+ * takes effect within a minute for someone who signed in too early.
  */
-const bootstrapCheckedCallers = new Set<string>();
+const BOOTSTRAP_RECHECK_MS = 60_000;
+const bootstrapNegativeCache = new Map<string, number>();
 
 async function tryBootstrapDispatcherByEmail(callerId: string): Promise<CallerRole> {
   const denied: CallerRole = { role: "denied", staffId: null };
@@ -75,8 +89,19 @@ async function tryBootstrapDispatcherByEmail(callerId: string): Promise<CallerRo
     .split(",")
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean);
-  if (bootstrapEmails.length === 0) return denied;
-  if (bootstrapCheckedCallers.has(callerId)) return denied;
+
+  // Pending invites live in our own DB, so this check is cheap and always fresh.
+  const pendingInvites = await db
+    .select({ id: dispatcherInvitesTable.id, email: dispatcherInvitesTable.email })
+    .from(dispatcherInvitesTable)
+    .where(isNull(dispatcherInvitesTable.claimedAt));
+
+  if (bootstrapEmails.length === 0 && pendingInvites.length === 0) return denied;
+
+  const checkedAt = bootstrapNegativeCache.get(callerId);
+  if (checkedAt !== undefined && Date.now() - checkedAt < BOOTSTRAP_RECHECK_MS) {
+    return denied;
+  }
 
   try {
     const user = await clerkClient.users.getUser(callerId);
@@ -85,20 +110,76 @@ async function tryBootstrapDispatcherByEmail(callerId: string): Promise<CallerRo
       .filter((e) => e.verification?.status === "verified")
       .map((e) => e.emailAddress.toLowerCase());
 
-    if (!verifiedEmails.some((e) => bootstrapEmails.includes(e))) {
-      // Confirmed nonmatch — cache so future denied requests skip the Clerk
-      // call. Matching callers are never cached: once the allowlist insert
-      // succeeds they resolve via the allowlist, and if the insert fails
-      // transiently they stay retryable on the next request.
-      bootstrapCheckedCallers.add(callerId);
+    const matchesEnv = verifiedEmails.some((e) => bootstrapEmails.includes(e));
+    const matchedInvite = pendingInvites.find((inv) =>
+      verifiedEmails.includes(inv.email.toLowerCase()),
+    );
+
+    if (!matchesEnv && !matchedInvite) {
+      // Confirmed nonmatch — negative-cache with a TTL so future denied
+      // requests skip the Clerk call for a while. Matching callers are never
+      // cached: once the allowlist insert succeeds they resolve via the
+      // allowlist, and if the insert fails transiently they stay retryable.
+      bootstrapNegativeCache.set(callerId, Date.now());
       return denied;
     }
 
-    await db
-      .insert(dispatcherAllowlistTable)
-      .values({ clerkUserId: callerId })
-      .onConflictDoNothing();
-    console.log(`[callerRole] bootstrapped dispatcher access for ${callerId} via DISPATCHER_EMAILS`);
+    if (matchesEnv) {
+      // Env-listed owner emails grant unconditionally.
+      await db
+        .insert(dispatcherAllowlistTable)
+        .values({ clerkUserId: callerId })
+        .onConflictDoNothing();
+      // Tidy up: a pending invite for the same email can't be left behind,
+      // or it would re-grant access after a later revocation.
+      if (matchedInvite) {
+        await db
+          .update(dispatcherInvitesTable)
+          .set({ claimedAt: new Date(), claimedClerkUserId: callerId })
+          .where(
+            and(
+              eq(dispatcherInvitesTable.id, matchedInvite.id),
+              isNull(dispatcherInvitesTable.claimedAt),
+            ),
+          );
+      }
+      console.log(`[callerRole] bootstrapped dispatcher access for ${callerId} via DISPATCHER_EMAILS`);
+      return { role: "dispatcher", staffId: null };
+    }
+
+    // Invite-only match: the caller must WIN the claim before any access is
+    // granted. The conditional UPDATE and the allowlist insert run in one
+    // transaction, so a concurrent revoke (DELETE) or competing claim makes
+    // the UPDATE affect zero rows and NO access is granted — an invite
+    // revoked mid-sign-in can never leak dispatcher privileges.
+    const granted = await db.transaction(async (tx) => {
+      const claimed = await tx
+        .update(dispatcherInvitesTable)
+        .set({ claimedAt: new Date(), claimedClerkUserId: callerId })
+        .where(
+          and(
+            eq(dispatcherInvitesTable.id, matchedInvite!.id),
+            isNull(dispatcherInvitesTable.claimedAt),
+          ),
+        )
+        .returning({ id: dispatcherInvitesTable.id });
+      if (claimed.length === 0) return false;
+      await tx
+        .insert(dispatcherAllowlistTable)
+        .values({ clerkUserId: callerId })
+        .onConflictDoNothing();
+      return true;
+    });
+
+    if (!granted) {
+      // The invite vanished between the read and the claim. If this same
+      // caller already claimed it in a concurrent request, the allowlist
+      // row exists and the next resolveCallerRole call grants normally.
+      bootstrapNegativeCache.set(callerId, Date.now());
+      return denied;
+    }
+
+    console.log(`[callerRole] dispatcher invite claimed by ${callerId}`);
     return { role: "dispatcher", staffId: null };
   } catch (err) {
     // Transient Clerk failure — do NOT cache, so the next request retries.

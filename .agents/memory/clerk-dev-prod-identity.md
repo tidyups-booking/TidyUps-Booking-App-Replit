@@ -14,3 +14,10 @@ description: Dev and prod Clerk instances have separate user stores; anything ke
 - Use stable identifiers (verified email) to bridge environments. The api-server now has `DISPATCHER_EMAILS` (shared env, comma-separated) email bootstrap in `callerRole.ts`: on a denied caller it checks the caller's VERIFIED Clerk emails and self-heals the allowlist row. Only cache negative (nonmatch) results per process; never cache matches, so transient Clerk/DB failures stay retryable.
 - Same pattern applies to linking cleaner staff records across environments (staff.email exists for this).
 - Diagnosis shortcut: prod deployment logs showing 403 on ALL dispatcher routes for a signed-in user = identity split, not a per-feature bug.
+
+## Email-based access grants (dispatcher invites, 2026-08-04)
+
+`dispatcher_invites` extends the same email-bridging pattern to UI-managed invites ("add by name + email"). Two security rules learned here:
+- **Only VERIFIED Clerk emails may grant access** — anywhere an email grants a role (env list, invite claim, or direct-grant lookup by email). Anyone can attach an *unverified* copy of someone else's address to their own Clerk account and hijack the grant.
+- **Claim before grant, atomically.** Win the invite with a conditional `UPDATE ... WHERE claimed_at IS NULL RETURNING` in the same transaction as the allowlist insert; grant nothing if zero rows. Otherwise a revoke racing a sign-in still leaks access. Also close out pending invites when access is granted another way, or a stale invite re-grants after a later revocation.
+- Negative caching of denied callers must have a TTL (not a permanent per-process set), or a fresh invite won't take effect for someone who signed in too early.

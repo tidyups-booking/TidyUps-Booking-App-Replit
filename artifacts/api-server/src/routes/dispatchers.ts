@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { getAuth, clerkClient } from "@clerk/express";
-import { db, dispatcherAllowlistTable } from "@workspace/db";
+import { db, dispatcherAllowlistTable, dispatcherInvitesTable } from "@workspace/db";
 import { guardDispatcher } from "../lib/callerRole.js";
 
 const router: IRouter = Router();
@@ -94,6 +94,128 @@ router.get("/dispatchers/clerk-users", async (req, res): Promise<void> => {
     console.error("[dispatchers] failed to list Clerk users:", err);
     res.status(502).json({ error: "Failed to list users from Clerk" });
   }
+});
+
+// ---------------------------------------------------------------------------
+// Email invites — add a dispatcher by name + email.
+//
+// If a Clerk account already owns that email VERIFIED, access is granted
+// immediately (no invite row). Otherwise a pending invite is stored and the
+// person gets dispatcher access automatically the first time they sign in
+// with that email verified on their account (bootstrap in lib/callerRole.ts).
+// Only verified emails count in both paths: otherwise anyone could attach an
+// unverified copy of an expected invitee's address to their own account and
+// hijack the invite.
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// GET /dispatchers/invites — list pending (unclaimed) invites
+router.get("/dispatchers/invites", async (req, res): Promise<void> => {
+  if (await guardDispatcher(req, res)) return;
+
+  const rows = await db
+    .select()
+    .from(dispatcherInvitesTable)
+    .where(isNull(dispatcherInvitesTable.claimedAt))
+    .orderBy(dispatcherInvitesTable.createdAt);
+  res.json(rows);
+});
+
+// POST /dispatchers/invites — add a dispatcher by name + email
+router.post("/dispatchers/invites", async (req, res): Promise<void> => {
+  if (await guardDispatcher(req, res)) return;
+
+  const email =
+    typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+  const nameRaw = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+  const name = nameRaw.slice(0, 100) || null;
+
+  if (!email || email.length > 254 || !EMAIL_RE.test(email)) {
+    res.status(400).json({ error: "A valid email address is required" });
+    return;
+  }
+
+  // If a Clerk account already owns this address VERIFIED, grant access now.
+  let owner: { id: string } | undefined;
+  try {
+    const { data: owners } = await clerkClient.users.getUserList({
+      emailAddress: [email],
+    });
+    owner = owners.find((u) =>
+      u.emailAddresses.some(
+        (e) =>
+          e.emailAddress.toLowerCase() === email &&
+          e.verification?.status === "verified",
+      ),
+    );
+    if (owner) {
+      const ownerId = owner.id;
+      const [row] = await db
+        .insert(dispatcherAllowlistTable)
+        .values({ clerkUserId: ownerId })
+        .onConflictDoNothing()
+        .returning();
+      // Close out any pending invite for this email either way, so a stale
+      // invite can't re-grant access after a later revocation.
+      await db
+        .update(dispatcherInvitesTable)
+        .set({ claimedAt: new Date(), claimedClerkUserId: ownerId })
+        .where(
+          and(
+            sql`lower(${dispatcherInvitesTable.email}) = ${email}`,
+            isNull(dispatcherInvitesTable.claimedAt),
+          ),
+        );
+      if (!row) {
+        res.status(409).json({ error: "This person is already a dispatcher" });
+        return;
+      }
+      res.status(201).json({ mode: "granted" });
+      return;
+    }
+  } catch (err) {
+    console.error("[dispatchers] Clerk email lookup failed:", err);
+    res.status(502).json({ error: "Couldn't check existing accounts — please try again" });
+    return;
+  }
+
+  // No account with that verified email yet — store a pending invite.
+  try {
+    const [invite] = await db
+      .insert(dispatcherInvitesTable)
+      .values({ email, name })
+      .returning();
+    res.status(201).json({ mode: "invited", invite });
+  } catch (err: any) {
+    const code = err?.code ?? err?.cause?.code;
+    if (code === "23505") {
+      res.status(409).json({ error: "This email has already been invited" });
+      return;
+    }
+    throw err;
+  }
+});
+
+// DELETE /dispatchers/invites/:id — revoke a pending invite
+router.delete("/dispatchers/invites/:id", async (req, res): Promise<void> => {
+  if (await guardDispatcher(req, res)) return;
+
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "Invalid invite id" });
+    return;
+  }
+
+  const deleted = await db
+    .delete(dispatcherInvitesTable)
+    .where(and(eq(dispatcherInvitesTable.id, id), isNull(dispatcherInvitesTable.claimedAt)))
+    .returning({ id: dispatcherInvitesTable.id });
+
+  if (deleted.length === 0) {
+    res.status(404).json({ error: "Invite not found" });
+    return;
+  }
+  res.json({ ok: true });
 });
 
 // POST /dispatchers — grant dispatcher access to a Clerk user

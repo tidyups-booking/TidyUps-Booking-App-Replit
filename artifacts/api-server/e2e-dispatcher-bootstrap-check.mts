@@ -41,8 +41,10 @@ globalThis.fetch = ((input: any, init?: any) => {
   return realFetch(input, init);
 }) as typeof fetch;
 
-const { eq, inArray } = await import("drizzle-orm");
-const { db, dispatcherAllowlistTable, staffTable } = await import("@workspace/db");
+const { eq, inArray, isNull } = await import("drizzle-orm");
+const { db, dispatcherAllowlistTable, dispatcherInvitesTable, staffTable } = await import(
+  "@workspace/db"
+);
 const { resolveCallerRole } = await import("./src/lib/callerRole.js");
 
 let failures = 0;
@@ -144,13 +146,14 @@ const VERIFIED_EMAIL = "bootstrap-verified-e2e+clerk_test@example.com";
 const UNVERIFIED_EMAIL = "bootstrap-unverified-e2e+clerk_test@example.com";
 const CLEANER_EMAIL = "bootstrap-cleaner-e2e+clerk_test@example.com";
 const NONMATCH_EMAIL = "bootstrap-nonmatch-e2e+clerk_test@example.com";
+const INVITE_EMAIL = "bootstrap-invite-e2e+clerk_test@example.com";
 
 // The bootstrap list contains the first three; NONMATCH_EMAIL is excluded.
 // Mixed case + spaces to also cover the normalization path.
 process.env.DISPATCHER_EMAILS = ` ${VERIFIED_EMAIL.toUpperCase()}, ${UNVERIFIED_EMAIL} , ${CLEANER_EMAIL}`;
 
 console.log("Setting up Clerk test users...");
-const [verifiedId, unverifiedId, cleanerId, nonmatchId] = await Promise.all([
+const [verifiedId, unverifiedId, cleanerId, nonmatchId, inviteId] = await Promise.all([
   ensureUser(VERIFIED_EMAIL),
   ensureUnverifiedMatchUser(
     UNVERIFIED_EMAIL,
@@ -158,9 +161,12 @@ const [verifiedId, unverifiedId, cleanerId, nonmatchId] = await Promise.all([
   ),
   ensureUser(CLEANER_EMAIL),
   ensureUser(NONMATCH_EMAIL),
+  ensureUser(INVITE_EMAIL),
 ]);
-const allIds = [verifiedId, unverifiedId, cleanerId, nonmatchId];
-console.log(`verified=${verifiedId} unverified=${unverifiedId} cleaner=${cleanerId} nonmatch=${nonmatchId}\n`);
+const allIds = [verifiedId, unverifiedId, cleanerId, nonmatchId, inviteId];
+console.log(
+  `verified=${verifiedId} unverified=${unverifiedId} cleaner=${cleanerId} nonmatch=${nonmatchId} invite=${inviteId}\n`,
+);
 
 async function allowlistRow(id: string) {
   return db
@@ -246,7 +252,8 @@ try {
   check("no allowlist row created for non-matching user", nonmatchRow.length === 0);
 
   // ------------------------------------------------------------------
-  // 5. Empty DISPATCHER_EMAILS short-circuits without any Clerk call.
+  // 5. Empty DISPATCHER_EMAILS (and no pending invites) short-circuits
+  //    without any Clerk call.
   console.log("\n5. Empty DISPATCHER_EMAILS short-circuits:");
   process.env.DISPATCHER_EMAILS = "";
   // Matching users are never negative-cached, so removing the verified
@@ -254,15 +261,75 @@ try {
   await db
     .delete(dispatcherAllowlistTable)
     .where(eq(dispatcherAllowlistTable.clerkUserId, verifiedId));
+  // Stray invites from earlier runs would defeat the short-circuit; clear ours.
+  await db.delete(dispatcherInvitesTable).where(eq(dispatcherInvitesTable.email, INVITE_EMAIL));
+  const pendingCount = (
+    await db
+      .select({ id: dispatcherInvitesTable.id })
+      .from(dispatcherInvitesTable)
+      .where(isNull(dispatcherInvitesTable.claimedAt))
+  ).length;
   const callsBeforeEmpty = clerkApiCalls;
   const r5 = await resolveCallerRole(verifiedId);
   check("denied when DISPATCHER_EMAILS is empty", r5.role === "denied", `role=${r5.role}`);
-  check("no Clerk call when DISPATCHER_EMAILS is empty", clerkApiCalls === callsBeforeEmpty);
+  if (pendingCount === 0) {
+    check("no Clerk call when DISPATCHER_EMAILS is empty", clerkApiCalls === callsBeforeEmpty);
+  } else {
+    console.log(
+      `SKIP: no-Clerk-call assertion (${pendingCount} real pending invite(s) exist in this DB)`,
+    );
+  }
+
+  // ------------------------------------------------------------------
+  // 6. Pending invite (added by name + email) grants access on sign-in and
+  //    is marked claimed — works even with DISPATCHER_EMAILS empty.
+  console.log("\n6. Pending invite claim flow:");
+  await db
+    .delete(dispatcherAllowlistTable)
+    .where(eq(dispatcherAllowlistTable.clerkUserId, inviteId));
+  await db
+    .insert(dispatcherInvitesTable)
+    .values({ email: INVITE_EMAIL, name: "Invite E2E Check" });
+  const r6 = await resolveCallerRole(inviteId);
+  check("invited user gets dispatcher role on first sign-in", r6.role === "dispatcher", `role=${r6.role}`);
+  const invitedRow = await allowlistRow(inviteId);
+  check("allowlist row created for invited user", invitedRow.length === 1);
+  const claimed = await db
+    .select()
+    .from(dispatcherInvitesTable)
+    .where(eq(dispatcherInvitesTable.email, INVITE_EMAIL));
+  check(
+    "invite marked claimed with the claimer's user id",
+    claimed.length === 1 &&
+      claimed[0].claimedAt !== null &&
+      claimed[0].claimedClerkUserId === inviteId,
+  );
+  const r6b = await resolveCallerRole(inviteId);
+  check("still dispatcher on subsequent request", r6b.role === "dispatcher", `role=${r6b.role}`);
+
+  // ------------------------------------------------------------------
+  // 7. A revoked invite grants nothing: deleting the pending invite before
+  //    the claim leaves the caller denied with no allowlist row.
+  console.log("\n7. Revoked invite grants nothing:");
+  await db
+    .delete(dispatcherAllowlistTable)
+    .where(eq(dispatcherAllowlistTable.clerkUserId, inviteId));
+  await db.delete(dispatcherInvitesTable).where(eq(dispatcherInvitesTable.email, INVITE_EMAIL));
+  // Recreate then immediately revoke, as a dispatcher would from the UI.
+  await db
+    .insert(dispatcherInvitesTable)
+    .values({ email: INVITE_EMAIL, name: "Invite E2E Check (revoked)" });
+  await db.delete(dispatcherInvitesTable).where(eq(dispatcherInvitesTable.email, INVITE_EMAIL));
+  const r7 = await resolveCallerRole(inviteId);
+  check("user with revoked invite stays denied", r7.role === "denied", `role=${r7.role}`);
+  const revokedRow = await allowlistRow(inviteId);
+  check("no allowlist row created after revoked invite", revokedRow.length === 0);
 } finally {
   // Remove every row this script may have created.
   await db
     .delete(dispatcherAllowlistTable)
     .where(inArray(dispatcherAllowlistTable.clerkUserId, allIds));
+  await db.delete(dispatcherInvitesTable).where(eq(dispatcherInvitesTable.email, INVITE_EMAIL));
   if (tempStaffId !== null) {
     await db.delete(staffTable).where(eq(staffTable.id, tempStaffId));
   }
