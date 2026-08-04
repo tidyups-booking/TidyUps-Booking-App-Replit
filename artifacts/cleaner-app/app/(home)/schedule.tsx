@@ -15,6 +15,7 @@ import { useGetStaffSchedule } from '@workspace/api-client-react';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useUser } from '@clerk/expo';
 import { useColors } from '@/hooks/useColors';
 import { useStaff } from '@/context/StaffContext';
 import { JobCard } from '@/components/JobCard';
@@ -32,6 +33,8 @@ export default function ScheduleScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { staffId, isLoaded: staffLoaded, refetch: refetchStaff } = useStaff();
+  const { user } = useUser();
+  const signedInEmail = user?.primaryEmailAddress?.emailAddress ?? null;
   const today = useMemo(() => new Date().toISOString().split('T')[0], []);
 
   const { data: jobs = [], isLoading, isError, refetch } = useGetStaffSchedule(
@@ -92,10 +95,15 @@ export default function ScheduleScreen() {
             Account not linked
           </Text>
           <Text style={[styles.emptySub, { color: colors.mutedForeground, fontFamily: 'Poppins_400Regular' }]}>
-            Make sure you signed in with the same email your dispatcher has on
-            file — accounts connect automatically. If it still doesn't work,
-            ask your dispatcher to add your email to your staff record.
+            Your account was created, but it isn't connected to a staff record
+            yet. Ask your dispatcher to add this email to your staff record,
+            then tap Check again:
           </Text>
+          {signedInEmail && (
+            <Text style={[styles.emptyEmail, { color: colors.foreground, fontFamily: 'Poppins_600SemiBold' }]}>
+              {signedInEmail}
+            </Text>
+          )}
           <Pressable
             style={[styles.retryBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}
             onPress={() => refetchStaff()}
@@ -192,6 +200,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { fontSize: 18, textAlign: 'center' },
   emptySub: { fontSize: 14, textAlign: 'center', lineHeight: 21 },
+  emptyEmail: { fontSize: 15, textAlign: 'center', marginTop: 10 },
   retryBtn: {
     marginTop: 6,
     paddingHorizontal: 22,
