@@ -20,4 +20,8 @@ export const dispatcherInvitesTable = pgTable("dispatcher_invites", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   claimedAt: timestamp("claimed_at", { withTimezone: true }),
   claimedClerkUserId: text("claimed_clerk_user_id"),
+  // Clerk backend invitation id (inv_...) for the sign-up email we sent, so
+  // revoking the invite can also revoke the emailed link. NULL if the email
+  // failed to send (invite still works via manual sign-up).
+  clerkInvitationId: text("clerk_invitation_id"),
 });

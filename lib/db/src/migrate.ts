@@ -322,6 +322,14 @@ const MIGRATIONS: { name: string; sql: string }[] = [
         WHERE claimed_at IS NULL;
     `,
   },
+  {
+    // Mirrors lib/db/migrations/014_add_invite_clerk_invitation_id.sql.
+    name: "014_add_invite_clerk_invitation_id",
+    sql: `
+      ALTER TABLE dispatcher_invites
+        ADD COLUMN IF NOT EXISTS clerk_invitation_id TEXT;
+    `,
+  },
 ];
 
 /**

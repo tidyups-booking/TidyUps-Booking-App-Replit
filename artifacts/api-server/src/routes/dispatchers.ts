@@ -109,6 +109,100 @@ router.get("/dispatchers/clerk-users", async (req, res): Promise<void> => {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/**
+ * Where the invitation email's sign-up link should land. Clerk's dev and
+ * prod instances have separate user stores, so the link must point at the
+ * SAME environment that sent it: in production that's the live site
+ * (bookcleaning.app), in development the .replit.dev preview domain.
+ */
+function inviteRedirectUrl(): string {
+  if (process.env.REPLIT_DEPLOYMENT === "1") {
+    const host = process.env.PRODUCTION_HOST ?? "bookcleaning.app";
+    return `https://${host}/`;
+  }
+  const devDomain = process.env.REPLIT_DOMAINS?.split(",")[0]?.trim();
+  return devDomain ? `https://${devDomain}/` : "https://bookcleaning.app/";
+}
+
+/**
+ * Send the invitation email via Clerk's backend invitations API. Failures
+ * are reported to the caller (so the UI can show a note) but never block
+ * invite creation — the pending-invite bootstrap works regardless.
+ * Returns the Clerk invitation id so it can be revoked if the dispatcher
+ * invite is later removed.
+ */
+export async function sendInviteEmail(
+  email: string,
+): Promise<{ sent: boolean; invitationId: string | null }> {
+  try {
+    const invitation = await clerkClient.invitations.createInvitation({
+      emailAddress: email,
+      redirectUrl: inviteRedirectUrl(),
+      notify: true,
+      ignoreExisting: true,
+    });
+    return { sent: true, invitationId: invitation.id };
+  } catch (err) {
+    console.error(`[dispatchers] failed to send invite email to ${email}:`, err);
+    return { sent: false, invitationId: null };
+  }
+}
+
+/**
+ * Revoke the Clerk invitation whose email link is out in the wild, so a
+ * removed invite's sign-up link stops working. Best-effort: a failure is
+ * logged and surfaced to the caller but does not undo the invite removal.
+ */
+export async function revokeInviteEmail(invitationId: string): Promise<boolean> {
+  try {
+    await clerkClient.invitations.revokeInvitation(invitationId);
+    return true;
+  } catch (err) {
+    console.error(
+      `[dispatchers] failed to revoke Clerk invitation ${invitationId}:`,
+      err,
+    );
+    return false;
+  }
+}
+
+/**
+ * Persist the Clerk invitation id onto a pending invite as a state
+ * transition: the conditional UPDATE only succeeds if the invite row still
+ * exists unclaimed. If it does not (deleted or claimed concurrently while
+ * the Clerk call was in flight) — or if the DB write itself fails — the
+ * fresh Clerk invitation would become untracked and unrevocable, so it is
+ * revoked immediately instead. Returns true iff the id was persisted.
+ */
+export async function attachClerkInvitation(
+  inviteId: number,
+  invitationId: string,
+): Promise<boolean> {
+  try {
+    const updated = await db
+      .update(dispatcherInvitesTable)
+      .set({ clerkInvitationId: invitationId })
+      .where(
+        and(
+          eq(dispatcherInvitesTable.id, inviteId),
+          isNull(dispatcherInvitesTable.claimedAt),
+        ),
+      )
+      .returning({ id: dispatcherInvitesTable.id });
+    if (updated.length > 0) return true;
+    console.warn(
+      `[dispatchers] invite ${inviteId} vanished before Clerk invitation ${invitationId} could be attached — revoking the emailed link`,
+    );
+  } catch (err) {
+    console.error(
+      `[dispatchers] failed to persist Clerk invitation ${invitationId} on invite ${inviteId} — revoking the emailed link:`,
+      err,
+    );
+  }
+  await revokeInviteEmail(invitationId);
+  return false;
+}
+
 // GET /dispatchers/invites — list pending (unclaimed) invites
 router.get("/dispatchers/invites", async (req, res): Promise<void> => {
   if (await guardDispatcher(req, res)) return;
@@ -185,7 +279,23 @@ router.post("/dispatchers/invites", async (req, res): Promise<void> => {
       .insert(dispatcherInvitesTable)
       .values({ email, name })
       .returning();
-    res.status(201).json({ mode: "invited", invite });
+    // Email the invitee a sign-up link. A send failure never blocks the
+    // invite itself — access still bootstraps when they sign up manually.
+    const { sent, invitationId } = await sendInviteEmail(email);
+    let emailSent = sent;
+    if (invitationId) {
+      // Remember the Clerk invitation so removing this invite also revokes
+      // the emailed sign-up link. If the invite was already deleted/claimed
+      // concurrently (or the write fails), the invitation is revoked instead
+      // of being left as an untracked live link.
+      const attached = await attachClerkInvitation(invite.id, invitationId);
+      if (attached) {
+        invite.clerkInvitationId = invitationId;
+      } else {
+        emailSent = false;
+      }
+    }
+    res.status(201).json({ mode: "invited", invite, emailSent });
   } catch (err: any) {
     const code = err?.code ?? err?.cause?.code;
     if (code === "23505") {
@@ -209,13 +319,27 @@ router.delete("/dispatchers/invites/:id", async (req, res): Promise<void> => {
   const deleted = await db
     .delete(dispatcherInvitesTable)
     .where(and(eq(dispatcherInvitesTable.id, id), isNull(dispatcherInvitesTable.claimedAt)))
-    .returning({ id: dispatcherInvitesTable.id });
+    .returning({
+      id: dispatcherInvitesTable.id,
+      clerkInvitationId: dispatcherInvitesTable.clerkInvitationId,
+    });
 
   if (deleted.length === 0) {
     res.status(404).json({ error: "Invite not found" });
     return;
   }
-  res.json({ ok: true });
+
+  // Also revoke the emailed Clerk sign-up link, if one was sent. Even if
+  // revocation fails, no dispatcher access can leak — the pending-invite row
+  // is gone, so the bootstrap in callerRole.ts will not grant anything — but
+  // the recipient could still create a plain account from the stale link, so
+  // we surface the failure to the UI.
+  let emailRevoked = true;
+  const invitationId = deleted[0].clerkInvitationId;
+  if (invitationId) {
+    emailRevoked = await revokeInviteEmail(invitationId);
+  }
+  res.json({ ok: true, emailRevoked });
 });
 
 // POST /dispatchers — grant dispatcher access to a Clerk user

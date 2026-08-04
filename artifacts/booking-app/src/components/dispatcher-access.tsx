@@ -31,7 +31,7 @@ interface PendingInvite {
 
 type AddByEmailResult =
   | { mode: "granted" }
-  | { mode: "invited"; invite: PendingInvite };
+  | { mode: "invited"; invite: PendingInvite; emailSent?: boolean };
 
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${getBaseUrl()}api${path}`, {
@@ -94,11 +94,17 @@ export function DispatcherAccess() {
           title: "Dispatcher added",
           description: "They already had an account, so they have access right now.",
         });
+      } else if (result.emailSent) {
+        toast({
+          title: "Invite sent",
+          description:
+            "They've been emailed a sign-up link. As soon as they sign up with that email, they'll have dispatcher access automatically.",
+        });
       } else {
         toast({
-          title: "Invite saved",
+          title: "Invite saved — email couldn't be sent",
           description:
-            "As soon as they sign up on this site with that email, they'll have dispatcher access automatically.",
+            "The invite is stored, but the notification email failed. Ask them to sign up on this site with that email and they'll get access automatically.",
         });
       }
       invalidate();
@@ -113,9 +119,19 @@ export function DispatcherAccess() {
 
   const revokeInvite = useMutation({
     mutationFn: (id: number) =>
-      fetchJson<{ ok: boolean }>(`/dispatchers/invites/${id}`, { method: "DELETE" }),
-    onSuccess: () => {
-      toast({ title: "Invite removed" });
+      fetchJson<{ ok: boolean; emailRevoked?: boolean }>(`/dispatchers/invites/${id}`, {
+        method: "DELETE",
+      }),
+    onSuccess: (result) => {
+      if (result.emailRevoked === false) {
+        toast({
+          title: "Invite removed",
+          description:
+            "The emailed sign-up link couldn't be cancelled, but they will not get dispatcher access from it.",
+        });
+      } else {
+        toast({ title: "Invite removed" });
+      }
       invalidate();
     },
     onError: (err: Error) => {
@@ -221,8 +237,9 @@ export function DispatcherAccess() {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              If they already have an account here, they get access right away. Otherwise they'll
-              get dispatcher access automatically the first time they sign up with this email.
+              If they already have an account here, they get access right away. Otherwise we'll
+              email them a sign-up link, and they'll get dispatcher access automatically the first
+              time they sign up with this email.
             </p>
           </form>
         )}
