@@ -1,6 +1,8 @@
 # 833 Tidyups Booking App
 
-An internal quick-booking tool for 833 Tidyups home cleaning service (Edmonton, AB). Staff use it to book a new customer appointment in under 60 seconds when they call — captures customer info, address, service type, home size, date/time, price estimate, and stores it with a full dashboard.
+The operations hub for 833 Tidyups home cleaning service (Edmonton, AB), live at **https://bookcleaning.app** (autoscale, multi-instance). What started as a quick-booking tool now covers: dispatcher dashboard + fast booking form, **AI live-call panel** (Twilio answers calls, streams live transcription, AI extracts caller details in real time), **two-way Jobber sync** (bookings, edits, cancellations), **live cleaner GPS map**, a **cleaner mobile app** (Expo + Clerk), staff management, and dispatcher access control. Owner is non-technical — communicate in outcomes, not code.
+
+**Product direction:** the owner plans to sell this system to other cleaning companies via the Jobber App Marketplace as a separate multi-tenant product — see `docs/jobber-marketplace-product-blueprint.md` and `docs/prompt-new-product-app.md`.
 
 ## Run & Operate
 
@@ -41,10 +43,14 @@ An internal quick-booking tool for 833 Tidyups home cleaning service (Edmonton, 
 ## Product
 
 - Dashboard: stats (revenue, upcoming, pending, completed) + next 14 days schedule
-- New Booking: fast phone-friendly form — service type, customer info, address, home size, extras chips, date/time, frequency, price estimate, notes
+- New Booking: fast phone-friendly form — service type, customer info, address, home size, extras chips, date/time, frequency, price estimate, notes; AI field indicators auto-fill from live calls
 - All Bookings: filterable list by status
 - Booking Detail: full view + status update + delete
-- Jobber integration: `jobberJobId` field reserved for future Jobber API sync
+- **Live-call AI panel**: Twilio answers (825) 533-4317, forwards to the business line, streams audio to the API server which transcribes and extracts caller details live on the dispatcher dashboard (SSE fan-out, works across autoscale instances)
+- **Jobber integration**: two-way sync — bookings push to Jobber as client/property/request; Jobber webhooks (create/edit/cancel) flow back; OAuth connect flow in Settings
+- **Cleaner mobile app** (`artifacts/cleaner-app`): Expo + Clerk login, schedule view, GPS tracking 8AM–8PM feeding the dispatcher Live Map (Leaflet + OSM)
+- Staff management with dispatcher access control (Clerk-based, email bootstrap via `DISPATCHER_EMAILS`)
+- Public booking site with contact form + spam filtering
 
 ## User preferences
 

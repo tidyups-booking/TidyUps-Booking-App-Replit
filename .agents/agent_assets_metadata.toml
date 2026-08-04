@@ -14,3 +14,17 @@ uri = "file://docs/jobber-marketplace-product-blueprint.md"
 type = "text"
 title = "Jobber Marketplace Product Blueprint"
 description = "The full plan for turning the AI receptionist into a product other cleaning companies can install — setup wizard, multi-company changes, Jobber's listing requirements, and build order."
+
+[[outputs]]
+id = "cAOSTPVl8ktSGKln68ATG"
+uri = "file://docs/prompt-this-project.md"
+type = "text"
+title = "Prompt 1 — This Project (833 Tidyups)"
+description = "Paste-ready briefing for working in this app. (Usually not needed — the agent here auto-reads the project's briefing file.)"
+
+[[outputs]]
+id = "FTlbJ6Kv6V5cLzZ0f3Vej"
+uri = "file://docs/prompt-new-product-app.md"
+type = "text"
+title = "Prompt 2 — New Product App Kickoff"
+description = "The first message to paste into your brand-new app: full product vision, setup wizard, architecture rules, hard-won technical lessons, and build order."
