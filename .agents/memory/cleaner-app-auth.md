@@ -20,3 +20,6 @@ import { useSignUp } from '@clerk/expo/legacy';
 **Why:** Clerk v4 introduced a signals-based reactive API as the default. The legacy sub-package re-exports from `@clerk/react/legacy` and preserves the imperative `signIn.create()` / `setActive()` / `signUp.attemptEmailAddressVerification()` flow.
 
 **How to apply:** Any new Expo screen needing email+password sign-in or sign-up must use `@clerk/expo/legacy` for those two hooks. SSO via `useSSO` stays on the main `@clerk/expo` import.
+
+## Expo web screenshots come back blank
+The app gates rendering on Poppins font loading, so headless screenshots of the Expo web preview capture a white frame on EVERY route even when the app works (browser logs confirm elements render). Don't burn retries — verify via browser logs or typecheck instead.

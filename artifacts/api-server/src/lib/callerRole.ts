@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, isNotNull } from "drizzle-orm";
 import { type Response } from "express";
 import { getAuth, clerkClient } from "@clerk/express";
 import {
@@ -71,9 +71,15 @@ export async function resolveCallerRole(callerId: string): Promise<CallerRole> {
  *    stamps `claimed_at`/`claimed_clerk_user_id` so it disappears from the
  *    pending list.
  *
- * In both cases only VERIFIED Clerk emails count (verification is what
- * proves the caller owns the address), and on match the caller is inserted
- * into `dispatcher_allowlist` (self-healing, one-time per user).
+ * 3. `staff` rows with an email but no linked Clerk account — cleaner
+ *    self-service. A dispatcher creates the staff record with the cleaner's
+ *    email; when the cleaner signs up in the cleaner app with that same
+ *    email (and it is verified), their account links automatically via an
+ *    atomic UPDATE ... WHERE clerk_user_id IS NULL, so a record that was
+ *    linked or deactivated in the meantime never grants access.
+ *
+ * In all cases only VERIFIED Clerk emails count (verification is what
+ * proves the caller owns the address).
  *
  * Unmatched callers are negative-cached with a short TTL so repeated denied
  * requests do not hammer the Clerk API, while a freshly created invite still
@@ -90,13 +96,28 @@ async function tryBootstrapDispatcherByEmail(callerId: string): Promise<CallerRo
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean);
 
-  // Pending invites live in our own DB, so this check is cheap and always fresh.
-  const pendingInvites = await db
-    .select({ id: dispatcherInvitesTable.id, email: dispatcherInvitesTable.email })
-    .from(dispatcherInvitesTable)
-    .where(isNull(dispatcherInvitesTable.claimedAt));
+  // Pending invites and linkable staff live in our own DB, so these checks
+  // are cheap and always fresh.
+  const [pendingInvites, linkableStaff] = await Promise.all([
+    db
+      .select({ id: dispatcherInvitesTable.id, email: dispatcherInvitesTable.email })
+      .from(dispatcherInvitesTable)
+      .where(isNull(dispatcherInvitesTable.claimedAt)),
+    db
+      .select({ id: staffTable.id, email: staffTable.email })
+      .from(staffTable)
+      .where(
+        and(
+          isNull(staffTable.clerkUserId),
+          isNotNull(staffTable.email),
+          eq(staffTable.active, true),
+        ),
+      ),
+  ]);
 
-  if (bootstrapEmails.length === 0 && pendingInvites.length === 0) return denied;
+  if (bootstrapEmails.length === 0 && pendingInvites.length === 0 && linkableStaff.length === 0) {
+    return denied;
+  }
 
   const checkedAt = bootstrapNegativeCache.get(callerId);
   if (checkedAt !== undefined && Date.now() - checkedAt < BOOTSTRAP_RECHECK_MS) {
@@ -114,8 +135,11 @@ async function tryBootstrapDispatcherByEmail(callerId: string): Promise<CallerRo
     const matchedInvite = pendingInvites.find((inv) =>
       verifiedEmails.includes(inv.email.toLowerCase()),
     );
+    const matchedStaff = linkableStaff.find(
+      (s) => s.email && verifiedEmails.includes(s.email.trim().toLowerCase()),
+    );
 
-    if (!matchesEnv && !matchedInvite) {
+    if (!matchesEnv && !matchedInvite && !matchedStaff) {
       // Confirmed nonmatch — negative-cache with a TTL so future denied
       // requests skip the Clerk call for a while. Matching callers are never
       // cached: once the allowlist insert succeeds they resolve via the
@@ -147,40 +171,79 @@ async function tryBootstrapDispatcherByEmail(callerId: string): Promise<CallerRo
       return { role: "dispatcher", staffId: null };
     }
 
-    // Invite-only match: the caller must WIN the claim before any access is
-    // granted. The conditional UPDATE and the allowlist insert run in one
-    // transaction, so a concurrent revoke (DELETE) or competing claim makes
-    // the UPDATE affect zero rows and NO access is granted — an invite
-    // revoked mid-sign-in can never leak dispatcher privileges.
-    const granted = await db.transaction(async (tx) => {
-      const claimed = await tx
-        .update(dispatcherInvitesTable)
-        .set({ claimedAt: new Date(), claimedClerkUserId: callerId })
-        .where(
-          and(
-            eq(dispatcherInvitesTable.id, matchedInvite!.id),
-            isNull(dispatcherInvitesTable.claimedAt),
-          ),
-        )
-        .returning({ id: dispatcherInvitesTable.id });
-      if (claimed.length === 0) return false;
-      await tx
-        .insert(dispatcherAllowlistTable)
-        .values({ clerkUserId: callerId })
-        .onConflictDoNothing();
-      return true;
-    });
+    if (matchedInvite) {
+      // Invite match: the caller must WIN the claim before any access is
+      // granted. The conditional UPDATE and the allowlist insert run in one
+      // transaction, so a concurrent revoke (DELETE) or competing claim makes
+      // the UPDATE affect zero rows and NO access is granted — an invite
+      // revoked mid-sign-in can never leak dispatcher privileges.
+      const granted = await db.transaction(async (tx) => {
+        const claimed = await tx
+          .update(dispatcherInvitesTable)
+          .set({ claimedAt: new Date(), claimedClerkUserId: callerId })
+          .where(
+            and(
+              eq(dispatcherInvitesTable.id, matchedInvite.id),
+              isNull(dispatcherInvitesTable.claimedAt),
+            ),
+          )
+          .returning({ id: dispatcherInvitesTable.id });
+        if (claimed.length === 0) return false;
+        await tx
+          .insert(dispatcherAllowlistTable)
+          .values({ clerkUserId: callerId })
+          .onConflictDoNothing();
+        return true;
+      });
 
-    if (!granted) {
-      // The invite vanished between the read and the claim. If this same
-      // caller already claimed it in a concurrent request, the allowlist
-      // row exists and the next resolveCallerRole call grants normally.
+      if (!granted) {
+        // The invite vanished between the read and the claim. If this same
+        // caller already claimed it in a concurrent request, the allowlist
+        // row exists and the next resolveCallerRole call grants normally.
+        bootstrapNegativeCache.set(callerId, Date.now());
+        return denied;
+      }
+
+      console.log(`[callerRole] dispatcher invite claimed by ${callerId}`);
+      return { role: "dispatcher", staffId: null };
+    }
+
+    // Staff-email self-link (cleaner self-service): the caller signed up with
+    // an email a dispatcher put on an unlinked, active staff record. The link
+    // is a conditional UPDATE — if the record was linked to someone else or
+    // deactivated in the meantime, zero rows update and nothing is granted.
+    const linked = await db
+      .update(staffTable)
+      .set({ clerkUserId: callerId })
+      .where(
+        and(
+          eq(staffTable.id, matchedStaff!.id),
+          isNull(staffTable.clerkUserId),
+          eq(staffTable.active, true),
+        ),
+      )
+      .returning({ id: staffTable.id });
+
+    if (linked.length === 0) {
+      // Two first-sign-in requests from the SAME user can race here: both see
+      // the unlinked row, one UPDATE wins, the other updates zero rows. If the
+      // row now belongs to this caller, treat it as the same success instead
+      // of denying (which would negative-cache a freshly linked account).
+      const [nowLinked] = await db
+        .select({ id: staffTable.id })
+        .from(staffTable)
+        .where(
+          and(eq(staffTable.id, matchedStaff!.id), eq(staffTable.clerkUserId, callerId)),
+        );
+      if (nowLinked) {
+        return { role: "cleaner", staffId: nowLinked.id };
+      }
       bootstrapNegativeCache.set(callerId, Date.now());
       return denied;
     }
 
-    console.log(`[callerRole] dispatcher invite claimed by ${callerId}`);
-    return { role: "dispatcher", staffId: null };
+    console.log(`[callerRole] staff record ${linked[0].id} self-linked by ${callerId}`);
+    return { role: "cleaner", staffId: linked[0].id };
   } catch (err) {
     // Transient Clerk failure — do NOT cache, so the next request retries.
     console.warn("[callerRole] dispatcher email bootstrap check failed:", err);

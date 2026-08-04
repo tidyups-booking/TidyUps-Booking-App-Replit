@@ -416,6 +416,9 @@ export default function StaffManagement() {
                   value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
                 />
+                <p className="text-xs text-muted-foreground">
+                  They sign in to the cleaner app with this email — their account connects automatically.
+                </p>
               </div>
               {editingStaff && (
                 <div className="flex items-center gap-3 pb-0.5">

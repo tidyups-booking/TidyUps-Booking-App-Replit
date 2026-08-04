@@ -1,7 +1,8 @@
 /**
  * Sign-in screen for the 833 Tidyups cleaner app.
- * Sign-up is intentionally absent — cleaner accounts are provisioned by a
- * dispatcher who links a Clerk account to a staff record via PATCH /staff/:id.
+ * New cleaners create their own account on the sign-up screen with the email
+ * their dispatcher put on their staff record; the API self-links the account
+ * to the staff record on first request (api-server src/lib/callerRole.ts).
  */
 import React, { useState, useCallback, useEffect } from 'react';
 import {
@@ -238,9 +239,17 @@ export default function SignInScreen() {
           )}
         </Pressable>
 
-        {/* Invite-only notice */}
+        {/* Create account link */}
+        <Pressable onPress={() => router.push('/(auth)/sign-up' as Href)} testID="go-to-sign-up">
+          <Text style={[styles.signUpLink, { color: colors.primary, fontFamily: 'Poppins_500Medium' }]}>
+            First time here? Create your account
+          </Text>
+        </Pressable>
+
+        {/* Team-only notice */}
         <Text style={[styles.inviteNote, { color: colors.mutedForeground, fontFamily: 'Poppins_400Regular' }]}>
-          Access is invite-only. Contact your dispatcher to get set up.
+          For 833 Tidyups team members. Sign up with the email your dispatcher
+          has on file and your schedule connects automatically.
         </Text>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -278,5 +287,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   primaryBtnText: { color: '#fff', fontSize: 16 },
+  signUpLink: { fontSize: 14, textAlign: 'center', marginBottom: 18 },
   inviteNote: { fontSize: 12, textAlign: 'center', lineHeight: 18 },
 });

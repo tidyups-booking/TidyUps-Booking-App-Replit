@@ -41,7 +41,7 @@ globalThis.fetch = ((input: any, init?: any) => {
   return realFetch(input, init);
 }) as typeof fetch;
 
-const { eq, inArray, isNull } = await import("drizzle-orm");
+const { and, eq, inArray, isNull, isNotNull } = await import("drizzle-orm");
 const { db, dispatcherAllowlistTable, dispatcherInvitesTable, staffTable } = await import(
   "@workspace/db"
 );
@@ -147,25 +147,30 @@ const UNVERIFIED_EMAIL = "bootstrap-unverified-e2e+clerk_test@example.com";
 const CLEANER_EMAIL = "bootstrap-cleaner-e2e+clerk_test@example.com";
 const NONMATCH_EMAIL = "bootstrap-nonmatch-e2e+clerk_test@example.com";
 const INVITE_EMAIL = "bootstrap-invite-e2e+clerk_test@example.com";
+const STAFF_LINK_EMAIL = "bootstrap-stafflink-e2e+clerk_test@example.com";
+const STAFF_INACTIVE_EMAIL = "bootstrap-staffinactive-e2e+clerk_test@example.com";
 
 // The bootstrap list contains the first three; NONMATCH_EMAIL is excluded.
 // Mixed case + spaces to also cover the normalization path.
 process.env.DISPATCHER_EMAILS = ` ${VERIFIED_EMAIL.toUpperCase()}, ${UNVERIFIED_EMAIL} , ${CLEANER_EMAIL}`;
 
 console.log("Setting up Clerk test users...");
-const [verifiedId, unverifiedId, cleanerId, nonmatchId, inviteId] = await Promise.all([
-  ensureUser(VERIFIED_EMAIL),
-  ensureUnverifiedMatchUser(
-    UNVERIFIED_EMAIL,
-    "bootstrap-unverified-primary-e2e+clerk_test@example.com",
-  ),
-  ensureUser(CLEANER_EMAIL),
-  ensureUser(NONMATCH_EMAIL),
-  ensureUser(INVITE_EMAIL),
-]);
-const allIds = [verifiedId, unverifiedId, cleanerId, nonmatchId, inviteId];
+const [verifiedId, unverifiedId, cleanerId, nonmatchId, inviteId, staffLinkId, staffInactiveId] =
+  await Promise.all([
+    ensureUser(VERIFIED_EMAIL),
+    ensureUnverifiedMatchUser(
+      UNVERIFIED_EMAIL,
+      "bootstrap-unverified-primary-e2e+clerk_test@example.com",
+    ),
+    ensureUser(CLEANER_EMAIL),
+    ensureUser(NONMATCH_EMAIL),
+    ensureUser(INVITE_EMAIL),
+    ensureUser(STAFF_LINK_EMAIL),
+    ensureUser(STAFF_INACTIVE_EMAIL),
+  ]);
+const allIds = [verifiedId, unverifiedId, cleanerId, nonmatchId, inviteId, staffLinkId, staffInactiveId];
 console.log(
-  `verified=${verifiedId} unverified=${unverifiedId} cleaner=${cleanerId} nonmatch=${nonmatchId} invite=${inviteId}\n`,
+  `verified=${verifiedId} unverified=${unverifiedId} cleaner=${cleanerId} nonmatch=${nonmatchId} invite=${inviteId} stafflink=${staffLinkId} staffinactive=${staffInactiveId}\n`,
 );
 
 async function allowlistRow(id: string) {
@@ -176,6 +181,7 @@ async function allowlistRow(id: string) {
 }
 
 let tempStaffId: number | null = null;
+const extraStaffIds: number[] = [];
 try {
   // Start clean: none of the test users may be in the allowlist.
   await db
@@ -269,14 +275,28 @@ try {
       .from(dispatcherInvitesTable)
       .where(isNull(dispatcherInvitesTable.claimedAt))
   ).length;
+  // Unlinked active staff with an email also trigger the Clerk lookup
+  // (cleaner self-link), so they defeat the short-circuit too.
+  const linkableCount = (
+    await db
+      .select({ id: staffTable.id })
+      .from(staffTable)
+      .where(
+        and(
+          isNull(staffTable.clerkUserId),
+          isNotNull(staffTable.email),
+          eq(staffTable.active, true),
+        ),
+      )
+  ).length;
   const callsBeforeEmpty = clerkApiCalls;
   const r5 = await resolveCallerRole(verifiedId);
   check("denied when DISPATCHER_EMAILS is empty", r5.role === "denied", `role=${r5.role}`);
-  if (pendingCount === 0) {
+  if (pendingCount === 0 && linkableCount === 0) {
     check("no Clerk call when DISPATCHER_EMAILS is empty", clerkApiCalls === callsBeforeEmpty);
   } else {
     console.log(
-      `SKIP: no-Clerk-call assertion (${pendingCount} real pending invite(s) exist in this DB)`,
+      `SKIP: no-Clerk-call assertion (${pendingCount} pending invite(s), ${linkableCount} linkable staff row(s) exist in this DB)`,
     );
   }
 
@@ -324,6 +344,47 @@ try {
   check("user with revoked invite stays denied", r7.role === "denied", `role=${r7.role}`);
   const revokedRow = await allowlistRow(inviteId);
   check("no allowlist row created after revoked invite", revokedRow.length === 0);
+
+  // ------------------------------------------------------------------
+  // 8. Staff-email self-link (cleaner self-service): a staff record with a
+  //    matching email but no linked account links itself on first sign-in.
+  console.log("\n8. Staff email self-link:");
+  const [staffLinkRow] = await db
+    .insert(staffTable)
+    .values({ name: "Staff Link E2E", role: "cleaner", email: STAFF_LINK_EMAIL })
+    .returning({ id: staffTable.id });
+  extraStaffIds.push(staffLinkRow.id);
+  const r8 = await resolveCallerRole(staffLinkId);
+  check(
+    "user with matching staff email resolves as cleaner",
+    r8.role === "cleaner" && r8.staffId === staffLinkRow.id,
+    `role=${r8.role} staffId=${r8.staffId}`,
+  );
+  const [linkedStaff] = await db
+    .select({ clerkUserId: staffTable.clerkUserId })
+    .from(staffTable)
+    .where(eq(staffTable.id, staffLinkRow.id));
+  check("staff record now linked to the caller's user id", linkedStaff?.clerkUserId === staffLinkId);
+  const r8b = await resolveCallerRole(staffLinkId);
+  check("still cleaner on subsequent request", r8b.role === "cleaner", `role=${r8b.role}`);
+  const staffLinkAllowlist = await allowlistRow(staffLinkId);
+  check("self-linked cleaner got NO dispatcher access", staffLinkAllowlist.length === 0);
+
+  // ------------------------------------------------------------------
+  // 9. An INACTIVE staff record never self-links.
+  console.log("\n9. Inactive staff record grants nothing:");
+  const [inactiveRow] = await db
+    .insert(staffTable)
+    .values({ name: "Staff Inactive E2E", role: "cleaner", email: STAFF_INACTIVE_EMAIL, active: false })
+    .returning({ id: staffTable.id });
+  extraStaffIds.push(inactiveRow.id);
+  const r9 = await resolveCallerRole(staffInactiveId);
+  check("user matching an inactive staff record stays denied", r9.role === "denied", `role=${r9.role}`);
+  const [inactiveAfter] = await db
+    .select({ clerkUserId: staffTable.clerkUserId })
+    .from(staffTable)
+    .where(eq(staffTable.id, inactiveRow.id));
+  check("inactive staff record stays unlinked", inactiveAfter?.clerkUserId === null);
 } finally {
   // Remove every row this script may have created.
   await db
@@ -332,6 +393,9 @@ try {
   await db.delete(dispatcherInvitesTable).where(eq(dispatcherInvitesTable.email, INVITE_EMAIL));
   if (tempStaffId !== null) {
     await db.delete(staffTable).where(eq(staffTable.id, tempStaffId));
+  }
+  if (extraStaffIds.length > 0) {
+    await db.delete(staffTable).where(inArray(staffTable.id, extraStaffIds));
   }
   const leftover = await db
     .select()

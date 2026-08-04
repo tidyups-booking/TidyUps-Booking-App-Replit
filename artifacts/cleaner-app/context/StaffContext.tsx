@@ -2,8 +2,9 @@
  * StaffContext — resolves the authenticated cleaner's staff record from the
  * API server via GET /staff/me (server-side Clerk → staff lookup).
  *
- * No manual staff picker. Linking a Clerk account to a staff record is a
- * dispatcher-only action performed via PATCH /staff/:id { clerkUserId }.
+ * No manual staff picker. Accounts link automatically server-side when the
+ * cleaner signs up with the email on their staff record (or a dispatcher can
+ * link manually via PATCH /staff/:id { clerkUserId }).
  */
 import React, { createContext, useContext, ReactNode } from 'react';
 import { useGetStaffMe } from '@workspace/api-client-react';
@@ -38,8 +39,12 @@ const StaffContext = createContext<StaffContextValue>({
 export function StaffProvider({ children }: { children: ReactNode }) {
   const { data, isLoading, refetch } = useGetStaffMe({
     query: {
-      // 404 is "not linked" — not an error worth retrying aggressively
-      retry: false,
+      // On a first sign-in the server links the account during the request,
+      // but a parallel request can briefly race it. Retry a couple of times
+      // with a delay so a just-linked account settles without a manual
+      // refresh; then stop (a genuinely unlinked account stays 404).
+      retry: 2,
+      retryDelay: 2_000,
       staleTime: 5 * 60 * 1_000,
     } as any,
   });

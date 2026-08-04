@@ -23,3 +23,8 @@ description: Dev and prod Clerk instances have separate user stores; anything ke
 - Negative caching of denied callers must have a TTL (not a permanent per-process set), or a fresh invite won't take effect for someone who signed in too early.
 
 **Invitation emails:** Clerk backend invitations (`clerkClient.invitations.createInvitation` with `notify: true, ignoreExisting: true`) send the sign-up email and pre-verify the address. The `redirectUrl` must point at the SAME Clerk environment that sent it (prod → live domain, dev → .replit.dev preview), because dev/prod user stores are separate.
+
+## Staff-email self-link (cleaner self-service)
+Cleaners sign up with the email on their staff record; the API links the account on the first authenticated request (same verified-emails-only rule as dispatcher grants). Two lessons:
+- **Same-user race:** two parallel first requests can both attempt the conditional link UPDATE; the loser updates zero rows. Before negative-caching the loser, re-check whether the row now belongs to THIS caller — otherwise a freshly linked account gets denied for the cache TTL.
+- **Client caching:** the mobile app's /staff/me query must retry briefly (not `retry: false`) or a race-loser 404 gets cached and the user sees "Account not linked" until manual refresh.

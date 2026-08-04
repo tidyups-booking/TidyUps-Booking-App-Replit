@@ -31,7 +31,7 @@ export default function ScheduleScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { staffId, isLoaded: staffLoaded } = useStaff();
+  const { staffId, isLoaded: staffLoaded, refetch: refetchStaff } = useStaff();
   const today = useMemo(() => new Date().toISOString().split('T')[0], []);
 
   const { data: jobs = [], isLoading, isError, refetch } = useGetStaffSchedule(
@@ -92,8 +92,16 @@ export default function ScheduleScreen() {
             Account not linked
           </Text>
           <Text style={[styles.emptySub, { color: colors.mutedForeground, fontFamily: 'Poppins_400Regular' }]}>
-            Ask your dispatcher to link your Clerk account to your staff record. Once linked, your jobs will appear here automatically.
+            Make sure you signed in with the same email your dispatcher has on
+            file — accounts connect automatically. If it still doesn't work,
+            ask your dispatcher to add your email to your staff record.
           </Text>
+          <Pressable
+            style={[styles.retryBtn, { backgroundColor: colors.primary, borderRadius: colors.radius }]}
+            onPress={() => refetchStaff()}
+          >
+            <Text style={[styles.retryText, { color: '#fff', fontFamily: 'Poppins_600SemiBold' }]}>Check again</Text>
+          </Pressable>
         </View>
       )}
 

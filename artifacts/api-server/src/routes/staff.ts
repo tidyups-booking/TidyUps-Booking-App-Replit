@@ -86,7 +86,7 @@ router.get("/staff/me", async (req, res): Promise<void> => {
     .where(eq(staffTable.clerkUserId, callerId));
 
   if (!staff) {
-    res.status(404).json({ error: "No staff record linked to this Clerk account. Ask a dispatcher to link your account." });
+    res.status(404).json({ error: "No staff record is linked to this account. Sign in with the same email your dispatcher has on file, or ask your dispatcher to add it to your staff record." });
     return;
   }
 
