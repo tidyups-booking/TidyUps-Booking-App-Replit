@@ -31,7 +31,7 @@ function formatTodayLong() {
 
 type ViewMode = 'mine' | 'all';
 
-type TeamJob = { booking: Booking; staffId: number; staffName: string };
+type TeamJob = { booking: Booking; staffId: number | null; staffName: string | null };
 
 export default function ScheduleScreen() {
   const colors = useColors();
@@ -75,7 +75,13 @@ export default function ScheduleScreen() {
     const flat: TeamJob[] = [];
     for (const entry of teamSchedules) {
       for (const booking of entry.bookings) {
-        flat.push({ booking, staffId: entry.staff.id, staffName: entry.staff.name });
+        // entry.staff is null for the "unassigned" bucket — jobs nobody has
+        // picked up yet. JobCard renders "Unassigned" for a null assigneeName.
+        flat.push({
+          booking,
+          staffId: entry.staff?.id ?? null,
+          staffName: entry.staff?.name ?? null,
+        });
       }
     }
     flat.sort((a, b) => a.booking.scheduledTime.localeCompare(b.booking.scheduledTime));
@@ -260,7 +266,7 @@ export default function ScheduleScreen() {
           data={teamJobs}
           keyExtractor={(item) => String(item.booking.id)}
           renderItem={({ item }) => {
-            const isMine = item.staffId === staffId;
+            const isMine = item.staffId !== null && item.staffId === staffId;
             return (
               <JobCard
                 booking={item.booking}

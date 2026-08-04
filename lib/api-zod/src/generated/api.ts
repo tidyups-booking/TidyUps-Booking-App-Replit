@@ -767,7 +767,7 @@ export const GetDayScheduleQueryParams = zod.object({
 })
 
 export const GetDayScheduleResponseItem = zod.object({
-  "staff": zod.object({
+  "staff": zod.union([zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "role": zod.enum(['cleaner', 'lead_cleaner', 'supervisor']),
@@ -775,7 +775,7 @@ export const GetDayScheduleResponseItem = zod.object({
   "email": zod.string().nullish(),
   "active": zod.boolean(),
   "createdAt": zod.coerce.date()
-}),
+}),zod.null()]).describe('The staff member this bucket belongs to, or null for the \"unassigned\" bucket holding bookings with no assigned staff.\n'),
   "bookings": zod.array(zod.object({
   "id": zod.number(),
   "staffId": zod.number().nullish(),

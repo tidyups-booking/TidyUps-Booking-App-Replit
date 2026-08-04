@@ -418,7 +418,8 @@ export interface UnlinkedSignup {
 }
 
 export interface StaffDaySchedule {
-  staff: Staff;
+  /** The staff member this bucket belongs to, or null for the "unassigned" bucket holding bookings with no assigned staff. */
+  staff: Staff | null;
   bookings: Booking[];
 }
 

@@ -265,9 +265,12 @@ try {
   const team = await api("GET", `/schedule?date=${today}`, cleanerJwt);
   check("cleaner gets 200 on team schedule", team.status === 200, `status=${team.status}`);
   if (team.status === 200) {
-    const rows = (await team.json()) as Array<{ staff: Record<string, unknown> }>;
+    const rows = (await team.json()) as Array<{ staff: Record<string, unknown> | null }>;
+    // staff is null for the "unassigned" bucket — nothing to leak there.
     const leaky = rows.filter(
-      (r) => r.staff.email != null || r.staff.phone != null || r.staff.clerkUserId != null,
+      (r) =>
+        r.staff != null &&
+        (r.staff.email != null || r.staff.phone != null || r.staff.clerkUserId != null),
     );
     check(
       "team schedule hides email/phone/clerkUserId from cleaners",

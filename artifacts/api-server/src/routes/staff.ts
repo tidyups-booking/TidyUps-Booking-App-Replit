@@ -668,7 +668,10 @@ router.get("/schedule", async (req, res): Promise<void> => {
     .where(eq(bookingsTable.scheduledDate, query.data.date))
     .orderBy(bookingsTable.scheduledTime);
 
-  const schedules = allStaff.map((staff) => ({
+  const schedules: {
+    staff: (typeof allStaff)[number] | null;
+    bookings: typeof bookings;
+  }[] = allStaff.map((staff) => ({
     // Cleaners see the team schedule but not teammates' contact details.
     staff:
       caller.role === "dispatcher"
@@ -676,6 +679,13 @@ router.get("/schedule", async (req, res): Promise<void> => {
         : { ...staff, email: null, phone: null, clerkUserId: null },
     bookings: bookings.filter((b) => b.staffId === staff.id),
   }));
+
+  // Bookings with no assigned staff go in an "unassigned" bucket (staff: null)
+  // so they don't fall through the cracks in the team views.
+  const unassigned = bookings.filter((b) => b.staffId === null);
+  if (unassigned.length > 0) {
+    schedules.push({ staff: null, bookings: unassigned });
+  }
 
   res.json(schedules);
 });

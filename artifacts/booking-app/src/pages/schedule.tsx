@@ -53,9 +53,6 @@ export default function Schedule() {
 
   const { data: schedules, isLoading } = useGetDaySchedule({ date: selectedDate });
 
-  const unassigned = schedules?.flatMap((s) => s.bookings).filter(() => false) ?? [];
-  // Also fetch bookings for the day that have no staff assigned (we do this client-side by
-  // checking which bookings aren't covered in any staff schedule)
 
   return (
     <div className="max-w-7xl mx-auto animate-in slide-in-from-bottom-4 duration-500">
@@ -146,29 +143,39 @@ export default function Schedule() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {schedules.map(({ staff, bookings }) => (
             <Card
-              key={staff.id}
+              key={staff ? staff.id : "unassigned"}
               className={cn(
                 "shadow-md transition-all",
-                bookings.length === 0 && "border-dashed opacity-80"
+                bookings.length === 0 && "border-dashed opacity-80",
+                !staff && "border-amber-300 bg-amber-50/40"
               )}
             >
               <CardHeader className="pb-3 border-b">
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle className="text-base font-semibold flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full brand-gradient flex items-center justify-center text-white text-sm font-bold shrink-0">
-                        {staff.name
-                          .split(" ")
-                          .map((n) => n[0])
-                          .join("")
-                          .toUpperCase()
-                          .slice(0, 2)}
+                      <div
+                        className={cn(
+                          "w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0",
+                          staff ? "brand-gradient" : "bg-amber-500"
+                        )}
+                      >
+                        {staff
+                          ? staff.name
+                              .split(" ")
+                              .map((n) => n[0])
+                              .join("")
+                              .toUpperCase()
+                              .slice(0, 2)
+                          : "?"}
                       </div>
-                      {staff.name}
+                      {staff ? staff.name : "Unassigned"}
                     </CardTitle>
                     <p className="text-xs text-muted-foreground mt-0.5 ml-10">
-                      {ROLE_LABELS[staff.role] ?? staff.role}
-                      {staff.phone && ` · ${staff.phone}`}
+                      {staff
+                        ? (ROLE_LABELS[staff.role] ?? staff.role) +
+                          (staff.phone ? ` · ${staff.phone}` : "")
+                        : "Jobs with no assigned staff"}
                     </p>
                   </div>
                   <Badge

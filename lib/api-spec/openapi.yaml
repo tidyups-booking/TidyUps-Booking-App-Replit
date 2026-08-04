@@ -1194,7 +1194,12 @@ components:
         - bookings
       properties:
         staff:
-          $ref: "#/components/schemas/Staff"
+          oneOf:
+            - $ref: "#/components/schemas/Staff"
+            - type: "null"
+          description: >
+            The staff member this bucket belongs to, or null for the
+            "unassigned" bucket holding bookings with no assigned staff.
         bookings:
           type: array
           items:
