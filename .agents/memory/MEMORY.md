@@ -10,3 +10,4 @@
 - [Booking price-breakdown invariants](price-breakdown-invariants.md) — itemized quote must reconcile end-to-end; loyalty last, refuse over-quote discounts, server validates + auto-clears
 - [Live-call scaling](live-call-scaling.md) — Twilio strips query strings from <Stream> URLs (auth must use <Parameter>); state row doubles as strict call lease; single-use HMAC tokens; LISTEN/NOTIFY fan-out
 - [TS project references](ts-project-references.md) — api-server typechecks against lib/*/dist .d.ts; rebuild `tsc --build` in lib/db & lib/api-zod after adding schema/types or "missing export" errors break deploys
+- [Authorization policy](authorization-policy.md) — owner rule: only dispatchers mutate; cleaners view-only except own job status, own contact info, own GPS; new mutations default dispatcher-only
