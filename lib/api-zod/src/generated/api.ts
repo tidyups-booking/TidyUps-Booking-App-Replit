@@ -616,6 +616,46 @@ export const GetStaffMeResponse = zod.object({
 
 
 /**
+ * Accounts that signed up in the cleaner app but are not linked to any staff record, have no dispatcher access, and whose email does not already match a staff record (those connect automatically).
+ * @summary List cleaner-app accounts waiting to be connected to a staff record
+ */
+export const ListUnlinkedSignupsResponseItem = zod.object({
+  "clerkUserId": zod.string(),
+  "name": zod.string().nullish(),
+  "email": zod.string().describe('The account\'s primary verified email address.'),
+  "imageUrl": zod.string().nullish(),
+  "createdAt": zod.string().describe('When the account was created (ISO timestamp).')
+})
+export const ListUnlinkedSignupsResponse = zod.array(ListUnlinkedSignupsResponseItem)
+
+
+/**
+ * Links the given Clerk account to the staff record and stores the account's verified email on it. The cleaner's schedule loads immediately on their next request — no republish or re-signup needed.
+ * @summary Connect a signed-up cleaner account to a staff record
+ */
+export const ConnectStaffAccountParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+
+
+
+export const ConnectStaffAccountBody = zod.object({
+  "clerkUserId": zod.string().min(1)
+})
+
+export const ConnectStaffAccountResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "role": zod.enum(['cleaner', 'lead_cleaner', 'supervisor']),
+  "phone": zod.string().nullish(),
+  "email": zod.string().nullish(),
+  "active": zod.boolean(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
  * @summary Update a staff member
  */
 export const UpdateStaffParams = zod.object({

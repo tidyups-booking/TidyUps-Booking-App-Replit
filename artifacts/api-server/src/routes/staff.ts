@@ -1,7 +1,13 @@
 import { Router, type IRouter } from "express";
-import { eq, and, sql } from "drizzle-orm";
-import { getAuth } from "@clerk/express";
-import { db, staffTable, bookingsTable } from "@workspace/db";
+import { eq, and, sql, isNull } from "drizzle-orm";
+import { getAuth, clerkClient } from "@clerk/express";
+import {
+  db,
+  staffTable,
+  bookingsTable,
+  dispatcherAllowlistTable,
+  dispatcherInvitesTable,
+} from "@workspace/db";
 import {
   ListStaffQueryParams,
   CreateStaffBody,
@@ -10,6 +16,8 @@ import {
   GetStaffScheduleParams,
   GetStaffScheduleQueryParams,
   GetDayScheduleQueryParams,
+  ConnectStaffAccountParams,
+  ConnectStaffAccountBody,
 } from "@workspace/api-zod";
 import { resolveCallerRole, guardDispatcher } from "../lib/callerRole.js";
 
@@ -96,6 +104,201 @@ router.get("/staff/me", async (req, res): Promise<void> => {
   }
 
   res.status(404).json({ error: "No staff record is linked to this account. Sign in with the same email your dispatcher has on file, or ask your dispatcher to add it to your staff record." });
+});
+
+// GET /staff/unlinked-signups — dispatcher only. Cleaner-app accounts that are
+// waiting to be connected: signed up, verified email, but no staff link, no
+// dispatcher access, and no email match that would connect them automatically.
+router.get("/staff/unlinked-signups", async (req, res): Promise<void> => {
+  if (await guardDispatcher(req, res)) return;
+
+  try {
+    // Page through Clerk users (bounded) so signups beyond the first page
+    // aren't silently missed.
+    const PAGE_SIZE = 200;
+    const MAX_USERS = 1000;
+    const fetchUsers = async () => {
+      const all: Awaited<
+        ReturnType<typeof clerkClient.users.getUserList>
+      >["data"] = [];
+      for (let offset = 0; offset < MAX_USERS; offset += PAGE_SIZE) {
+        const { data } = await clerkClient.users.getUserList({
+          limit: PAGE_SIZE,
+          offset,
+          orderBy: "-created_at",
+        });
+        all.push(...data);
+        if (data.length < PAGE_SIZE) break;
+      }
+      return all;
+    };
+
+    const [users, staffRows, allowRows, inviteRows] = await Promise.all([
+      fetchUsers(),
+      db
+        .select({
+          clerkUserId: staffTable.clerkUserId,
+          email: staffTable.email,
+          active: staffTable.active,
+        })
+        .from(staffTable),
+      db
+        .select({ clerkUserId: dispatcherAllowlistTable.clerkUserId })
+        .from(dispatcherAllowlistTable),
+      db
+        .select({ email: dispatcherInvitesTable.email })
+        .from(dispatcherInvitesTable)
+        .where(isNull(dispatcherInvitesTable.claimedAt)),
+    ]);
+
+    const linkedIds = new Set(staffRows.map((r) => r.clerkUserId).filter(Boolean));
+    // Only emails that will actually auto-connect on the cleaner's next app
+    // open (unlinked + active — mirrors the self-link rules in callerRole.ts).
+    // Emails on linked or inactive rows do NOT auto-connect, so those signups
+    // must stay visible to the dispatcher.
+    const staffEmails = new Set(
+      staffRows
+        .filter((r) => !r.clerkUserId && r.active)
+        .map((r) => r.email?.trim().toLowerCase())
+        .filter(Boolean),
+    );
+    const dispatcherIds = new Set(allowRows.map((r) => r.clerkUserId));
+    const reservedEmails = new Set(
+      [
+        ...(process.env.DISPATCHER_EMAILS ?? "").split(","),
+        ...inviteRows.map((r) => r.email),
+      ]
+        .map((e) => e.trim().toLowerCase())
+        .filter(Boolean),
+    );
+
+    const waiting = [];
+    for (const u of users) {
+      if (linkedIds.has(u.id) || dispatcherIds.has(u.id)) continue;
+      // Internal test accounts never belong in the dispatcher's list
+      if (u.emailAddresses.some((e) => e.emailAddress.includes("+clerk_test"))) continue;
+      const verified = u.emailAddresses.filter(
+        (e) => e.verification?.status === "verified",
+      );
+      if (verified.length === 0) continue;
+      const emailsLower = verified.map((e) => e.emailAddress.toLowerCase());
+      // Owner/invited-dispatcher emails resolve as dispatchers on next sign-in
+      if (emailsLower.some((e) => reservedEmails.has(e))) continue;
+      // An email already on a staff record connects automatically — not waiting
+      if (emailsLower.some((e) => staffEmails.has(e))) continue;
+
+      const primary =
+        verified.find((e) => e.id === u.primaryEmailAddressId) ?? verified[0];
+      waiting.push({
+        clerkUserId: u.id,
+        name: [u.firstName, u.lastName].filter(Boolean).join(" ") || null,
+        email: primary.emailAddress,
+        imageUrl: u.imageUrl || null,
+        createdAt: new Date(u.createdAt).toISOString(),
+      });
+    }
+
+    res.json(waiting);
+  } catch (err) {
+    console.error("[staff] failed to list unlinked signups:", err);
+    res.status(502).json({ error: "Failed to list accounts from Clerk" });
+  }
+});
+
+// POST /staff/:id/connect-account — dispatcher only. Directly links a
+// signed-up cleaner account to a staff record and stores the account's
+// verified email on it. Takes effect on the cleaner's next request.
+router.post("/staff/:id/connect-account", async (req, res): Promise<void> => {
+  if (await guardDispatcher(req, res)) return;
+
+  const params = ConnectStaffAccountParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const body = ConnectStaffAccountBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+  const { id } = params.data;
+  const { clerkUserId } = body.data;
+
+  const [target] = await db
+    .select({ id: staffTable.id, clerkUserId: staffTable.clerkUserId })
+    .from(staffTable)
+    .where(eq(staffTable.id, id));
+  if (!target) {
+    res.status(404).json({ error: "Staff member not found" });
+    return;
+  }
+  if (target.clerkUserId) {
+    res.status(409).json({ error: "This staff member is already connected to an account" });
+    return;
+  }
+
+  const [[alreadyLinked], [isDispatcher]] = await Promise.all([
+    db
+      .select({ id: staffTable.id })
+      .from(staffTable)
+      .where(eq(staffTable.clerkUserId, clerkUserId)),
+    db
+      .select({ clerkUserId: dispatcherAllowlistTable.clerkUserId })
+      .from(dispatcherAllowlistTable)
+      .where(eq(dispatcherAllowlistTable.clerkUserId, clerkUserId)),
+  ]);
+  if (alreadyLinked) {
+    res.status(409).json({ error: "That account is already connected to another staff member" });
+    return;
+  }
+  if (isDispatcher) {
+    res.status(400).json({ error: "That account has dispatcher access and can't be connected as a cleaner" });
+    return;
+  }
+
+  let verifiedEmail: string | null = null;
+  try {
+    const user = await clerkClient.users.getUser(clerkUserId);
+    const verified = user.emailAddresses.filter(
+      (e) => e.verification?.status === "verified",
+    );
+    verifiedEmail =
+      (verified.find((e) => e.id === user.primaryEmailAddressId) ?? verified[0])
+        ?.emailAddress ?? null;
+  } catch {
+    res.status(404).json({ error: "Account not found" });
+    return;
+  }
+  if (!verifiedEmail) {
+    res.status(400).json({ error: "That account has no verified email address" });
+    return;
+  }
+
+  // Conditional update so a concurrent connect/self-link can't double-assign
+  // the staff row; the unique constraint on staff.clerk_user_id catches the
+  // mirror race (same account connected to two rows at once) — map it to 409.
+  let updated;
+  try {
+    [updated] = await db
+      .update(staffTable)
+      .set({ clerkUserId, email: verifiedEmail })
+      .where(and(eq(staffTable.id, id), isNull(staffTable.clerkUserId)))
+      .returning();
+  } catch (err: any) {
+    const code = err?.code ?? err?.cause?.code;
+    if (code === "23505") {
+      res.status(409).json({ error: "That account is already connected to another staff member" });
+      return;
+    }
+    throw err;
+  }
+  if (!updated) {
+    res.status(409).json({ error: "This staff member was just connected to another account" });
+    return;
+  }
+
+  console.log(`[staff] record ${id} connected to ${clerkUserId} by dispatcher`);
+  res.json(updated);
 });
 
 // PATCH /staff/:id

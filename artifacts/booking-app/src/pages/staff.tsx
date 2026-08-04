@@ -1,4 +1,11 @@
-import { useListStaff, useCreateStaff, useUpdateStaff } from "@workspace/api-client-react";
+import {
+  useListStaff,
+  useCreateStaff,
+  useUpdateStaff,
+  useListUnlinkedSignups,
+  useConnectStaffAccount,
+  getListUnlinkedSignupsQueryKey,
+} from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getListStaffQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { Users, Plus, Phone, Mail, Pencil, CheckCircle2, X, MapPin, AlertTriangle, Download, Upload } from "lucide-react";
+import { Users, Plus, Phone, Mail, Pencil, CheckCircle2, X, MapPin, AlertTriangle, Download, Upload, UserPlus, Link2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Staff } from "@workspace/api-client-react";
 import { AddressAutocomplete } from "@/components/address-autocomplete";
@@ -157,10 +164,64 @@ export default function StaffManagement() {
 
   const createStaff = useCreateStaff();
   const updateStaff = useUpdateStaff();
+  const connectAccount = useConnectStaffAccount();
+
+  // Cleaner-app accounts waiting to be connected to a staff record
+  const { data: waitingSignups = [] } = useListUnlinkedSignups();
+  // Per-signup choice: staff id as string, or "new" to create a staff member
+  const [signupChoice, setSignupChoice] = useState<Record<string, string>>({});
+  // When creating a new staff member for a signup, connect after saving
+  const [pendingClerkUserId, setPendingClerkUserId] = useState<string | null>(null);
+  const [connectingId, setConnectingId] = useState<string | null>(null);
 
   const invalidateStaff = () => {
     queryClient.invalidateQueries({ queryKey: getListStaffQueryKey({ activeOnly: false }) });
     queryClient.invalidateQueries({ queryKey: getListStaffQueryKey({ activeOnly: true }) });
+    queryClient.invalidateQueries({ queryKey: getListUnlinkedSignupsQueryKey() });
+  };
+
+  const unconnectedStaff = allStaffData.filter((s) => !(s as any).clerkUserId);
+
+  const connectSignupTo = (clerkUserId: string, staffId: number, label: string) => {
+    setConnectingId(clerkUserId);
+    connectAccount.mutate(
+      { id: staffId, data: { clerkUserId } },
+      {
+        onSuccess: () => {
+          toast({
+            title: "Account connected",
+            description: `${label} can now open the cleaner app and see their schedule.`,
+          });
+          invalidateStaff();
+          setConnectingId(null);
+        },
+        onError: (err: any) => {
+          toast({
+            title: "Couldn't connect account",
+            description: err?.error ?? err?.message ?? "Please try again.",
+            variant: "destructive",
+          });
+          invalidateStaff();
+          setConnectingId(null);
+        },
+      }
+    );
+  };
+
+  const handleSignupConnect = (signup: { clerkUserId: string; email: string; name?: string | null }) => {
+    const choice = signupChoice[signup.clerkUserId] ?? "new";
+    if (choice === "new") {
+      // Open the create form prefilled; connect happens after saving
+      setEditingStaff(null);
+      setForm({ ...EMPTY_FORM, name: signup.name ?? "", email: signup.email });
+      setPendingClerkUserId(signup.clerkUserId);
+      setShowForm(true);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } else {
+      const staffId = Number(choice);
+      const target = allStaffData.find((s) => s.id === staffId);
+      connectSignupTo(signup.clerkUserId, staffId, target?.name ?? signup.email);
+    }
   };
 
   const handleExport = () => {
@@ -229,11 +290,13 @@ export default function StaffManagement() {
   const openCreate = () => {
     setEditingStaff(null);
     setForm(EMPTY_FORM);
+    setPendingClerkUserId(null);
     setShowForm(true);
   };
 
   const openEdit = (staff: Staff) => {
     setEditingStaff(staff);
+    setPendingClerkUserId(null);
     setForm({
       name: staff.name,
       role: staff.role,
@@ -303,10 +366,16 @@ export default function StaffManagement() {
       createStaff.mutate(
         { data: trimmedEmail ? { ...payload, email: trimmedEmail } : payload },
         {
-          onSuccess: () => {
+          onSuccess: (created) => {
             toast({ title: "Staff added", description: `${payload.name} has been added to the team.` });
-            invalidateStaff();
             setShowForm(false);
+            // Created from a waiting signup — connect the account right away
+            if (pendingClerkUserId) {
+              connectSignupTo(pendingClerkUserId, created.id, payload.name);
+              setPendingClerkUserId(null);
+            } else {
+              invalidateStaff();
+            }
           },
           onError: () => {
             toast({ title: "Error", description: "Failed to add staff member.", variant: "destructive" });
@@ -417,7 +486,9 @@ export default function StaffManagement() {
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
                 />
                 <p className="text-xs text-muted-foreground">
-                  They sign in to the cleaner app with this email — their account connects automatically.
+                  {pendingClerkUserId
+                    ? "This account will be connected as soon as you save."
+                    : "They sign in to the cleaner app with this email — their account connects automatically."}
                 </p>
               </div>
               {editingStaff && (
@@ -491,6 +562,62 @@ export default function StaffManagement() {
                 Cancel
               </Button>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Cleaner-app accounts waiting to be connected */}
+      {waitingSignups.length > 0 && (
+        <Card className="mb-6 border-yellow-400/50 shadow-sm">
+          <CardHeader className="pb-3 border-b">
+            <CardTitle className="text-base flex items-center gap-2">
+              <UserPlus className="w-4 h-4 text-yellow-600" />
+              Waiting to connect
+              <Badge variant="outline" className="text-xs px-1.5 py-0">{waitingSignups.length}</Badge>
+            </CardTitle>
+            <p className="text-sm text-muted-foreground font-normal">
+              These people created a cleaner-app account but aren't connected to a staff member yet.
+            </p>
+          </CardHeader>
+          <CardContent className="p-4 space-y-3">
+            {waitingSignups.map((signup) => (
+              <div
+                key={signup.clerkUserId}
+                className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-lg border p-3"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm truncate">{signup.email}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {signup.name ? `${signup.name} · ` : ""}
+                    signed up {new Date(signup.createdAt).toLocaleDateString()}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <NativeSelect
+                    className="h-9 text-sm"
+                    value={signupChoice[signup.clerkUserId] ?? "new"}
+                    onChange={(e) =>
+                      setSignupChoice({ ...signupChoice, [signup.clerkUserId]: e.target.value })
+                    }
+                  >
+                    <option value="new">New staff member…</option>
+                    {unconnectedStaff.map((s) => (
+                      <option key={s.id} value={String(s.id)}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                  <Button
+                    size="sm"
+                    onClick={() => handleSignupConnect(signup)}
+                    isLoading={connectingId === signup.clerkUserId}
+                  >
+                    <Link2 className="w-4 h-4 mr-1.5" />
+                    Connect
+                  </Button>
+                </div>
+              </div>
+            ))}
           </CardContent>
         </Card>
       )}

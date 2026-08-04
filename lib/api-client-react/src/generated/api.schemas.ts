@@ -407,6 +407,16 @@ export interface StaffUpdate {
   homeLng?: number | null;
 }
 
+export interface UnlinkedSignup {
+  clerkUserId: string;
+  name?: string | null;
+  /** The account's primary verified email address. */
+  email: string;
+  imageUrl?: string | null;
+  /** When the account was created (ISO timestamp). */
+  createdAt: string;
+}
+
 export interface StaffDaySchedule {
   staff: Staff;
   bookings: Booking[];
@@ -467,6 +477,11 @@ export const ListBookingsStatus = {
 
 export type ListStaffParams = {
 activeOnly?: boolean;
+};
+
+export type ConnectStaffAccountBody = {
+  /** @minLength 1 */
+  clerkUserId: string;
 };
 
 export type GetStaffScheduleParams = {

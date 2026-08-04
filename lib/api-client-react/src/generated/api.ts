@@ -24,6 +24,7 @@ import type {
   BookingInput,
   BookingStats,
   BookingUpdate,
+  ConnectStaffAccountBody,
   ContactMessage,
   ContactMessageInput,
   ContactMessageStatusUpdate,
@@ -43,7 +44,8 @@ import type {
   Staff,
   StaffDaySchedule,
   StaffInput,
-  StaffUpdate
+  StaffUpdate,
+  UnlinkedSignup
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -1500,6 +1502,157 @@ export function useGetStaffMe<TData = Awaited<ReturnType<typeof getStaffMe>>, TE
 
 
 
+
+export const getListUnlinkedSignupsUrl = () => {
+
+
+
+
+  return `/api/staff/unlinked-signups`
+}
+
+/**
+ * Accounts that signed up in the cleaner app but are not linked to any staff record, have no dispatcher access, and whose email does not already match a staff record (those connect automatically).
+ * @summary List cleaner-app accounts waiting to be connected to a staff record
+ */
+export const listUnlinkedSignups = async ( options?: Parameters<typeof customFetch>[1]): Promise<UnlinkedSignup[]> => {
+
+  return customFetch<UnlinkedSignup[]>(getListUnlinkedSignupsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListUnlinkedSignupsQueryKey = () => {
+    return [
+    `/api/staff/unlinked-signups`
+    ] as const;
+    }
+
+
+export const getListUnlinkedSignupsQueryOptions = <TData = Awaited<ReturnType<typeof listUnlinkedSignups>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listUnlinkedSignups>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListUnlinkedSignupsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listUnlinkedSignups>>> = ({ signal }) => listUnlinkedSignups({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listUnlinkedSignups>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListUnlinkedSignupsQueryResult = NonNullable<Awaited<ReturnType<typeof listUnlinkedSignups>>>
+export type ListUnlinkedSignupsQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary List cleaner-app accounts waiting to be connected to a staff record
+ */
+
+export function useListUnlinkedSignups<TData = Awaited<ReturnType<typeof listUnlinkedSignups>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listUnlinkedSignups>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListUnlinkedSignupsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getConnectStaffAccountUrl = (id: number,) => {
+
+
+
+
+  return `/api/staff/${id}/connect-account`
+}
+
+/**
+ * Links the given Clerk account to the staff record and stores the account's verified email on it. The cleaner's schedule loads immediately on their next request — no republish or re-signup needed.
+ * @summary Connect a signed-up cleaner account to a staff record
+ */
+export const connectStaffAccount = async (id: number,
+    connectStaffAccountBody: ConnectStaffAccountBody, options?: Parameters<typeof customFetch>[1]): Promise<Staff> => {
+
+  return customFetch<Staff>(getConnectStaffAccountUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(connectStaffAccountBody)
+  }
+);}
+
+
+
+
+
+export const getConnectStaffAccountMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof connectStaffAccount>>, TError,{id: number;data: BodyType<ConnectStaffAccountBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof connectStaffAccount>>, TError,{id: number;data: BodyType<ConnectStaffAccountBody>}, TContext> => {
+
+const mutationKey = ['connectStaffAccount'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof connectStaffAccount>>, {id: number;data: BodyType<ConnectStaffAccountBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  connectStaffAccount(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ConnectStaffAccountMutationResult = NonNullable<Awaited<ReturnType<typeof connectStaffAccount>>>
+    export type ConnectStaffAccountMutationBody = BodyType<ConnectStaffAccountBody>
+    export type ConnectStaffAccountMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Connect a signed-up cleaner account to a staff record
+ */
+export const useConnectStaffAccount = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof connectStaffAccount>>, TError,{id: number;data: BodyType<ConnectStaffAccountBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof connectStaffAccount>>,
+        TError,
+        {id: number;data: BodyType<ConnectStaffAccountBody>},
+        TContext
+      > => {
+      return useMutation(getConnectStaffAccountMutationOptions(options));
+    }
 
 export const getUpdateStaffUrl = (id: number,) => {
 

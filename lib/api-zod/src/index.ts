@@ -5,3 +5,4 @@ export * from "./generated/types";
 // same name for path/query param objects; prefer the Zod schema version.
 export { GetStaffScheduleParams } from "./generated/api";
 export { PostStaffLocationBody } from "./generated/api";
+export { ConnectStaffAccountBody } from "./generated/api";
