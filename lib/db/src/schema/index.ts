@@ -5,6 +5,7 @@ export * from "./contact-throttle";
 export * from "./cleaner-locations";
 export * from "./dispatcher-allowlist";
 export * from "./dispatcher-invites";
+export * from "./homeowner-pins";
 export * from "./jobber";
 export * from "./social-links";
 export * from "./staff";

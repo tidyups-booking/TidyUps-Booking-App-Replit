@@ -1,7 +1,13 @@
 import { Router, type IRouter } from "express";
 import { eq, and, gte, lte } from "drizzle-orm";
 import { getAuth } from "@clerk/express";
-import { db, staffTable, bookingsTable, cleanerLocationsTable } from "@workspace/db";
+import {
+  db,
+  staffTable,
+  bookingsTable,
+  cleanerLocationsTable,
+  homeownerPinsTable,
+} from "@workspace/db";
 import { requireAuth } from "../app.js";
 import { guardDispatcher } from "../lib/callerRole.js";
 
@@ -119,10 +125,10 @@ router.get("/map/data", async (req, res): Promise<void> => {
     .where(eq(staffTable.active, true))
     .orderBy(staffTable.name);
 
-  // Live GPS locations (only relevant for today)
-  const liveLocations = isToday
-    ? await db.select().from(cleanerLocationsTable)
-    : [];
+  // Live GPS locations — always fetched: the date-scoped `position` only uses
+  // them for today, but `currentPosition` (homeowner-pin distances) always
+  // prefers a fresh live fix regardless of which calendar day is selected.
+  const liveLocations = await db.select().from(cleanerLocationsTable);
   const liveMap = new Map(liveLocations.map((l) => [l.staffId, l]));
 
   // Build staff with effective position
@@ -140,6 +146,15 @@ router.get("/map/data", async (req, res): Promise<void> => {
       position = { lat: s.homeLat, lng: s.homeLng, source: "home" };
     }
 
+    // Where the cleaner is RIGHT NOW, independent of the selected calendar
+    // date — fresh live GPS if available, else home. Used for homeowner pins.
+    let currentPosition: { lat: number; lng: number; source: "live" | "home" } | null = null;
+    if (live && liveRecent) {
+      currentPosition = { lat: live.lat, lng: live.lng, source: "live" };
+    } else if (s.homeLat != null && s.homeLng != null) {
+      currentPosition = { lat: s.homeLat, lng: s.homeLng, source: "home" };
+    }
+
     return {
       id: s.id,
       name: s.name,
@@ -149,6 +164,7 @@ router.get("/map/data", async (req, res): Promise<void> => {
       homeLng: s.homeLng,
       liveLocation: live ? { lat: live.lat, lng: live.lng, updatedAt: live.updatedAt } : null,
       position,
+      currentPosition,
     };
   });
 
@@ -185,6 +201,71 @@ function validateDateRange(
   if (startDate > endDate) return "startDate must be on or before endDate";
   return null;
 }
+
+// ── Homeowner pins — dispatcher-saved locations on the Live Map ─────────────
+
+// GET /map/pins — dispatcher only. List all saved homeowner pins.
+router.get("/map/pins", async (req, res): Promise<void> => {
+  if (await guardDispatcher(req, res)) return;
+  const pins = await db
+    .select()
+    .from(homeownerPinsTable)
+    .orderBy(homeownerPinsTable.createdAt);
+  res.json(pins);
+});
+
+// POST /map/pins — dispatcher only. Save a homeowner pin (address search or
+// dropped directly on the map). Plain JS validation — no zod in this router.
+router.post("/map/pins", async (req, res): Promise<void> => {
+  if (await guardDispatcher(req, res)) return;
+
+  const { name, address, lat, lng } = req.body ?? {};
+  const trimmedName = typeof name === "string" ? name.trim() : "";
+  if (!trimmedName || trimmedName.length > 120) {
+    res.status(400).json({ error: "Name is required (max 120 characters)" });
+    return;
+  }
+  if (
+    typeof lat !== "number" || typeof lng !== "number" ||
+    !Number.isFinite(lat) || !Number.isFinite(lng) ||
+    lat < -90 || lat > 90 || lng < -180 || lng > 180
+  ) {
+    res.status(400).json({ error: "Invalid lat/lng" });
+    return;
+  }
+  const trimmedAddress =
+    typeof address === "string" && address.trim() ? address.trim().slice(0, 300) : null;
+
+  const [pin] = await db
+    .insert(homeownerPinsTable)
+    .values({ name: trimmedName, address: trimmedAddress, lat, lng })
+    .returning();
+  res.status(201).json(pin);
+});
+
+// DELETE /map/pins/:id — dispatcher only. Remove a saved pin.
+router.delete("/map/pins/:id", async (req, res): Promise<void> => {
+  if (await guardDispatcher(req, res)) return;
+  // Strict lexical check — parseInt would accept "1junk" or "1.9" as 1.
+  if (!/^\d+$/.test(req.params.id)) {
+    res.status(400).json({ error: "Invalid pin id" });
+    return;
+  }
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id)) {
+    res.status(400).json({ error: "Invalid pin id" });
+    return;
+  }
+  const deleted = await db
+    .delete(homeownerPinsTable)
+    .where(eq(homeownerPinsTable.id, id))
+    .returning({ id: homeownerPinsTable.id });
+  if (deleted.length === 0) {
+    res.status(404).json({ error: "Pin not found" });
+    return;
+  }
+  res.json({ ok: true });
+});
 
 // GET /map/counts?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
 // Returns {[date]: bookingCount} for the given range (used by month calendar view)

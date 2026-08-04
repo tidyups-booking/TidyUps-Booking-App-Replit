@@ -330,6 +330,20 @@ const MIGRATIONS: { name: string; sql: string }[] = [
         ADD COLUMN IF NOT EXISTS clerk_invitation_id TEXT;
     `,
   },
+  {
+    // Mirrors lib/db/migrations/015_add_homeowner_pins.sql.
+    name: "015_add_homeowner_pins",
+    sql: `
+      CREATE TABLE IF NOT EXISTS homeowner_pins (
+        id         SERIAL PRIMARY KEY,
+        name       TEXT NOT NULL,
+        address    TEXT,
+        lat        DOUBLE PRECISION NOT NULL,
+        lng        DOUBLE PRECISION NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+    `,
+  },
 ];
 
 /**

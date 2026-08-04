@@ -2,8 +2,11 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useListStaff } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { MapPin, Navigation, Users, Home, Clock, Wifi, WifiOff, ChevronLeft, ChevronRight, Calendar, RefreshCw, CalendarDays, LayoutGrid } from "lucide-react";
+import { AddressAutocomplete } from "@/components/address-autocomplete";
+import { useToast } from "@/hooks/use-toast";
+import { MapPin, Navigation, Users, Home, Clock, Wifi, WifiOff, ChevronLeft, ChevronRight, Calendar, RefreshCw, CalendarDays, LayoutGrid, Plus, Trash2, Crosshair, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format, addDays, subDays, parseISO, isToday as dateFnsIsToday, startOfMonth, endOfMonth, addMonths } from "date-fns";
 import { MonthCalendar, ColumnCalendar, type CalendarBooking } from "@/components/map-calendar";
@@ -23,6 +26,18 @@ interface StaffEntry {
   homeLng: number | null;
   liveLocation: { lat: number; lng: number; updatedAt: string } | null;
   position: Position | null;
+  /** Where the cleaner is right now (fresh live GPS else home) — independent
+   *  of the selected calendar date. Used for homeowner-pin distances. */
+  currentPosition: Position | null;
+}
+
+interface HomeownerPin {
+  id: number;
+  name: string;
+  address: string | null;
+  lat: number;
+  lng: number;
+  createdAt: string;
 }
 
 interface BookingEntry {
@@ -101,6 +116,24 @@ function makeHomeIcon(s: StaffEntry) {
       <div style="width:0;height:0;
         border-left:4px solid transparent;border-right:4px solid transparent;
         border-top:6px solid ${color};margin-top:-1px;opacity:0.6;"></div>
+    </div>`;
+  return html;
+}
+
+/** Homeowner pin — dispatcher-saved location, distinct purple rounded pin. */
+const PIN_COLOR = "#7C3AED";
+function makeHomeownerPinIcon() {
+  const html = `
+    <div style="width:36px;height:44px;display:flex;flex-direction:column;align-items:center;">
+      <div style="width:32px;height:32px;border-radius:50% 50% 50% 4px;
+        background:${PIN_COLOR};border:2.5px solid white;
+        box-shadow:0 2px 8px rgba(0,0,0,0.3);
+        display:flex;align-items:center;justify-content:center;font-size:15px;">
+        🏡
+      </div>
+      <div style="width:0;height:0;
+        border-left:5px solid transparent;border-right:5px solid transparent;
+        border-top:7px solid ${PIN_COLOR};margin-top:-1px;"></div>
     </div>`;
   return html;
 }
@@ -216,6 +249,50 @@ function buildJobPopup(b: BookingEntry, staffMap: Map<number, StaffEntry>) {
     </div>`;
 }
 
+// ── Homeowner pin popup: cleaners ranked by distance ─────────────────────────
+
+function rankCleanersFrom(lat: number, lng: number, staffData: StaffEntry[]) {
+  // Use currentPosition (live-now else home, independent of the calendar
+  // date being viewed); fall back to position for safety.
+  return staffData
+    .map(s => ({ s, pos: s.currentPosition ?? s.position }))
+    .filter(({ pos }) => pos != null)
+    .map(({ s, pos }) => ({
+      id: s.id,
+      name: s.name,
+      source: pos!.source,
+      km: haversineKm(lat, lng, pos!.lat, pos!.lng),
+    }))
+    .sort((a, b) => a.km - b.km);
+}
+
+function buildPinPopup(pin: HomeownerPin, staffData: StaffEntry[]) {
+  const ranking = rankCleanersFrom(pin.lat, pin.lng, staffData);
+  const rows = ranking.map((r, i) => {
+    const color = cleanerColor(r.id);
+    const medal = i === 0 ? "🟢" : i === ranking.length - 1 && ranking.length > 1 ? "🔴" : "⚪";
+    const label = i === 0 ? " (closest)" : "";
+    return `<div style="display:flex;align-items:center;gap:6px;padding:2px 0;font-size:12px;">
+      <span>${medal}</span>
+      <span style="color:${color};font-weight:600;">${esc(r.name)}</span>
+      <span style="font-size:10px;">${r.source === "live" ? "📡" : "🏠"}</span>
+      <span style="color:#888;margin-left:auto;">${r.km.toFixed(1)} km${label}</span>
+    </div>`;
+  }).join("");
+
+  return `
+    <div style="font-family:sans-serif;min-width:200px;max-width:260px;">
+      <strong style="font-size:13px;color:${PIN_COLOR};">🏡 ${esc(pin.name)}</strong><br/>
+      ${pin.address ? `<span style="font-size:11px;color:#888;">📍 ${esc(pin.address)}</span><br/>` : ""}
+      ${ranking.length > 0 ? `
+        <div style="margin-top:8px;border-top:1px solid #eee;padding-top:6px;">
+          <div style="font-size:11px;color:#888;font-weight:600;margin-bottom:4px;">CLEANERS BY DISTANCE</div>
+          ${rows}
+          <div style="font-size:10px;color:#aaa;margin-top:4px;">📡 live position · 🏠 home address · straight-line</div>
+        </div>` : `<div style="font-size:11px;color:#aaa;margin-top:6px;">No cleaner locations available yet</div>`}
+    </div>`;
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function MapPage() {
@@ -253,6 +330,17 @@ export default function MapPage() {
 
   const { data: allStaff = [] } = useListStaff({ activeOnly: true });
   const baseUrl = getBaseUrl();
+  const { toast } = useToast();
+
+  // ── Homeowner pins state ────────────────────────────────────────────────────
+  const [pins, setPins] = useState<HomeownerPin[]>([]);
+  const [pinName, setPinName] = useState("");
+  const [pinAddress, setPinAddress] = useState("");
+  const [pinCoords, setPinCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [dropMode, setDropMode] = useState(false);
+  const dropModeRef = useRef(false);
+  dropModeRef.current = dropMode;
+  const [savingPin, setSavingPin] = useState(false);
 
   // ── Fetch map data ──────────────────────────────────────────────────────────
   const fetchMapData = useCallback(async (date: string) => {
@@ -283,6 +371,100 @@ export default function MapPage() {
     const interval = setInterval(() => fetchMapData(selectedDate), 30_000);
     return () => clearInterval(interval);
   }, [fetchMapData, selectedDate]);
+
+  // ── Homeowner pins: fetch / save / delete ───────────────────────────────────
+  // Sequence guard: a slow in-flight list fetch must never overwrite state
+  // changed by a later add/delete (stale response would resurrect/lose pins).
+  const pinsSeqRef = useRef(0);
+  const fetchPins = useCallback(async () => {
+    const seq = pinsSeqRef.current;
+    try {
+      const res = await fetch(`${baseUrl}/api/map/pins`, { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        if (pinsSeqRef.current === seq) setPins(data);
+      }
+    } catch { /* ignore */ }
+  }, [baseUrl]);
+
+  useEffect(() => { fetchPins(); }, [fetchPins]);
+
+  // Saves the pin. When called from address selection, `override` carries the
+  // just-picked location so the pin drops immediately — no extra click needed.
+  // Name is optional: falls back to the address, then "Dropped pin".
+  const savePin = useCallback(async (override?: { address?: string; lat: number; lng: number }) => {
+    const coords = override ?? pinCoords;
+    if (!coords) return;
+    const address = (override?.address ?? pinAddress).trim();
+    const name =
+      pinName.trim() ||
+      address.split(",").slice(0, 2).join(",").trim() ||
+      "Dropped pin";
+    setSavingPin(true);
+    try {
+      const res = await fetch(`${baseUrl}/api/map/pins`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          address: address || undefined,
+          lat: coords.lat,
+          lng: coords.lng,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as any).error ?? `Server error ${res.status}`);
+      }
+      const pin = await res.json();
+      pinsSeqRef.current++; // invalidate any in-flight list fetch
+      setPins(prev => [...prev, pin]);
+      setPinName("");
+      setPinAddress("");
+      setPinCoords(null);
+      toast({ title: "Pin added", description: `${pin.name} is now on the map.` });
+      // Focus the new pin
+      if (mapRef.current) {
+        mapRef.current.panTo({ lat: pin.lat, lng: pin.lng });
+        if (mapRef.current.getZoom() < 12) mapRef.current.setZoom(12);
+      }
+    } catch (err: any) {
+      toast({ title: "Couldn't add pin", description: err?.message ?? "Please try again.", variant: "destructive" });
+    } finally {
+      setSavingPin(false);
+    }
+  }, [baseUrl, pinCoords, pinName, pinAddress, toast]);
+
+  const deletePin = useCallback(async (id: number) => {
+    try {
+      const res = await fetch(`${baseUrl}/api/map/pins/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok && res.status !== 404) throw new Error(`Server error ${res.status}`);
+      pinsSeqRef.current++; // invalidate any in-flight list fetch
+      setPins(prev => prev.filter(p => p.id !== id));
+    } catch {
+      toast({ title: "Couldn't remove pin", description: "Please try again.", variant: "destructive" });
+    }
+  }, [baseUrl, toast]);
+
+  // Reverse-geocode a dropped pin so the address field isn't empty (best effort)
+  const reverseGeocode = useCallback(async (lat: number, lng: number) => {
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=18`,
+        { headers: { "Accept-Language": "en" } },
+      );
+      const data = await res.json();
+      if (data?.display_name) {
+        // Keep it short: first three components are usually house/street/area
+        return String(data.display_name).split(",").slice(0, 3).join(",").trim();
+      }
+    } catch { /* ignore */ }
+    return null;
+  }, []);
 
   // ── Calendar helper functions ─────────────────────────────────────────────────
 
@@ -438,6 +620,28 @@ export default function MapPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── Drop-pin mode: map click sets the new pin's location ────────────────────
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) return;
+    const listener = mapRef.current.addListener("click", async (e: any) => {
+      if (!dropModeRef.current || !e.latLng) return;
+      const lat = e.latLng.lat();
+      const lng = e.latLng.lng();
+      setPinCoords({ lat, lng });
+      setDropMode(false);
+      toast({ title: "Location set", description: "Tap Add Pin to save it — a name is optional." });
+      const addr = await reverseGeocode(lat, lng);
+      if (addr) setPinAddress(prev => (prev.trim() ? prev : addr));
+    });
+    return () => listener.remove();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapReady]);
+
+  // Crosshair cursor while drop-pin mode is armed
+  useEffect(() => {
+    mapRef.current?.setOptions({ draggableCursor: dropMode ? "crosshair" : null });
+  }, [dropMode]);
+
   // Create or update an AdvancedMarkerElement with HTML content + popup
   const upsertMarker = useCallback((key: string, lat: number, lng: number, html: string, popupHtml: string) => {
     const map = mapRef.current;
@@ -517,6 +721,20 @@ export default function MapPage() {
       if (key.startsWith("live-") && !seenLive.has(key)) { m.map = null; markersRef.current.delete(key); }
     });
   }, [staffData, mapReady, upsertMarker]);
+
+  // ── Homeowner pin markers (distances refresh with staff positions) ──────────
+  useEffect(() => {
+    if (!mapRef.current) return;
+    const seen = new Set<string>();
+    pins.forEach((pin) => {
+      const key = `pin-${pin.id}`;
+      seen.add(key);
+      upsertMarker(key, pin.lat, pin.lng, makeHomeownerPinIcon(), buildPinPopup(pin, staffData));
+    });
+    markersRef.current.forEach((m, key) => {
+      if (key.startsWith("pin-") && !seen.has(key)) { m.map = null; markersRef.current.delete(key); }
+    });
+  }, [pins, staffData, mapReady, upsertMarker]);
 
   // ── Geocode bookings + compute proximity + render job markers ───────────────
   const jobRenderGenRef = useRef(0);
@@ -913,6 +1131,124 @@ export default function MapPage() {
         <div ref={mapElRef} style={{ height: 520 }} className="w-full" />
       </Card>
 
+      {/* Homeowner pins — saved locations + distances to cleaners */}
+      <Card className="shadow-sm">
+        <CardHeader className="pb-2 pt-4 px-4">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <MapPin className="w-4 h-4" style={{ color: "#7C3AED" }} />
+            Homeowner Pins
+            {pins.length > 0 && (
+              <Badge variant="outline" className="text-xs px-1.5 py-0">{pins.length}</Badge>
+            )}
+            <span className="text-muted-foreground font-normal text-xs ml-1">
+              — tap a pin on the map to see cleaner distances
+            </span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-4 pb-4 space-y-4">
+          {/* Add form */}
+          <div className="grid sm:grid-cols-[1fr_1.4fr_auto_auto] gap-2 items-start">
+            <Input
+              placeholder="Name (optional), e.g. Mrs. Beckett"
+              value={pinName}
+              onChange={(e) => setPinName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && pinCoords) savePin(); }}
+            />
+            <div className="space-y-1">
+              <AddressAutocomplete
+                value={pinAddress}
+                onChange={(v) => { setPinAddress(v); setPinCoords(null); }}
+                onPlaceSelect={(place) => {
+                  const label = place.address && place.city
+                    ? `${place.address}, ${place.city}`
+                    : place.formattedAddress;
+                  setPinAddress(label);
+                  setPinCoords({ lat: place.lat, lng: place.lng });
+                  // Pin drops immediately on address selection — form state
+                  // above is kept so a failed save leaves the address in place.
+                  savePin({ address: label, lat: place.lat, lng: place.lng });
+                }}
+                placeholder="Search an address — pin drops when you pick one"
+                className={cn(pinCoords ? "border-green-400 bg-green-50 dark:bg-green-950/20" : "")}
+              />
+              {pinCoords && (
+                <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+                  <MapPin className="w-3 h-3" /> Location set ({pinCoords.lat.toFixed(4)}, {pinCoords.lng.toFixed(4)})
+                </p>
+              )}
+            </div>
+            <Button
+              variant={dropMode ? "default" : "outline"}
+              onClick={() => setDropMode(!dropMode)}
+              className="gap-1.5"
+              title="Then click anywhere on the map to set the location"
+            >
+              {dropMode ? <X className="w-4 h-4" /> : <Crosshair className="w-4 h-4" />}
+              {dropMode ? "Cancel" : "Drop on map"}
+            </Button>
+            <Button
+              onClick={() => savePin()}
+              disabled={!pinCoords}
+              isLoading={savingPin}
+              className="gap-1.5"
+            >
+              <Plus className="w-4 h-4" />
+              Add Pin
+            </Button>
+          </div>
+          {dropMode && (
+            <div className="px-3 py-2 rounded-lg bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-800 text-sm text-violet-700 dark:text-violet-300">
+              Click anywhere on the map to place the pin.
+            </div>
+          )}
+
+          {/* Saved pins */}
+          {pins.length > 0 && (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {pins.map((pin) => {
+                const ranking = rankCleanersFrom(pin.lat, pin.lng, staffData);
+                const nearest = ranking[0];
+                return (
+                  <div
+                    key={pin.id}
+                    className="flex items-center gap-2.5 px-3 py-2 rounded-lg border hover:border-primary/50 hover:bg-primary/5 transition-all cursor-pointer"
+                    onClick={() => {
+                      const marker = markersRef.current.get(`pin-${pin.id}`);
+                      if (marker && mapRef.current) {
+                        mapRef.current.panTo(marker.position);
+                        if (mapRef.current.getZoom() < 13) mapRef.current.setZoom(13);
+                        infoWindowRef.current?.setContent(marker.__popup);
+                        infoWindowRef.current?.open({ map: mapRef.current, anchor: marker });
+                        mapCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                      }
+                    }}
+                  >
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0" style={{ background: "#7C3AED22" }}>
+                      🏡
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">{pin.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {nearest
+                          ? <>Closest: <span className="font-medium">{nearest.name}</span> · {nearest.km.toFixed(1)} km</>
+                          : pin.address ?? "No cleaner locations yet"}
+                      </p>
+                    </div>
+                    <button
+                      className="p-1.5 rounded-md hover:bg-destructive/10 hover:text-destructive transition-colors shrink-0"
+                      title="Remove pin"
+                      onClick={(e) => { e.stopPropagation(); deletePin(pin.id); }}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Cleaner roster — all staff, always visible */}
       <Card className="shadow-sm">
         <CardHeader className="pb-2 pt-4 px-4">
@@ -1002,6 +1338,10 @@ export default function MapPage() {
           Home address (dashed)
         </div>
         <div className="flex items-center gap-1.5">🏠 Job · border = assigned cleaner · 🟢 popup = closest · 🔴 = farthest</div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px]" style={{ background: "#7C3AED", border: "1.5px solid white", boxShadow: "0 1px 3px rgba(0,0,0,0.3)" }}>🏡</div>
+          Homeowner pin · tap for cleaner distances
+        </div>
         <div className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5" /> Refreshes every 30s</div>
       </div>
     </div>
