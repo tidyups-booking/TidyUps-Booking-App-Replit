@@ -6,7 +6,8 @@
  *  2. POST /map/pins saves a pin and returns it
  *  3. Validation: missing name → 400, bad lat/lng → 400
  *  4. DELETE /map/pins/:id removes the pin; deleting again → 404
- *  5. Non-dispatchers get 403 on all three endpoints
+ *  5. Linked cleaners can VIEW pins/map data (read-only) but POST/DELETE → 403;
+ *     unknown accounts (no staff link, not dispatcher) get 403 everywhere
  *
  * Run from artifacts/api-server:  pnpm exec tsx e2e-homeowner-pins-check.mts
  */
@@ -19,7 +20,7 @@ const CLERK_API = "https://api.clerk.com";
 const API_BASE = process.env.E2E_API_BASE ?? "http://127.0.0.1:8080/api";
 
 const { eq } = await import("drizzle-orm");
-const { db, dispatcherAllowlistTable, homeownerPinsTable } = await import("@workspace/db");
+const { db, dispatcherAllowlistTable, homeownerPinsTable, staffTable } = await import("@workspace/db");
 
 let failures = 0;
 function check(name: string, ok: boolean, detail?: string) {
@@ -92,11 +93,21 @@ const [dispatcherId, cleanerId] = await Promise.all([
 console.log(`dispatcher=${dispatcherId} cleaner=${cleanerId}\n`);
 
 const createdPinIds: number[] = [];
+let cleanerStaffId: number | null = null;
+let strangerIdForCleanup: string | null = null;
 try {
   await db
     .insert(dispatcherAllowlistTable)
     .values({ clerkUserId: dispatcherId })
     .onConflictDoNothing();
+
+  // Link the cleaner user to a staff record — team members (not just
+  // dispatchers) may view the Live Map, so the guard resolves them via staff.
+  const staffRows = await db
+    .insert(staffTable)
+    .values({ name: "Pins E2E Cleaner", clerkUserId: cleanerId })
+    .returning({ id: staffTable.id });
+  cleanerStaffId = staffRows[0].id;
 
   const [dispatcherJwt, cleanerJwt] = await Promise.all([
     mintToken(dispatcherId),
@@ -163,25 +174,64 @@ try {
   const list2 = await api("/map/pins", dispatcherJwt);
   check("pin gone from list", list2.status === 200 && !list2.body.some((p: any) => p.id === create.body?.id));
 
-  // 5. Non-dispatcher blocked everywhere
+  // 5. Cleaners can VIEW pins (whole team sees the map) but cannot manage them
   const c1 = await api("/map/pins", cleanerJwt);
   const c2 = await api("/map/pins", cleanerJwt, {
     method: "POST",
     body: JSON.stringify({ name: "Nope", lat: 51, lng: -114 }),
   });
   const c3 = await api("/map/pins/1", cleanerJwt, { method: "DELETE" });
-  check("cleaner GET → 403", c1.status === 403, `status=${c1.status}`);
+  check("cleaner GET → 200 (read-only view)", c1.status === 200 && Array.isArray(c1.body), `status=${c1.status}`);
   check("cleaner POST → 403", c2.status === 403, `status=${c2.status}`);
   check("cleaner DELETE → 403", c3.status === 403, `status=${c3.status}`);
+  // Cleaners also get the full map data (all scheduled jobs, not just theirs)
+  const todayStr = new Date().toISOString().split("T")[0];
+  const cData = await api(`/map/data?date=${todayStr}`, cleanerJwt);
+  check(
+    "cleaner GET /map/data → 200 with callerRole=cleaner",
+    cData.status === 200 && cData.body?.callerRole === "cleaner" && Array.isArray(cData.body?.bookings),
+    `status=${cData.status} role=${cData.body?.callerRole}`,
+  );
+  const cKey = await api("/map/maps-key", cleanerJwt);
+  check("cleaner GET /map/maps-key → 200", cKey.status === 200 && !!cKey.body?.apiKey, `status=${cKey.status}`);
+  const cCounts = await api(`/map/counts?startDate=${todayStr}&endDate=${todayStr}`, cleanerJwt);
+  check("cleaner GET /map/counts → 200", cCounts.status === 200, `status=${cCounts.status}`);
+  const cRange = await api(`/map/range?startDate=${todayStr}&endDate=${todayStr}`, cleanerJwt);
+  check("cleaner GET /map/range → 200", cRange.status === 200, `status=${cRange.status}`);
+  // Write-capable Jobber sync stays dispatcher-only
+  const cSync = await api("/jobber/sync-calendar", cleanerJwt, {
+    method: "POST",
+    body: JSON.stringify({ startDate: todayStr, endDate: todayStr }),
+  });
+  check("cleaner POST /jobber/sync-calendar → 403", cSync.status === 403, `status=${cSync.status}`);
+
+  // 6. Unknown authenticated account (no staff link, not dispatcher) → 403 on
+  //    every map read endpoint (the new linked-staff boundary).
+  const strangerId = await ensureUser("homeowner-pins-stranger-e2e+clerk_test@example.com", "PinsStranger");
+  strangerIdForCleanup = strangerId;
+  const strangerJwt = await mintToken(strangerId);
+  const s1 = await api(`/map/data?date=${todayStr}`, strangerJwt);
+  const s2 = await api("/map/pins", strangerJwt);
+  const s3 = await api("/map/maps-key", strangerJwt);
+  const s4 = await api(`/map/range?startDate=${todayStr}&endDate=${todayStr}`, strangerJwt);
+  const s5 = await api(`/map/counts?startDate=${todayStr}&endDate=${todayStr}`, strangerJwt);
+  check(
+    "unlinked account → 403 on all map reads",
+    [s1, s2, s3, s4, s5].every((r) => r.status === 403),
+    `statuses=${[s1, s2, s3, s4, s5].map((r) => r.status).join(",")}`,
+  );
 } finally {
   console.log("\nCleaning up...");
   for (const id of createdPinIds) {
     await db.delete(homeownerPinsTable).where(eq(homeownerPinsTable.id, id));
   }
+  if (cleanerStaffId !== null) {
+    await db.delete(staffTable).where(eq(staffTable.id, cleanerStaffId));
+  }
   await db
     .delete(dispatcherAllowlistTable)
     .where(eq(dispatcherAllowlistTable.clerkUserId, dispatcherId));
-  for (const userId of [dispatcherId, cleanerId]) {
+  for (const userId of [dispatcherId, cleanerId, strangerIdForCleanup].filter(Boolean) as string[]) {
     await clerk(`/v1/users/${userId}`, { method: "DELETE" }).catch(() => {});
   }
 }

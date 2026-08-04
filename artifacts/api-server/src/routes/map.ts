@@ -9,7 +9,7 @@ import {
   homeownerPinsTable,
 } from "@workspace/db";
 import { requireAuth } from "../app.js";
-import { guardDispatcher } from "../lib/callerRole.js";
+import { guardDispatcher, guardStaff } from "../lib/callerRole.js";
 
 const router: IRouter = Router();
 
@@ -91,10 +91,10 @@ router.post("/staff/:id/location", async (req, res): Promise<void> => {
   res.json({ ok: true });
 });
 
-// GET /map/maps-key — dispatcher only. Returns the Google Maps browser key so
-// the frontend can load the Maps JavaScript API.
+// GET /map/maps-key — any staff member (dispatcher or cleaner). Returns the
+// Google Maps browser key so the frontend can load the Maps JavaScript API.
 router.get("/map/maps-key", async (req, res): Promise<void> => {
-  if (await guardDispatcher(req, res)) return;
+  if (!(await guardStaff(req, res))) return;
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
     res.status(500).json({ error: "GOOGLE_MAPS_API_KEY not configured" });
@@ -103,20 +103,38 @@ router.get("/map/maps-key", async (req, res): Promise<void> => {
   res.json({ apiKey });
 });
 
-// GET /map/data?date=YYYY-MM-DD — dispatcher only
+// GET /map/data?date=YYYY-MM-DD — any staff member (dispatcher or cleaner):
+// the whole team sees the full schedule on the Live Map.
 // Returns staff with their effective position for the given date:
 //   - Today: live GPS (if recent <5 min) else home coords
 //   - Future/past: home coords only
-// Also returns bookings for that date, each with a proximity ranking of all staff.
+// Also returns bookings for that date — or, when `endDate` is given, for the
+// whole date..endDate range (3-Day / Week / Month map views).
 router.get("/map/data", async (req, res): Promise<void> => {
-  if (await guardDispatcher(req, res)) return;
+  const caller = await guardStaff(req, res);
+  if (!caller) return;
   const date =
-    typeof req.query.date === "string"
+    typeof req.query.date === "string" && isRealCalendarDate(req.query.date)
       ? req.query.date
       : new Date().toISOString().split("T")[0];
+  // Optional range end (inclusive). Ignored unless a real calendar date after
+  // `date`; capped at 62 days so a bad client can't request an unbounded scan.
+  let endDate =
+    typeof req.query.endDate === "string" &&
+    isRealCalendarDate(req.query.endDate) &&
+    req.query.endDate > date
+      ? req.query.endDate
+      : null;
+  if (endDate) {
+    const cap = new Date(date + "T12:00:00Z");
+    cap.setUTCDate(cap.getUTCDate() + 62);
+    const capStr = cap.toISOString().slice(0, 10);
+    if (endDate > capStr) endDate = capStr;
+  }
 
   const today = new Date().toISOString().split("T")[0];
-  const isToday = date === today;
+  // Live GPS applies when today falls inside the viewed range.
+  const isToday = endDate ? date <= today && today <= endDate : date === today;
 
   // All active staff
   const staff = await db
@@ -168,16 +186,24 @@ router.get("/map/data", async (req, res): Promise<void> => {
     };
   });
 
-  // Bookings for that date
+  // Bookings for that date (or the whole range in 3-Day/Week/Month views)
   const bookings = await db
     .select()
     .from(bookingsTable)
-    .where(eq(bookingsTable.scheduledDate, date))
-    .orderBy(bookingsTable.scheduledTime);
+    .where(
+      endDate
+        ? and(
+            gte(bookingsTable.scheduledDate, date),
+            lte(bookingsTable.scheduledDate, endDate),
+          )
+        : eq(bookingsTable.scheduledDate, date),
+    )
+    .orderBy(bookingsTable.scheduledDate, bookingsTable.scheduledTime);
 
   // The client will geocode booking addresses and compute proximity —
   // but we also return which staff have positions so the client can rank them.
-  res.json({ staff: staffWithPosition, bookings, isToday });
+  // callerRole lets the map page show/hide dispatcher-only controls.
+  res.json({ staff: staffWithPosition, bookings, isToday, callerRole: caller.role });
 });
 
 /**
@@ -204,9 +230,10 @@ function validateDateRange(
 
 // ── Homeowner pins — dispatcher-saved locations on the Live Map ─────────────
 
-// GET /map/pins — dispatcher only. List all saved homeowner pins.
+// GET /map/pins — any staff member. Everyone sees saved homeowner pins;
+// only dispatchers may add or remove them (POST/DELETE below).
 router.get("/map/pins", async (req, res): Promise<void> => {
-  if (await guardDispatcher(req, res)) return;
+  if (!(await guardStaff(req, res))) return;
   const pins = await db
     .select()
     .from(homeownerPinsTable)
@@ -270,6 +297,7 @@ router.delete("/map/pins/:id", async (req, res): Promise<void> => {
 // GET /map/counts?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
 // Returns {[date]: bookingCount} for the given range (used by month calendar view)
 router.get("/map/counts", requireAuth, async (req, res): Promise<void> => {
+  if (!(await guardStaff(req, res))) return;
   const startDate = typeof req.query.startDate === "string" ? req.query.startDate.trim() : null;
   const endDate = typeof req.query.endDate === "string" ? req.query.endDate.trim() : null;
 
@@ -301,6 +329,7 @@ router.get("/map/counts", requireAuth, async (req, res): Promise<void> => {
 // GET /map/range?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
 // Returns bookings grouped by date (used by week / 3-day calendar views)
 router.get("/map/range", requireAuth, async (req, res): Promise<void> => {
+  if (!(await guardStaff(req, res))) return;
   const startDate = typeof req.query.startDate === "string" ? req.query.startDate.trim() : null;
   const endDate = typeof req.query.endDate === "string" ? req.query.endDate.trim() : null;
 

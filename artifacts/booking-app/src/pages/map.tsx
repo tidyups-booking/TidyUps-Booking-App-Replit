@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useListStaff } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -46,6 +46,7 @@ interface BookingEntry {
   lastName: string;
   address: string;
   city: string;
+  scheduledDate: string;
   scheduledTime: string | null;
   staffId: number | null;
   addressLat?: number | null;
@@ -173,22 +174,45 @@ function makeJobIcon(borderColor: string, isNearest: boolean, highlight = false)
 // ── Geocode (Nominatim) ───────────────────────────────────────────────────────
 
 const geocodeCache = new Map<string, [number, number] | null>();
+// In-flight dedupe + a shared serial queue keep Nominatim usage at ~1 req/s
+// even when many bookings (month view) and repeated 30s polls ask at once.
+// Requests join the existing promise instead of re-queuing, so progress is
+// never lost when a poll replaces the bookings array mid-geocode.
+const geocodeInflight = new Map<string, Promise<[number, number] | null>>();
+let geocodeQueue: Promise<void> = Promise.resolve();
 
-async function geocodeAddress(address: string, city: string): Promise<[number, number] | null> {
+function geocodeAddress(address: string, city: string): Promise<[number, number] | null> {
   const key = `${address}, ${city}, AB, Canada`;
-  if (geocodeCache.has(key)) return geocodeCache.get(key)!;
-  try {
-    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(key)}&format=json&limit=1&countrycodes=ca`;
-    const res = await fetch(url, { headers: { "Accept-Language": "en", "User-Agent": "833TidyupsDispatch/1.0" } });
-    const data = await res.json();
-    if (data.length > 0) {
-      const coord: [number, number] = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
-      geocodeCache.set(key, coord);
-      return coord;
-    }
-  } catch { /* ignore */ }
-  geocodeCache.set(key, null);
-  return null;
+  if (geocodeCache.has(key)) return Promise.resolve(geocodeCache.get(key)!);
+  const inflight = geocodeInflight.get(key);
+  if (inflight) return inflight;
+
+  const p = new Promise<[number, number] | null>((resolve) => {
+    geocodeQueue = geocodeQueue.then(async () => {
+      if (geocodeCache.has(key)) { resolve(geocodeCache.get(key)!); return; }
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(key)}&format=json&limit=1&countrycodes=ca`;
+        const res = await fetch(url, { headers: { "Accept-Language": "en", "User-Agent": "833TidyupsDispatch/1.0" } });
+        const data = await res.json();
+        if (data.length > 0) {
+          const coord: [number, number] = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+          geocodeCache.set(key, coord);
+          resolve(coord);
+        } else {
+          geocodeCache.set(key, null);
+          resolve(null);
+        }
+      } catch {
+        // Transient failure — don't cache, allow a later retry
+        resolve(null);
+      }
+      // Pace the queue: ~1 request/second (Nominatim usage policy)
+      await new Promise(r => setTimeout(r, 1100));
+    });
+  });
+  geocodeInflight.set(key, p);
+  p.finally(() => geocodeInflight.delete(key));
+  return p;
 }
 
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
@@ -218,9 +242,13 @@ function getBaseUrl() {
 
 // ── Proximity popup HTML ─────────────────────────────────────────────────────
 
-function buildJobPopup(b: BookingEntry, staffMap: Map<number, StaffEntry>) {
+function buildJobPopup(b: BookingEntry, staffMap: Map<number, StaffEntry>, showDate = false) {
   const assignee = b.staffId ? staffMap.get(b.staffId) : null;
   const ranking = b.ranking ?? [];
+  let dateLabel = "";
+  if (showDate && b.scheduledDate) {
+    try { dateLabel = format(parseISO(b.scheduledDate), "EEE, MMM d"); } catch { dateLabel = b.scheduledDate; }
+  }
 
   const rankingRows = ranking.map((r, i) => {
     const color = cleanerColor(r.id);
@@ -236,6 +264,7 @@ function buildJobPopup(b: BookingEntry, staffMap: Map<number, StaffEntry>) {
   return `
     <div style="font-family:sans-serif;min-width:200px;max-width:260px;">
       <strong style="font-size:13px;">${esc(b.firstName)} ${esc(b.lastName)}</strong><br/>
+      ${dateLabel ? `<span style="font-size:12px;color:#555;">📅 ${esc(dateLabel)}</span><br/>` : ""}
       ${b.scheduledTime ? `<span style="font-size:12px;color:#555;">⏰ ${esc(b.scheduledTime)}</span><br/>` : ""}
       <span style="font-size:11px;color:#888;">📍 ${esc(b.address)}, ${esc(b.city)}</span><br/>
       ${assignee
@@ -341,13 +370,22 @@ export default function MapPage() {
   const dropModeRef = useRef(false);
   dropModeRef.current = dropMode;
   const [savingPin, setSavingPin] = useState(false);
+  // Whole team can VIEW the map; only dispatchers can manage homeowner pins.
+  const [isDispatcher, setIsDispatcher] = useState(false);
 
   // ── Fetch map data ──────────────────────────────────────────────────────────
-  const fetchMapData = useCallback(async (date: string) => {
+  // Last-issued-wins guard: a slow response from an earlier date/range (or an
+  // older poll) must never overwrite data from a newer request.
+  const mapDataSeqRef = useRef(0);
+  const fetchMapData = useCallback(async (date: string, endDate?: string) => {
+    const seq = ++mapDataSeqRef.current;
+    const range = endDate && endDate !== date ? `&endDate=${endDate}` : "";
     try {
-      const res = await fetch(`${baseUrl}/api/map/data?date=${date}`, { credentials: "include" });
-      if (!res.ok) return;
+      const res = await fetch(`${baseUrl}/api/map/data?date=${date}${range}`, { credentials: "include" });
+      if (!res.ok || seq !== mapDataSeqRef.current) return;
       const data = await res.json();
+      if (seq !== mapDataSeqRef.current) return;
+      setIsDispatcher(data.callerRole === "dispatcher");
       setStaffData(data.staff);
       setIsToday(data.isToday);
       setBookings(
@@ -357,6 +395,7 @@ export default function MapPage() {
           lastName: b.lastName,
           address: b.address,
           city: b.city,
+          scheduledDate: b.scheduledDate,
           scheduledTime: b.scheduledTime,
           staffId: b.staffId,
           addressLat: b.addressLat ?? null,
@@ -366,11 +405,39 @@ export default function MapPage() {
     } catch { /* ignore */ }
   }, [baseUrl]);
 
+  // The map's job pins follow the calendar view: Day shows one day, while
+  // 3-Day / Week / Month show every job in the visible range at once.
+  const mapRange = useMemo(() => {
+    if (calendarView === "3day") {
+      const anchor = parseISO(selectedDate);
+      return {
+        start: format(addDays(anchor, -1), "yyyy-MM-dd"),
+        end: format(addDays(anchor, 1), "yyyy-MM-dd"),
+      };
+    }
+    if (calendarView === "week") {
+      const anchor = parseISO(selectedDate);
+      const monday = subDays(anchor, (anchor.getDay() + 6) % 7);
+      return {
+        start: format(monday, "yyyy-MM-dd"),
+        end: format(addDays(monday, 6), "yyyy-MM-dd"),
+      };
+    }
+    if (calendarView === "month") {
+      return {
+        start: format(startOfMonth(calendarMonth), "yyyy-MM-dd"),
+        end: format(endOfMonth(calendarMonth), "yyyy-MM-dd"),
+      };
+    }
+    return { start: selectedDate, end: selectedDate };
+  }, [calendarView, selectedDate, calendarMonth]);
+  const isRangeView = mapRange.start !== mapRange.end;
+
   useEffect(() => {
-    fetchMapData(selectedDate);
-    const interval = setInterval(() => fetchMapData(selectedDate), 30_000);
+    fetchMapData(mapRange.start, mapRange.end);
+    const interval = setInterval(() => fetchMapData(mapRange.start, mapRange.end), 30_000);
     return () => clearInterval(interval);
-  }, [fetchMapData, selectedDate]);
+  }, [fetchMapData, mapRange.start, mapRange.end]);
 
   // ── Homeowner pins: fetch / save / delete ───────────────────────────────────
   // Sequence guard: a slow in-flight list fetch must never overwrite state
@@ -392,7 +459,11 @@ export default function MapPage() {
   // Saves the pin. When called from address selection, `override` carries the
   // just-picked location so the pin drops immediately — no extra click needed.
   // Name is optional: falls back to the address, then "Dropped pin".
+  // saveSeqRef: if the dispatcher picks another address while a save is in
+  // flight, the older save must not clear the newer selection's form state.
+  const saveSeqRef = useRef(0);
   const savePin = useCallback(async (override?: { address?: string; lat: number; lng: number }) => {
+    const mySeq = ++saveSeqRef.current;
     const coords = override ?? pinCoords;
     if (!coords) return;
     const address = (override?.address ?? pinAddress).trim();
@@ -420,19 +491,22 @@ export default function MapPage() {
       const pin = await res.json();
       pinsSeqRef.current++; // invalidate any in-flight list fetch
       setPins(prev => [...prev, pin]);
-      setPinName("");
-      setPinAddress("");
-      setPinCoords(null);
-      toast({ title: "Pin added", description: `${pin.name} is now on the map.` });
-      // Focus the new pin
-      if (mapRef.current) {
-        mapRef.current.panTo({ lat: pin.lat, lng: pin.lng });
-        if (mapRef.current.getZoom() < 12) mapRef.current.setZoom(12);
+      // Only clear the form / move the map if no newer selection superseded
+      // this save while it was in flight.
+      if (saveSeqRef.current === mySeq) {
+        setPinName("");
+        setPinAddress("");
+        setPinCoords(null);
+        if (mapRef.current) {
+          mapRef.current.panTo({ lat: pin.lat, lng: pin.lng });
+          if (mapRef.current.getZoom() < 12) mapRef.current.setZoom(12);
+        }
       }
+      toast({ title: "Pin added", description: `${pin.name} is now on the map.` });
     } catch (err: any) {
       toast({ title: "Couldn't add pin", description: err?.message ?? "Please try again.", variant: "destructive" });
     } finally {
-      setSavingPin(false);
+      if (saveSeqRef.current === mySeq) setSavingPin(false);
     }
   }, [baseUrl, pinCoords, pinName, pinAddress, toast]);
 
@@ -755,13 +829,14 @@ export default function MapPage() {
     const highlight = jumpHighlight === selectedDate;
     const coordsForFit: [number, number][] = [];
 
-    bookings.forEach(async (b, i) => {
-      // Use stored coordinates if available, otherwise fall back to Nominatim geocoding
+    bookings.forEach(async (b) => {
+      // Use stored coordinates if available, otherwise fall back to Nominatim
+      // geocoding (self-throttled to ~1 req/s with in-flight dedupe, so month
+      // views and 30s repolls never hammer the service or lose progress).
       let coords: [number, number] | null = null;
       if (b.addressLat != null && b.addressLng != null) {
         coords = [b.addressLat, b.addressLng];
       } else {
-        await new Promise(r => setTimeout(r, i * 350));
         coords = await geocodeAddress(b.address, b.city);
       }
       if (gen !== jobRenderGenRef.current || !coords || !mapRef.current) return;
@@ -786,7 +861,8 @@ export default function MapPage() {
       const enriched: BookingEntry = { ...b, coords, ranking };
 
       const icon = makeJobIcon(borderColor, !!nearest && nearest.id === b.staffId, highlight);
-      const popup = buildJobPopup(enriched, staffMap);
+      // In range views, each popup shows which day the job is on
+      const popup = buildJobPopup(enriched, staffMap, isRangeView);
 
       const key = `job-${b.id}`;
       upsertMarker(key, coords[0], coords[1], icon, popup);
@@ -818,7 +894,7 @@ export default function MapPage() {
       if (fitTimerRef.current) { clearTimeout(fitTimerRef.current); fitTimerRef.current = null; }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookings, jumpHighlight, selectedDate, mapReady]);
+  }, [bookings, jumpHighlight, selectedDate, mapReady, isRangeView]);
 
   // Clear the jump highlight after the pulse animation finishes
   useEffect(() => {
@@ -922,17 +998,19 @@ export default function MapPage() {
             ))}
           </div>
 
-          {/* Sync from Jobber */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={syncFromJobber}
-            disabled={syncing}
-            className="gap-1.5 text-xs h-8"
-          >
-            <RefreshCw className={cn("w-3.5 h-3.5", syncing && "animate-spin")} />
-            {syncing ? "Syncing…" : "Sync Jobber"}
-          </Button>
+          {/* Sync from Jobber — dispatcher-only action */}
+          {isDispatcher && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={syncFromJobber}
+              disabled={syncing}
+              className="gap-1.5 text-xs h-8"
+            >
+              <RefreshCw className={cn("w-3.5 h-3.5", syncing && "animate-spin")} />
+              {syncing ? "Syncing…" : "Sync Jobber"}
+            </Button>
+          )}
 
           {calendarView === "day" && (
             isToday ? (
@@ -983,6 +1061,19 @@ export default function MapPage() {
           onDateSelect={jumpToDay}
           bookingsByDate={bookingsByDate}
         />
+      )}
+
+      {/* Range-view hint: the map below shows every job in the visible range */}
+      {isRangeView && (
+        <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary/5 border border-primary/20 text-xs text-muted-foreground">
+          <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
+          <span>
+            Map shows all <span className="font-semibold text-foreground">{bookings.length}</span> jobs
+            from <span className="font-semibold text-foreground">{format(parseISO(mapRange.start), "MMM d")}</span> to{" "}
+            <span className="font-semibold text-foreground">{format(parseISO(mapRange.end), "MMM d")}</span> — tap a pin
+            to see its date and cleaner distances.
+          </span>
+        </div>
       )}
 
       {/* ── Day view: date strip ───────────────────────────────────────────────── */}
@@ -1146,7 +1237,8 @@ export default function MapPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="px-4 pb-4 space-y-4">
-          {/* Add form */}
+          {/* Add form — dispatchers only; cleaners see pins but can't manage them */}
+          {isDispatcher && (
           <div className="grid sm:grid-cols-[1fr_1.4fr_auto_auto] gap-2 items-start">
             <Input
               placeholder="Name (optional), e.g. Mrs. Beckett"
@@ -1196,7 +1288,8 @@ export default function MapPage() {
               Add Pin
             </Button>
           </div>
-          {dropMode && (
+          )}
+          {isDispatcher && dropMode && (
             <div className="px-3 py-2 rounded-lg bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-800 text-sm text-violet-700 dark:text-violet-300">
               Click anywhere on the map to place the pin.
             </div>
@@ -1234,13 +1327,15 @@ export default function MapPage() {
                           : pin.address ?? "No cleaner locations yet"}
                       </p>
                     </div>
-                    <button
-                      className="p-1.5 rounded-md hover:bg-destructive/10 hover:text-destructive transition-colors shrink-0"
-                      title="Remove pin"
-                      onClick={(e) => { e.stopPropagation(); deletePin(pin.id); }}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {isDispatcher && (
+                      <button
+                        className="p-1.5 rounded-md hover:bg-destructive/10 hover:text-destructive transition-colors shrink-0"
+                        title="Remove pin"
+                        onClick={(e) => { e.stopPropagation(); deletePin(pin.id); }}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 );
               })}

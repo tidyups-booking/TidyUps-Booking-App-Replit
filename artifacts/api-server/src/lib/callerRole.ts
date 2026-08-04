@@ -270,6 +270,27 @@ export async function guardDispatcher(req: any, res: Response): Promise<boolean>
 }
 
 /**
+ * Soft staff guard — allows dispatchers AND linked cleaners (anyone on the
+ * team), rejecting only unknown accounts. For routes behind `requireAuth`.
+ * Returns the caller's role on success, or `null` if the request was rejected
+ * (caller should `return` immediately). Used for read-only views that the
+ * whole team shares, e.g. the Live Map.
+ */
+export async function guardStaff(req: any, res: Response): Promise<CallerRole | null> {
+  const callerId = getAuth(req)?.userId;
+  if (!callerId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return null;
+  }
+  const callerRole = await resolveCallerRole(callerId);
+  if (callerRole.role === "denied") {
+    res.status(403).json({ error: "Forbidden: staff access required" });
+    return null;
+  }
+  return callerRole;
+}
+
+/**
  * Strict dispatcher guard — for routes mounted BEFORE `requireAuth` middleware
  * (e.g. Jobber management, Twilio config). Returns 401 for unauthenticated
  * callers and 403 for authenticated non-dispatchers.

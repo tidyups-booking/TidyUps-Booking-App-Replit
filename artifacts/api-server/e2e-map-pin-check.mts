@@ -6,7 +6,7 @@
 import express from "express";
 import { clerkMiddleware } from "@clerk/express";
 import { eq } from "drizzle-orm";
-import { db, staffTable } from "@workspace/db";
+import { db, staffTable, dispatcherAllowlistTable } from "@workspace/db";
 
 // Load app.js first so the app.js ↔ routes circular imports resolve in the
 // same order as production, then grab the map router.
@@ -28,6 +28,43 @@ function check(name: string, ok: boolean, detail?: string) {
   if (!ok) failures++;
 }
 
+// Map data now requires an authenticated team member (dispatcher or linked
+// cleaner) — mint a real dispatcher session via the Clerk backend API.
+const SECRET = process.env.CLERK_SECRET_KEY;
+if (!SECRET) {
+  console.error("CLERK_SECRET_KEY missing");
+  process.exit(1);
+}
+async function clerkApi(path: string, init?: RequestInit): Promise<any> {
+  const res = await fetch(`https://api.clerk.com${path}`, {
+    ...init,
+    headers: { Authorization: `Bearer ${SECRET}`, "Content-Type": "application/json", ...(init?.headers ?? {}) },
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(`Clerk ${path} → ${res.status}: ${JSON.stringify(body)}`);
+  return body;
+}
+const E2E_EMAIL = "map-pin-dispatcher-e2e+clerk_test@example.com";
+const found = await clerkApi(`/v1/users?email_address=${encodeURIComponent(E2E_EMAIL)}`);
+const dispatcherId: string =
+  Array.isArray(found) && found.length > 0
+    ? found[0].id
+    : (
+        await clerkApi(`/v1/users`, {
+          method: "POST",
+          body: JSON.stringify({
+            email_address: [E2E_EMAIL],
+            first_name: "MapPin",
+            last_name: "E2E Check",
+            skip_password_requirement: true,
+          }),
+        })
+      ).id;
+await db.insert(dispatcherAllowlistTable).values({ clerkUserId: dispatcherId }).onConflictDoNothing();
+const session = await clerkApi(`/v1/sessions`, { method: "POST", body: JSON.stringify({ user_id: dispatcherId }) });
+const { jwt } = await clerkApi(`/v1/sessions/${session.id}/tokens`, { method: "POST" });
+const authHeaders = { Authorization: `Bearer ${jwt}` };
+
 // 1. Simulate what the Staff page save does after a Places-autocomplete pick:
 //    a staff record with homeAddress + homeLat/homeLng.
 const [created] = await db
@@ -47,7 +84,9 @@ try {
 
   // 2. /map/data is what the Live Map polls every 30s — the new staff member
   //    must appear with coordinates without any reload.
-  const res = await fetch(`${base}/map/data?date=${today}`);
+  const unauth = await fetch(`${base}/map/data?date=${today}`);
+  check("/map/data unauthenticated → 401", unauth.status === 401, `status=${unauth.status}`);
+  const res = await fetch(`${base}/map/data?date=${today}`, { headers: authHeaders });
   check("/map/data responds 200", res.status === 200, `status=${res.status}`);
   const data = await res.json();
   const entry = (data.staff as any[]).find((s) => s.id === created.id);
@@ -73,6 +112,8 @@ try {
   check("/map/counts guarded without crashing", counts.status === 401, `status=${counts.status}`);
 } finally {
   await db.delete(staffTable).where(eq(staffTable.id, created.id));
+  await db.delete(dispatcherAllowlistTable).where(eq(dispatcherAllowlistTable.clerkUserId, dispatcherId));
+  await clerkApi(`/v1/users/${dispatcherId}`, { method: "DELETE" }).catch(() => {});
   server.close();
 }
 

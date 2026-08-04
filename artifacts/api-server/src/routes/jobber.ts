@@ -277,6 +277,8 @@ function isRealCalendarDate(s: string): boolean {
 const MAX_SYNC_DAYS = 93;
 
 router.post("/jobber/sync-calendar", requireAuth, async (req, res) => {
+  // Write side-effects (booking upserts) — dispatchers only.
+  if (await requireDispatcherAuth(req, res)) return;
   const startDate =
     typeof req.body?.startDate === "string" ? req.body.startDate.trim() : null;
   const endDate =
