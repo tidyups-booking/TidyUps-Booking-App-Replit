@@ -28,3 +28,10 @@ uri = "file://docs/prompt-new-product-app.md"
 type = "text"
 title = "Prompt 2 — New Product App Kickoff"
 description = "The first message to paste into your brand-new app: full product vision, setup wizard, architecture rules, hard-won technical lessons, and build order."
+
+[[outputs]]
+id = "DexYKeF1e_SFLm9DpakBv"
+uri = "file://docs/ai-receptionist-product-plans.zip"
+type = "unspecified"
+title = "All 3 Files — Product Plans & Prompts (ZIP)"
+description = "One downloadable package containing the product blueprint, the prompt for this project, and the kickoff prompt for the new product app."
