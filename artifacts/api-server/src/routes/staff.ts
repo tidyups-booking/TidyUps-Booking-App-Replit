@@ -19,7 +19,7 @@ import {
   ConnectStaffAccountParams,
   ConnectStaffAccountBody,
 } from "@workspace/api-zod";
-import { resolveCallerRole, guardDispatcher } from "../lib/callerRole.js";
+import { resolveCallerRole, guardDispatcher, guardStaff } from "../lib/callerRole.js";
 
 const router: IRouter = Router();
 
@@ -641,9 +641,14 @@ router.post("/staff/import", async (req, res): Promise<void> => {
   });
 });
 
-// GET /schedule?date=YYYY-MM-DD — all staff schedules for a given day (dispatcher only)
+// GET /schedule?date=YYYY-MM-DD — all staff schedules for a given day.
+// Any linked team member (dispatcher or cleaner) may view the whole team's
+// schedule — same policy as the Live Map (see routes/map.ts GET /map/data).
+// Cleaners get a trimmed staff object (no email/phone); write access to
+// bookings remains restricted to the cleaner's own jobs elsewhere.
 router.get("/schedule", async (req, res): Promise<void> => {
-  if (await guardDispatcher(req, res)) return;
+  const caller = await guardStaff(req, res);
+  if (!caller) return;
 
   const query = GetDayScheduleQueryParams.safeParse(req.query);
   if (!query.success) {
@@ -664,7 +669,11 @@ router.get("/schedule", async (req, res): Promise<void> => {
     .orderBy(bookingsTable.scheduledTime);
 
   const schedules = allStaff.map((staff) => ({
-    staff,
+    // Cleaners see the team schedule but not teammates' contact details.
+    staff:
+      caller.role === "dispatcher"
+        ? staff
+        : { ...staff, email: null, phone: null, clerkUserId: null },
     bookings: bookings.filter((b) => b.staffId === staff.id),
   }));
 

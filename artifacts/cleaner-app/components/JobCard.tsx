@@ -7,6 +7,8 @@ import type { Booking } from '@workspace/api-client-react';
 interface JobCardProps {
   booking: Booking;
   onPress: () => void;
+  /** Shown when viewing the whole team's schedule and the job belongs to someone else (or is unassigned). */
+  assigneeName?: string | null;
 }
 
 function statusStyle(status: string) {
@@ -38,7 +40,7 @@ function formatService(type: string) {
   return map[type] ?? type;
 }
 
-export function JobCard({ booking, onPress }: JobCardProps) {
+export function JobCard({ booking, onPress, assigneeName }: JobCardProps) {
   const colors = useColors();
   const st = statusStyle(booking.status);
 
@@ -87,6 +89,19 @@ export function JobCard({ booking, onPress }: JobCardProps) {
           {booking.address}, {booking.city}
         </Text>
       </View>
+
+      {/* Assignee (team view) */}
+      {assigneeName !== undefined && (
+        <View style={styles.addressRow}>
+          <Ionicons name="person-outline" size={13} color={colors.mutedForeground} />
+          <Text
+            style={[styles.address, { color: colors.mutedForeground, fontFamily: 'Poppins_500Medium' }]}
+            numberOfLines={1}
+          >
+            {assigneeName ?? 'Unassigned'}
+          </Text>
+        </View>
+      )}
 
       {/* Details */}
       <View style={styles.detailsRow}>

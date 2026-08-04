@@ -241,7 +241,6 @@ try {
     ["DELETE", "/dispatchers/invites/1"],
     ["GET", "/staff"],
     ["POST", "/staff"],
-    ["GET", "/schedule?date=2026-01-01"],
     ["GET", "/jobber/auth"],
     ["GET", "/twilio/webhook-url"],
     ["GET", "/contact/messages"],
@@ -260,6 +259,22 @@ try {
 
   // But the cleaner CAN read their own schedule.
   const today = new Date().toISOString().slice(0, 10);
+
+  // The team day schedule is open to any linked team member (same policy as
+  // the Live Map) — but cleaners must not see teammates' contact details.
+  const team = await api("GET", `/schedule?date=${today}`, cleanerJwt);
+  check("cleaner gets 200 on team schedule", team.status === 200, `status=${team.status}`);
+  if (team.status === 200) {
+    const rows = (await team.json()) as Array<{ staff: Record<string, unknown> }>;
+    const leaky = rows.filter(
+      (r) => r.staff.email != null || r.staff.phone != null || r.staff.clerkUserId != null,
+    );
+    check(
+      "team schedule hides email/phone/clerkUserId from cleaners",
+      leaky.length === 0,
+      `${leaky.length} leaky rows`,
+    );
+  }
   const own = await api("GET", `/staff/${staffId}/schedule?date=${today}`, cleanerJwt);
   check("cleaner gets 200 on own schedule", own.status === 200, `status=${own.status}`);
 
