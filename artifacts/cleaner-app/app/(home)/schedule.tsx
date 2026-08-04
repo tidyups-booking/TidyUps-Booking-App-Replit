@@ -271,9 +271,9 @@ export default function ScheduleScreen() {
               <JobCard
                 booking={item.booking}
                 assigneeName={isMine ? `${item.staffName} (you)` : item.staffName}
-                // Only your own jobs open the detail screen — status changes
-                // on other cleaners' jobs are blocked by the server anyway.
-                onPress={isMine ? () => handleJobPress(item.booking.id) : () => {}}
+                // Teammates' jobs open a read-only detail view (no status
+                // controls) so cleaners can coordinate handoffs and coverage.
+                onPress={() => handleJobPress(item.booking.id)}
               />
             );
           }}

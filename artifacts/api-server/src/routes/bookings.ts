@@ -385,7 +385,8 @@ router.post("/bookings", async (req, res): Promise<void> => {
 });
 
 // GET /bookings/:id
-// Cleaners may only fetch bookings assigned to them.
+// Any authorized caller (dispatcher or cleaner) may read any booking;
+// cleaner write restrictions are enforced in PATCH below.
 router.get("/bookings/:id", async (req, res): Promise<void> => {
   const params = GetBookingParams.safeParse(req.params);
   if (!params.success) {
@@ -416,10 +417,8 @@ router.get("/bookings/:id", async (req, res): Promise<void> => {
     res.status(403).json({ error: "Forbidden: account not authorized. Contact a dispatcher." });
     return;
   }
-  if (callerRole.role === "cleaner" && booking.staffId !== callerRole.staffId) {
-    res.status(403).json({ error: "Forbidden: cannot access another cleaner's booking" });
-    return;
-  }
+  // Cleaners may READ any team booking (to coordinate handoffs/coverage);
+  // writes are still restricted to their own bookings in PATCH below.
 
   res.json(GetBookingResponse.parse(booking));
 });

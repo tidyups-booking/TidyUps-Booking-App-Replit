@@ -17,6 +17,7 @@ import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useColors } from '@/hooks/useColors';
+import { useGetStaffMe } from '@workspace/api-client-react';
 
 function formatTime(time: string) {
   const [h, m] = time.split(':').map(Number);
@@ -92,6 +93,12 @@ export default function JobDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const bookingId = Number(id);
 
+  // This route lives outside (home)'s StaffProvider, so resolve the caller's
+  // staff record directly. The query is shared/cached with the provider's.
+  const { data: me } = useGetStaffMe({
+    query: { retry: 2, retryDelay: 2_000, staleTime: 5 * 60 * 1_000 } as any,
+  });
+  const staffId = me?.id ?? null;
   const { data: booking, isLoading, isError } = useGetBooking(bookingId);
   const { mutate: updateBooking, isPending: isUpdating } = useUpdateBooking();
 
@@ -157,8 +164,11 @@ export default function JobDetailScreen() {
   }
 
   const sc = statusConfig(booking.status);
-  const canStart = booking.status === 'pending' || booking.status === 'confirmed';
-  const canComplete = booking.status === 'in_progress';
+  // Teammates' jobs are read-only: no status controls. The server enforces
+  // this too, but we hide the buttons so cleaners aren't misled.
+  const isMine = staffId != null && booking.staffId === staffId;
+  const canStart = isMine && (booking.status === 'pending' || booking.status === 'confirmed');
+  const canComplete = isMine && booking.status === 'in_progress';
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
