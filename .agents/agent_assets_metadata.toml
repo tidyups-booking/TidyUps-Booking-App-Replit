@@ -7,3 +7,10 @@ uri = "file://.agents/outputs/apple-csr/CertificateSigningRequest.certSigningReq
 type = "unspecified"
 title = "Certificate Signing Request"
 description = "Upload this file at developer.apple.com when creating your Apple Distribution certificate for app.book.Cleaning."
+
+[[outputs]]
+id = "m4B0Tn6825dbxot696r4m"
+uri = "file://docs/jobber-marketplace-product-blueprint.md"
+type = "text"
+title = "Jobber Marketplace Product Blueprint"
+description = "The full plan for turning the AI receptionist into a product other cleaning companies can install — setup wizard, multi-company changes, Jobber's listing requirements, and build order."
