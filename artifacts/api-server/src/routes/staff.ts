@@ -71,7 +71,10 @@ router.post("/staff", async (req, res): Promise<void> => {
  *   CLEANER    — userId matches a staff record. Restricted to own data.
  */
 
-// GET /staff/me — return the staff record linked to the caller's Clerk account
+// GET /staff/me — return the staff record linked to the caller's Clerk account.
+// Goes through resolveCallerRole (NOT a direct clerkUserId lookup) so that a
+// first-time sign-in with the email on an unlinked staff record triggers the
+// self-link bootstrap — this is the first endpoint the cleaner app calls.
 router.get("/staff/me", async (req, res): Promise<void> => {
   const auth = getAuth(req);
   const callerId = auth?.userId;
@@ -80,17 +83,19 @@ router.get("/staff/me", async (req, res): Promise<void> => {
     return;
   }
 
-  const [staff] = await db
-    .select()
-    .from(staffTable)
-    .where(eq(staffTable.clerkUserId, callerId));
-
-  if (!staff) {
-    res.status(404).json({ error: "No staff record is linked to this account. Sign in with the same email your dispatcher has on file, or ask your dispatcher to add it to your staff record." });
-    return;
+  const caller = await resolveCallerRole(callerId);
+  if (caller.role === "cleaner" && caller.staffId !== null) {
+    const [staff] = await db
+      .select()
+      .from(staffTable)
+      .where(eq(staffTable.id, caller.staffId));
+    if (staff) {
+      res.json(staff);
+      return;
+    }
   }
 
-  res.json(staff);
+  res.status(404).json({ error: "No staff record is linked to this account. Sign in with the same email your dispatcher has on file, or ask your dispatcher to add it to your staff record." });
 });
 
 // PATCH /staff/:id

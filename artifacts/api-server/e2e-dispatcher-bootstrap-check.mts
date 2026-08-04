@@ -20,7 +20,10 @@
  * Cleanup: every allowlist/staff row this script creates is removed in
  * `finally`; pre-existing rows are never touched.
  *
- * Requirements: CLERK_SECRET_KEY and DATABASE_URL set (no dev server needed).
+ * Requirements: CLERK_SECRET_KEY and DATABASE_URL set. Section 10 (HTTP
+ * self-link through GET /staff/me) additionally needs the dev API server
+ * running on port 8080 — it verifies the SERVER process performs the link,
+ * which in-process resolveCallerRole calls cannot cover.
  * Run: npx tsx e2e-dispatcher-bootstrap-check.mts  (from artifacts/api-server)
  */
 
@@ -149,13 +152,15 @@ const NONMATCH_EMAIL = "bootstrap-nonmatch-e2e+clerk_test@example.com";
 const INVITE_EMAIL = "bootstrap-invite-e2e+clerk_test@example.com";
 const STAFF_LINK_EMAIL = "bootstrap-stafflink-e2e+clerk_test@example.com";
 const STAFF_INACTIVE_EMAIL = "bootstrap-staffinactive-e2e+clerk_test@example.com";
+const STAFF_HTTP_EMAIL = "bootstrap-staffhttp-e2e+clerk_test@example.com";
+const API_BASE = process.env.E2E_API_BASE ?? "http://127.0.0.1:8080/api";
 
 // The bootstrap list contains the first three; NONMATCH_EMAIL is excluded.
 // Mixed case + spaces to also cover the normalization path.
 process.env.DISPATCHER_EMAILS = ` ${VERIFIED_EMAIL.toUpperCase()}, ${UNVERIFIED_EMAIL} , ${CLEANER_EMAIL}`;
 
 console.log("Setting up Clerk test users...");
-const [verifiedId, unverifiedId, cleanerId, nonmatchId, inviteId, staffLinkId, staffInactiveId] =
+const [verifiedId, unverifiedId, cleanerId, nonmatchId, inviteId, staffLinkId, staffInactiveId, staffHttpId] =
   await Promise.all([
     ensureUser(VERIFIED_EMAIL),
     ensureUnverifiedMatchUser(
@@ -167,8 +172,9 @@ const [verifiedId, unverifiedId, cleanerId, nonmatchId, inviteId, staffLinkId, s
     ensureUser(INVITE_EMAIL),
     ensureUser(STAFF_LINK_EMAIL),
     ensureUser(STAFF_INACTIVE_EMAIL),
+    ensureUser(STAFF_HTTP_EMAIL),
   ]);
-const allIds = [verifiedId, unverifiedId, cleanerId, nonmatchId, inviteId, staffLinkId, staffInactiveId];
+const allIds = [verifiedId, unverifiedId, cleanerId, nonmatchId, inviteId, staffLinkId, staffInactiveId, staffHttpId];
 console.log(
   `verified=${verifiedId} unverified=${unverifiedId} cleaner=${cleanerId} nonmatch=${nonmatchId} invite=${inviteId} stafflink=${staffLinkId} staffinactive=${staffInactiveId}\n`,
 );
@@ -385,6 +391,41 @@ try {
     .from(staffTable)
     .where(eq(staffTable.id, inactiveRow.id));
   check("inactive staff record stays unlinked", inactiveAfter?.clerkUserId === null);
+
+  // ------------------------------------------------------------------
+  // 10. HTTP self-link through GET /staff/me — the request path the cleaner
+  //     app actually uses. The RUNNING dev server (not this script) must
+  //     perform the link; a direct clerkUserId lookup in the route would
+  //     404 here (the exact regression that shipped once).
+  console.log("\n10. HTTP GET /staff/me links a first-time sign-in:");
+  const [httpRow] = await db
+    .insert(staffTable)
+    .values({ name: "Staff HTTP E2E", role: "cleaner", email: STAFF_HTTP_EMAIL })
+    .returning({ id: staffTable.id });
+  extraStaffIds.push(httpRow.id);
+  const session = await clerk(`/v1/sessions`, {
+    method: "POST",
+    body: JSON.stringify({ user_id: staffHttpId }),
+  });
+  const token = await clerk(`/v1/sessions/${session.id}/tokens`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+  const meRes = await realFetch(`${API_BASE}/staff/me`, {
+    headers: { Authorization: `Bearer ${token.jwt}` },
+  });
+  const meBody: any = await meRes.json().catch(() => null);
+  check("GET /staff/me returns 200 on first sign-in", meRes.status === 200, `status=${meRes.status}`);
+  check("response is the matching staff record", meBody?.id === httpRow.id, `id=${meBody?.id}`);
+  const [httpLinked] = await db
+    .select({ clerkUserId: staffTable.clerkUserId })
+    .from(staffTable)
+    .where(eq(staffTable.id, httpRow.id));
+  check("staff record linked by the server process", httpLinked?.clerkUserId === staffHttpId);
+  const meRes2 = await realFetch(`${API_BASE}/staff/me`, {
+    headers: { Authorization: `Bearer ${token.jwt}` },
+  });
+  check("GET /staff/me still 200 on repeat request", meRes2.status === 200, `status=${meRes2.status}`);
 } finally {
   // Remove every row this script may have created.
   await db
