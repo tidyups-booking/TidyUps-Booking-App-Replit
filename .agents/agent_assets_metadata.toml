@@ -35,3 +35,10 @@ uri = "file://docs/ai-receptionist-product-plans.zip"
 type = "unspecified"
 title = "All 3 Files — Product Plans & Prompts (ZIP)"
 description = "One downloadable package containing the product blueprint, the prompt for this project, and the kickoff prompt for the new product app."
+
+[[outputs]]
+id = "2UFKmSLQtG7MGv2jNibUB"
+uri = "file://docs/ai-receptionist-product-plans.pdf"
+type = "pdf"
+title = "All 3 Documents — One PDF"
+description = "The product blueprint plus both ready-to-paste prompts in a single PDF. Opens with a double-click on any computer or phone — no unpacking needed."
