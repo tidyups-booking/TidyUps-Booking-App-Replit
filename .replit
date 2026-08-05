@@ -32,6 +32,10 @@ args = "dispatcher-bootstrap-e2e"
 task = "workflow.run"
 args = "invite-email-e2e"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "unassigned-schedule-e2e"
+
 [[workflows.workflow]]
 name = "dispatcher-access-e2e"
 author = "agent"
@@ -72,6 +76,17 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "cd artifacts/api-server && pnpm exec tsx e2e-invite-email-check.mts"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow]]
+name = "unassigned-schedule-e2e"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd artifacts/api-server && pnpm exec tsx e2e-unassigned-schedule-check.mts"
 
 [workflows.workflow.metadata]
 outputType = "console"
