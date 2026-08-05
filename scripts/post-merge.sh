@@ -7,11 +7,18 @@ pnpm exec tsc --build lib/db lib/api-zod
 
 # Cleaner-app bundle regression check: asks the running Expo dev server (Metro)
 # to compile the web + native bundles, catching Metro-only breakage (e.g. the
-# react-native-maps web crash) right after a merge. Requires the
-# "artifacts/cleaner-app: expo" workflow to be running; fails loudly otherwise.
-# Give Metro up to 60s to come up (it may be restarting right after a merge).
-for i in $(seq 1 30); do
-  if curl -sf -o /dev/null --max-time 2 http://127.0.0.1:22790/status; then break; fi
-  sleep 2
+# react-native-maps web crash) right after a merge. The Expo preview workflow
+# is OPTIONAL — if Metro isn't up, skip the check (with a loud warning) instead
+# of stalling or failing the whole post-merge; the cleaner-app-bundle-e2e
+# workflow still covers it when run explicitly. Brief wait only, in case Metro
+# is mid-restart right after the merge.
+metro_up=false
+for i in $(seq 1 5); do
+  if curl -sf -o /dev/null --max-time 2 http://127.0.0.1:22790/status; then metro_up=true; break; fi
+  sleep 1
 done
-(cd artifacts/api-server && pnpm exec tsx e2e-cleaner-app-bundle-check.mts)
+if [ "$metro_up" = true ]; then
+  (cd artifacts/api-server && pnpm exec tsx e2e-cleaner-app-bundle-check.mts)
+else
+  echo "WARNING: Expo dev server (Metro) not running — skipping cleaner-app bundle check (run the cleaner-app-bundle-e2e workflow to cover it)"
+fi
