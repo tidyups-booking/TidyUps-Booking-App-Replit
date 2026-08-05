@@ -5,6 +5,7 @@ import {
   db,
   staffTable,
   bookingsTable,
+  cleanerLocationsTable,
   dispatcherAllowlistTable,
   dispatcherInvitesTable,
 } from "@workspace/db";
@@ -46,6 +47,31 @@ router.get("/staff", async (req, res): Promise<void> => {
     .orderBy(staffTable.name);
 
   res.json(rows);
+});
+
+// GET /staff/liveness — dispatcher only. Last GPS ping per staff member so
+// the Staff page can show a "Live" dot without loading full map data.
+// Uses the same 5-minute freshness rule as the Live Map (map.ts).
+const LIVE_WINDOW_MS = 5 * 60 * 1000;
+
+router.get("/staff/liveness", async (req, res): Promise<void> => {
+  if (await guardDispatcher(req, res)) return;
+
+  const rows = await db
+    .select({
+      staffId: cleanerLocationsTable.staffId,
+      updatedAt: cleanerLocationsTable.updatedAt,
+    })
+    .from(cleanerLocationsTable);
+
+  const now = Date.now();
+  res.json(
+    rows.map((r) => ({
+      staffId: r.staffId,
+      lastSeen: r.updatedAt,
+      isLive: now - new Date(r.updatedAt).getTime() < LIVE_WINDOW_MS,
+    })),
+  );
 });
 
 // POST /staff — dispatcher only
