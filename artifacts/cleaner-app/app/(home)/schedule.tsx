@@ -51,7 +51,11 @@ export default function ScheduleScreen() {
   } = useGetStaffSchedule(
     staffId ?? 0,
     { date: today },
-    { query: { enabled: !!staffId, refetchInterval: 60_000, queryKey: [] as unknown[] } as any },
+    // NOTE: never pass a `queryKey` override here — the generated hooks use
+    // `options.query.queryKey ?? <generated key>`, so an override (even `[]`)
+    // replaces the URL-scoped key and makes unrelated queries share one cache
+    // entry across views/users. Rely on the generated per-endpoint keys.
+    { query: { enabled: !!staffId, refetchInterval: 60_000 } as any },
   );
 
   const {
@@ -65,7 +69,6 @@ export default function ScheduleScreen() {
       query: {
         enabled: !!staffId && viewMode === 'all',
         refetchInterval: 60_000,
-        queryKey: [] as unknown[],
       } as any,
     },
   );
