@@ -20,6 +20,7 @@ import { BookingMiniMap } from "@/components/booking-mini-map";
 import { EmailAutocomplete } from "@/components/email-autocomplete";
 import { CustomerAutocomplete, type CustomerRecord } from "@/components/customer-autocomplete";
 import { buildPriceBreakdown } from "@/lib/price-breakdown";
+import { buildCustomerPrefill } from "@/lib/customer-prefill";
 import { PriceDiscountButtons } from "@/components/price-discount-buttons";
 
 const bookingSchema = z.object({
@@ -361,29 +362,15 @@ export default function NewBooking() {
     [form, lockedFields]
   );
 
-  // Fill the whole form from a returning customer's last booking
+  // Fill the whole form from a returning customer's last booking.
+  // The field mapping lives in buildCustomerPrefill (pure, unit-tested).
   const handleSelectCustomer = useCallback((c: CustomerRecord) => {
-    form.setValue("firstName", c.firstName, { shouldValidate: true });
-    form.setValue("lastName", c.lastName, { shouldValidate: true });
-    form.setValue("phone", c.phone, { shouldValidate: true });
-    if (c.email) form.setValue("email", c.email);
-    form.setValue("address", c.address, { shouldValidate: true });
-    form.setValue("city", c.city, { shouldValidate: true });
-    form.setValue("province", c.province || "AB");
-    if (c.postalCode) form.setValue("postalCode", c.postalCode);
-    if (c.addressLat != null && c.addressLng != null) {
-      form.setValue("addressLat", c.addressLat);
-      form.setValue("addressLng", c.addressLng);
-    }
-    form.setValue("bedrooms", c.bedrooms);
-    form.setValue("bathrooms", c.bathrooms);
-    // Legacy service type is no longer offered on new bookings
-    if (c.serviceType && c.serviceType !== "move_in_out") {
-      form.setValue("serviceType", c.serviceType as any);
+    const { entries, highlighted } = buildCustomerPrefill(c);
+    for (const e of entries) {
+      form.setValue(e.field as any, e.value as any, e.validate ? { shouldValidate: true } : undefined);
     }
     // Green flash on everything that was just filled
-    const filled = ["firstName", "lastName", "phone", "email", "address", "city", "province", "postalCode", "bedrooms", "bathrooms", "serviceType"];
-    setHighlightedFields(new Set(filled));
+    setHighlightedFields(new Set(highlighted));
     setTimeout(() => setHighlightedFields(new Set()), 2000);
     // Their info is in the form now — no need to keep flagging the phone match
     acknowledgedPhoneRef.current = c.phone.replace(/\D/g, "");
