@@ -23,11 +23,10 @@
  * Run from artifacts/api-server:  pnpm exec tsx e2e-booking-search-perf-check.mts
  */
 import { readFileSync } from "node:fs";
-import { desc } from "drizzle-orm";
 import { db, pool, bookingsTable } from "@workspace/db";
 import {
   buildBookingSearchCondition,
-  buildCustomerSearchCondition,
+  buildCustomerSearchQuery,
 } from "./src/routes/bookingSearchConditions.js";
 
 const SCHEMA = "booking_search_perf_scratch";
@@ -91,6 +90,9 @@ try {
   // scratch table; enum/extension types still resolve via public.
   await client.query(`SET search_path TO ${SCHEMA}, public`);
   await client.query(`CREATE TABLE bookings (LIKE public.bookings INCLUDING DEFAULTS)`);
+  // LIKE doesn't copy the primary key; production has one, and the grouped
+  // customers/search query joins back on id, so mirror it here.
+  await client.query(`ALTER TABLE bookings ADD PRIMARY KEY (id)`);
 
   await client.query(`
     INSERT INTO bookings
@@ -138,14 +140,10 @@ try {
       .orderBy(bookingsTable.scheduledDate, bookingsTable.scheduledTime)
       .limit(50);
 
-  // Real GET /bookings/customers/search query shape.
-  const customerSearch = (term: string) =>
-    db
-      .select({ id: bookingsTable.id })
-      .from(bookingsTable)
-      .where(buildCustomerSearchCondition(term))
-      .orderBy(desc(bookingsTable.id))
-      .limit(50);
+  // Real GET /bookings/customers/search query shape: grouped one-row-per-
+  // customer aggregation with true booking counts (imported from the route's
+  // own builder, so shape changes there are covered automatically).
+  const customerSearch = (term: string) => buildCustomerSearchQuery(term);
 
   const terms: [string, string][] = [
     ["last-name term", "martinez"],

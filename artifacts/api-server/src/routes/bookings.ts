@@ -6,7 +6,7 @@ import { syncBookingToJobber, syncBookingUpsertToJobber, getStoredTokens } from 
 import { resolveCallerRole, guardDispatcher } from "../lib/callerRole.js";
 import {
   buildBookingSearchCondition,
-  buildCustomerSearchCondition,
+  buildCustomerSearchQuery,
 } from "./bookingSearchConditions.js";
 import {
   ListBookingsQueryParams,
@@ -135,47 +135,28 @@ router.get("/bookings/customers/search", async (req, res): Promise<void> => {
     res.json({ customers: [] });
     return;
   }
-  const rows = await db
-    .select()
-    .from(bookingsTable)
-    .where(buildCustomerSearchCondition(q))
-    .orderBy(desc(bookingsTable.id))
-    .limit(50);
-
-  // One suggestion per customer — keyed by phone (fallback: name+address)
-  // bookingCount = number of matched bookings for that customer (within the 50-row window),
-  // used by the client to decide loyalty-discount eligibility.
-  const counts = new Map<string, number>();
-  for (const r of rows) {
-    const key = r.phone?.replace(/\D/g, "") || `${r.firstName} ${r.lastName} ${r.address}`.toLowerCase();
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  const seen = new Set<string>();
-  const customers: any[] = [];
-  for (const r of rows) {
-    const key = r.phone?.replace(/\D/g, "") || `${r.firstName} ${r.lastName} ${r.address}`.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    customers.push({
-      bookingCount: counts.get(key) ?? 1,
-      firstName: r.firstName,
-      lastName: r.lastName,
-      phone: r.phone,
-      email: r.email,
-      address: r.address,
-      city: r.city,
-      province: r.province,
-      postalCode: r.postalCode,
-      addressLat: r.addressLat,
-      addressLng: r.addressLng,
-      bedrooms: r.bedrooms,
-      bathrooms: r.bathrooms,
-      serviceType: r.serviceType,
-      frequency: r.frequency,
-      lastBookingDate: r.scheduledDate,
-    });
-    if (customers.length >= 6) break;
-  }
+  // Grouped in the database: one row per customer with a TRUE total booking
+  // count (loyalty-discount eligibility) over all matching rows — no row
+  // window — plus the most recent booking's details for form pre-fill.
+  const rows = await buildCustomerSearchQuery(q);
+  const customers = rows.map(({ booking: r, bookingCount }) => ({
+    bookingCount,
+    firstName: r.firstName,
+    lastName: r.lastName,
+    phone: r.phone,
+    email: r.email,
+    address: r.address,
+    city: r.city,
+    province: r.province,
+    postalCode: r.postalCode,
+    addressLat: r.addressLat,
+    addressLng: r.addressLng,
+    bedrooms: r.bedrooms,
+    bathrooms: r.bathrooms,
+    serviceType: r.serviceType,
+    frequency: r.frequency,
+    lastBookingDate: r.scheduledDate,
+  }));
   res.json({ customers });
 });
 
