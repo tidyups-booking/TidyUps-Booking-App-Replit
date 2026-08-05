@@ -444,15 +444,16 @@ router.post("/bookings/:id/claim", async (req, res): Promise<void> => {
   }
 
   const caller = await resolveCallerRole(callerId);
-  // Only linked cleaners can claim — a claim assigns the job to the caller's
-  // own staff record, which dispatchers don't have. Dispatchers assign staff
-  // through the booking edit form instead.
-  if (caller.role !== "cleaner" || caller.staffId === null) {
+  // A claim assigns the job to the caller's OWN staff record, so it needs a
+  // staff link. Both linked cleaners and staff-linked dispatchers (e.g. the
+  // owner working as a cleaner) can claim; dispatchers without a staff record
+  // assign staff through the booking edit form instead.
+  if (caller.staffId === null) {
     res.status(403).json({
       error:
         caller.role === "denied"
           ? "Forbidden: account not authorized. Contact a dispatcher."
-          : "Forbidden: only cleaners with a linked staff record can claim jobs",
+          : "Forbidden: only team members with a linked staff record can claim jobs",
     });
     return;
   }

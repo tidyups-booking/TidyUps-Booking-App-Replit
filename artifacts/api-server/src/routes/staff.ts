@@ -118,7 +118,9 @@ router.get("/staff/me", async (req, res): Promise<void> => {
   }
 
   const caller = await resolveCallerRole(callerId);
-  if (caller.role === "cleaner" && caller.staffId !== null) {
+  // Any caller with a linked staff record gets it back — including a
+  // dispatcher who also works as a cleaner (e.g. the owner).
+  if (caller.role !== "denied" && caller.staffId !== null) {
     const [staff] = await db
       .select()
       .from(staffTable)

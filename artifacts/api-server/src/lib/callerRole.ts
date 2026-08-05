@@ -27,7 +27,7 @@ import {
  *   INSERT INTO dispatcher_allowlist (clerk_user_id) VALUES ('<clerk_user_id>');
  */
 export type CallerRole =
-  | { role: "dispatcher"; staffId: null }
+  | { role: "dispatcher"; staffId: number | null }
   | { role: "cleaner";    staffId: number }
   | { role: "denied";     staffId: null };
 
@@ -46,12 +46,23 @@ export async function resolveCallerRole(callerId: string): Promise<CallerRole> {
       .limit(1),
   ]);
 
+  // A dispatcher who is also linked to a staff record (e.g. the owner working
+  // as a cleaner) keeps their staff identity — so the cleaner app's own-record
+  // features (schedule, GPS, job status) keep working alongside full access.
+  const linkedStaffId = staffRows.length > 0 ? staffRows[0].id : null;
+
   if (dispatcherRows.length > 0) {
-    return { role: "dispatcher", staffId: null };
+    return { role: "dispatcher", staffId: linkedStaffId };
   }
 
-  if (staffRows.length > 0) {
-    return { role: "cleaner", staffId: staffRows[0].id };
+  if (linkedStaffId !== null) {
+    // Staff-linked account: check the owner rescue list before settling on
+    // cleaner, so an owner account that got linked as staff still receives
+    // full dispatcher access (persisted to the allowlist on first match).
+    if (await tryElevateLinkedStaffByEnvEmail(callerId)) {
+      return { role: "dispatcher", staffId: linkedStaffId };
+    }
+    return { role: "cleaner", staffId: linkedStaffId };
   }
 
   return await tryBootstrapDispatcherByEmail(callerId);
@@ -87,6 +98,76 @@ export async function resolveCallerRole(callerId: string): Promise<CallerRole> {
  */
 const BOOTSTRAP_RECHECK_MS = 60_000;
 const bootstrapNegativeCache = new Map<string, number>();
+
+/**
+ * Env-email elevation for accounts already linked to a staff record.
+ *
+ * `DISPATCHER_EMAILS` is the owner rescue list — any account with one of
+ * those VERIFIED emails must always resolve as dispatcher, even when the
+ * account is also linked to a staff record (the owner may sign in on the
+ * cleaner app, where first sign-in self-links a staff row). On match the
+ * allowlist row is persisted, so subsequent requests resolve instantly via
+ * the allowlist with no Clerk lookup. Non-matching staff accounts are
+ * negative-cached (same TTL as the bootstrap) so regular cleaners cost at
+ * most one Clerk call per minute.
+ */
+const elevationInFlight = new Map<string, Promise<boolean>>();
+
+async function tryElevateLinkedStaffByEnvEmail(callerId: string): Promise<boolean> {
+  const bootstrapEmails = (process.env.DISPATCHER_EMAILS ?? "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  if (bootstrapEmails.length === 0) return false;
+
+  const checkedAt = bootstrapNegativeCache.get(callerId);
+  if (checkedAt !== undefined && Date.now() - checkedAt < BOOTSTRAP_RECHECK_MS) {
+    return false;
+  }
+
+  // Coalesce concurrent lookups for the same caller (mobile apps poll several
+  // endpoints at once) — only the first request performs the Clerk call; the
+  // rest await the same promise.
+  const inFlight = elevationInFlight.get(callerId);
+  if (inFlight) return inFlight;
+
+  const lookup = performElevationLookup(callerId, bootstrapEmails);
+  elevationInFlight.set(callerId, lookup);
+  try {
+    return await lookup;
+  } finally {
+    elevationInFlight.delete(callerId);
+  }
+}
+
+async function performElevationLookup(
+  callerId: string,
+  bootstrapEmails: string[],
+): Promise<boolean> {
+  try {
+    const user = await clerkClient.users.getUser(callerId);
+    const verifiedEmails = user.emailAddresses
+      .filter((e) => e.verification?.status === "verified")
+      .map((e) => e.emailAddress.toLowerCase());
+
+    if (!verifiedEmails.some((e) => bootstrapEmails.includes(e))) {
+      bootstrapNegativeCache.set(callerId, Date.now());
+      return false;
+    }
+
+    await db
+      .insert(dispatcherAllowlistTable)
+      .values({ clerkUserId: callerId })
+      .onConflictDoNothing();
+    console.log(`[callerRole] elevated staff-linked account ${callerId} to dispatcher via DISPATCHER_EMAILS`);
+    return true;
+  } catch (err) {
+    // Transient Clerk failure — do NOT cache; caller stays cleaner for this
+    // request and the next request retries.
+    console.warn("[callerRole] staff env-email elevation check failed:", err);
+    return false;
+  }
+}
 
 async function tryBootstrapDispatcherByEmail(callerId: string): Promise<CallerRole> {
   const denied: CallerRole = { role: "denied", staffId: null };
@@ -167,8 +248,29 @@ async function tryBootstrapDispatcherByEmail(callerId: string): Promise<CallerRo
             ),
           );
       }
+      // If the owner also has an unlinked staff record (they work as a
+      // cleaner too), link it so the cleaner app's own-record features work
+      // alongside full dispatcher access.
+      let ownStaffId: number | null = null;
+      if (matchedStaff) {
+        const linkedRows = await db
+          .update(staffTable)
+          .set({ clerkUserId: callerId })
+          .where(
+            and(
+              eq(staffTable.id, matchedStaff.id),
+              isNull(staffTable.clerkUserId),
+              eq(staffTable.active, true),
+            ),
+          )
+          .returning({ id: staffTable.id });
+        if (linkedRows.length > 0) {
+          ownStaffId = linkedRows[0].id;
+          console.log(`[callerRole] staff record ${ownStaffId} linked to env-listed dispatcher ${callerId}`);
+        }
+      }
       console.log(`[callerRole] bootstrapped dispatcher access for ${callerId} via DISPATCHER_EMAILS`);
-      return { role: "dispatcher", staffId: null };
+      return { role: "dispatcher", staffId: ownStaffId };
     }
 
     if (matchedInvite) {
