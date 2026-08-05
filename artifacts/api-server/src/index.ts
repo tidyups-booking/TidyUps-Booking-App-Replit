@@ -6,6 +6,7 @@ import { createTwilioWss, startLiveCallListener } from "./services/twilio-stream
 import { consumeStreamToken } from "./services/stream-tokens.js";
 import { runMigrations } from "@workspace/db";
 import { startJobberAutoSync } from "./services/jobberCalendarSync.js";
+import { startGeocodeBackfill } from "./services/geocodeBackfill.js";
 import { startTwilioWebhookMonitor } from "./services/twilio-webhook-check.js";
 
 const rawPort = process.env["PORT"];
@@ -72,6 +73,9 @@ server.listen(port, "0.0.0.0", () => {
   // Background monitor: warns loudly (logs + dashboard endpoint) if the
   // Twilio number's voice webhook stops pointing at the live site.
   startTwilioWebhookMonitor();
+  // Background backfill: geocodes upcoming bookings missing coordinates and
+  // stores them, so map pins load straight from the database.
+  startGeocodeBackfill();
 });
 
 server.on("error", (err: NodeJS.ErrnoException) => {

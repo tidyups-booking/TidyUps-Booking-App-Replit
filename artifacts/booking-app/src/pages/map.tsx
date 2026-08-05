@@ -1043,6 +1043,69 @@ export default function MapPage() {
         </div>
       )}
 
+      {/* Quick address search — pinned to the top of the page so dispatchers
+          can drop a homeowner pin without scrolling below the map. */}
+      {isDispatcher && (
+        <Card className="shadow-sm">
+          <CardContent className="px-4 py-3 space-y-2">
+            <div className="grid sm:grid-cols-[1fr_1.4fr_auto_auto] gap-2 items-start">
+              <Input
+                placeholder="Name (optional), e.g. Mrs. Beckett"
+                value={pinName}
+                onChange={(e) => setPinName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && pinCoords) savePin(); }}
+              />
+              <div className="space-y-1">
+                <AddressAutocomplete
+                  value={pinAddress}
+                  onChange={(v) => { setPinAddress(v); setPinCoords(null); }}
+                  onPlaceSelect={(place) => {
+                    const label = place.address && place.city
+                      ? `${place.address}, ${place.city}`
+                      : place.formattedAddress;
+                    setPinAddress(label);
+                    setPinCoords({ lat: place.lat, lng: place.lng });
+                    // Pin drops immediately on address selection — form state
+                    // above is kept so a failed save leaves the address in place.
+                    savePin({ address: label, lat: place.lat, lng: place.lng });
+                  }}
+                  placeholder="Search an address — pin drops when you pick one"
+                  className={cn(pinCoords ? "border-green-400 bg-green-50 dark:bg-green-950/20" : "")}
+                />
+                {pinCoords && (
+                  <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+                    <MapPin className="w-3 h-3" /> Location set ({pinCoords.lat.toFixed(4)}, {pinCoords.lng.toFixed(4)})
+                  </p>
+                )}
+              </div>
+              <Button
+                variant={dropMode ? "default" : "outline"}
+                onClick={() => setDropMode(!dropMode)}
+                className="gap-1.5"
+                title="Then click anywhere on the map to set the location"
+              >
+                {dropMode ? <X className="w-4 h-4" /> : <Crosshair className="w-4 h-4" />}
+                {dropMode ? "Cancel" : "Drop on map"}
+              </Button>
+              <Button
+                onClick={() => savePin()}
+                disabled={!pinCoords}
+                isLoading={savingPin}
+                className="gap-1.5"
+              >
+                <Plus className="w-4 h-4" />
+                Add Pin
+              </Button>
+            </div>
+            {dropMode && (
+              <div className="px-3 py-2 rounded-lg bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-800 text-sm text-violet-700 dark:text-violet-300">
+                Click anywhere on the map to place the pin.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* ── Calendar view ──────────────────────────────────────────────────────── */}
 
       {calendarView === "month" && (
@@ -1238,62 +1301,10 @@ export default function MapPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="px-4 pb-4 space-y-4">
-          {/* Add form — dispatchers only; cleaners see pins but can't manage them */}
-          {isDispatcher && (
-          <div className="grid sm:grid-cols-[1fr_1.4fr_auto_auto] gap-2 items-start">
-            <Input
-              placeholder="Name (optional), e.g. Mrs. Beckett"
-              value={pinName}
-              onChange={(e) => setPinName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && pinCoords) savePin(); }}
-            />
-            <div className="space-y-1">
-              <AddressAutocomplete
-                value={pinAddress}
-                onChange={(v) => { setPinAddress(v); setPinCoords(null); }}
-                onPlaceSelect={(place) => {
-                  const label = place.address && place.city
-                    ? `${place.address}, ${place.city}`
-                    : place.formattedAddress;
-                  setPinAddress(label);
-                  setPinCoords({ lat: place.lat, lng: place.lng });
-                  // Pin drops immediately on address selection — form state
-                  // above is kept so a failed save leaves the address in place.
-                  savePin({ address: label, lat: place.lat, lng: place.lng });
-                }}
-                placeholder="Search an address — pin drops when you pick one"
-                className={cn(pinCoords ? "border-green-400 bg-green-50 dark:bg-green-950/20" : "")}
-              />
-              {pinCoords && (
-                <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
-                  <MapPin className="w-3 h-3" /> Location set ({pinCoords.lat.toFixed(4)}, {pinCoords.lng.toFixed(4)})
-                </p>
-              )}
-            </div>
-            <Button
-              variant={dropMode ? "default" : "outline"}
-              onClick={() => setDropMode(!dropMode)}
-              className="gap-1.5"
-              title="Then click anywhere on the map to set the location"
-            >
-              {dropMode ? <X className="w-4 h-4" /> : <Crosshair className="w-4 h-4" />}
-              {dropMode ? "Cancel" : "Drop on map"}
-            </Button>
-            <Button
-              onClick={() => savePin()}
-              disabled={!pinCoords}
-              isLoading={savingPin}
-              className="gap-1.5"
-            >
-              <Plus className="w-4 h-4" />
-              Add Pin
-            </Button>
-          </div>
-          )}
-          {isDispatcher && dropMode && (
-            <div className="px-3 py-2 rounded-lg bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-800 text-sm text-violet-700 dark:text-violet-300">
-              Click anywhere on the map to place the pin.
-            </div>
+          {pins.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              No pins yet{isDispatcher ? " — use the address search at the top of the page to add one." : "."}
+            </p>
           )}
 
           {/* Saved pins */}

@@ -310,14 +310,16 @@ export function DispatcherAccess() {
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate">
+                    {/* div, not p: Badge renders a <div>, which is invalid inside <p>
+                        and triggers a React hydration error. */}
+                    <div className="font-medium text-sm truncate">
                       {displayName(d)}
                       {isSelf && (
                         <Badge variant="outline" className="ml-2 text-xs px-1.5 py-0 align-middle">
                           You
                         </Badge>
                       )}
-                    </p>
+                    </div>
                     {d.name && d.email && (
                       <p className="text-xs text-muted-foreground truncate">{d.email}</p>
                     )}
