@@ -1,3 +1,25 @@
 <svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect width="180" height="180" rx="36" fill="#FF3C00"/>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="180" y2="180" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#8870C4"/>
+      <stop offset="100%" stop-color="#EE3FCE"/>
+    </linearGradient>
+  </defs>
+  <!-- Brand gradient background -->
+  <rect width="180" height="180" rx="36" fill="url(#bg)"/>
+  <!-- Bunny left ear -->
+  <ellipse cx="68" cy="66" rx="17" ry="34" fill="white"/>
+  <!-- Bunny right ear -->
+  <ellipse cx="112" cy="66" rx="17" ry="34" fill="white"/>
+  <!-- Inner left ear (magenta) -->
+  <ellipse cx="68" cy="68" rx="9" ry="23" fill="#EE3FCE" opacity="0.75"/>
+  <!-- Inner right ear (magenta) -->
+  <ellipse cx="112" cy="68" rx="9" ry="23" fill="#EE3FCE" opacity="0.75"/>
+  <!-- Bunny head -->
+  <circle cx="90" cy="118" r="42" fill="white"/>
+  <!-- Eyes -->
+  <circle cx="76" cy="110" r="5" fill="#8870C4"/>
+  <circle cx="104" cy="110" r="5" fill="#8870C4"/>
+  <!-- Nose -->
+  <ellipse cx="90" cy="122" rx="5" ry="4" fill="#EE3FCE"/>
 </svg>
