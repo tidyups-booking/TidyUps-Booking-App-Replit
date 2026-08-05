@@ -24,7 +24,8 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { pool } from "@workspace/db";
+import { pool, bookingsTable } from "@workspace/db";
+import { getTableColumns } from "drizzle-orm";
 import {
   buildCustomerSearchQuery,
   mapCustomerSearchRow,
@@ -85,25 +86,41 @@ try {
       'standard_clean', 2, 1, '{}', '2026-08-01', '09:00', 'one_time', 'pending')
   `);
 
-  // Run the real drizzle query on THIS connection so search_path applies,
-  // then remap the raw pg row through drizzle's field mapping by running the
-  // query builder normally is not possible cross-connection — instead, fetch
-  // via the builder's SQL and rebuild the { booking, bookingCount } row shape
-  // using drizzle's own selected field metadata.
+  // Run the real drizzle query on THIS connection so search_path applies.
+  // Running the builder normally is not possible cross-connection — instead,
+  // fetch via the builder's SQL and rebuild the { booking, bookingCount } row
+  // shape by mapping DB column names back to drizzle field keys via the
+  // PUBLIC getTableColumns() API (no drizzle internals).
   const qb = buildCustomerSearchQuery("Zqxcontract");
   const { sql: text, params } = qb.toSQL();
-  const res = await client.query({ text, values: params as any[], rowMode: "array" });
+  const res = await client.query({ text, values: params as any[] });
   check("scratch query returned one row", res.rows.length === 1, `got ${res.rows.length}`);
 
-  // Rebuild a typed row exactly the way drizzle would: selected fields are
-  // { booking: <all bookings columns>, bookingCount } in declaration order.
-  // @ts-ignore drizzle internal but stable enough for a contract check
-  const fields = (qb as any)._.selectedFields;
-  const bookingCols = Object.keys(fields.booking);
-  const raw = res.rows[0] as unknown as any[];
+  const raw = res.rows[0] as Record<string, unknown>;
+  const tableCols = getTableColumns(bookingsTable);
+  const resultCols = new Set(res.fields.map((f) => f.name));
+
+  // Guard: if drizzle's generated SQL stops exposing plain column names (or
+  // the aggregate alias), fail loudly with an actionable message instead of
+  // a confusing undefined-key mismatch downstream.
+  const unmapped = Object.values(tableCols)
+    .map((c) => c.name)
+    .filter((n) => !resultCols.has(n));
+  if (unmapped.length > 0 || !resultCols.has("booking_count")) {
+    console.error(
+      `FAIL: this contract check needs updating after a drizzle-orm upgrade — ` +
+        `the generated SQL no longer returns expected column names ` +
+        `(missing: ${[...unmapped, ...(resultCols.has("booking_count") ? [] : ["booking_count"])].join(", ")}). ` +
+        `Update the row-rebuilding logic in e2e-customer-search-contract-check.mts.`,
+    );
+    process.exit(1);
+  }
+
   const booking: any = {};
-  bookingCols.forEach((k, i) => (booking[k] = raw[i]));
-  const bookingCount = Number(raw[bookingCols.length]);
+  for (const [key, col] of Object.entries(tableCols)) {
+    booking[key] = raw[col.name];
+  }
+  const bookingCount = Number(raw["booking_count"]);
   sample = mapCustomerSearchRow({ booking, bookingCount });
   apiKeys = Object.keys(sample);
 } finally {
