@@ -112,6 +112,10 @@ export default function ProfileScreen() {
         onPress: async () => {
           void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
           await signOut();
+          // Drop every cached authenticated query (schedule, map, staff/me)
+          // so a different account signing in on this device never sees the
+          // previous user's data.
+          queryClient.clear();
           router.replace('/(auth)/sign-in');
         },
       },

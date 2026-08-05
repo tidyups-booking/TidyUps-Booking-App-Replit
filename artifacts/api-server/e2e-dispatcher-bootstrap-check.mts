@@ -9,7 +9,9 @@
  *   1. VERIFIED email in DISPATCHER_EMAILS, missing from allowlist →
  *      dispatcher access AND a self-healed allowlist row.
  *   2. Matching but UNVERIFIED email → stays denied, no allowlist row.
- *   3. Staff-linked (cleaner) account → never elevated, even with a
+ *   3. Staff-linked account WITH a matching verified env email → elevated
+ *      to dispatcher while KEEPING its staffId (owner works as cleaner);
+ *      previously it was never elevated, even with a
  *      matching verified email.
  *   4. Non-matching denied user → exactly one Clerk lookup (negative cache
  *      prevents repeated Clerk API calls on subsequent requests).
@@ -153,6 +155,7 @@ const INVITE_EMAIL = "bootstrap-invite-e2e+clerk_test@example.com";
 const STAFF_LINK_EMAIL = "bootstrap-stafflink-e2e+clerk_test@example.com";
 const STAFF_INACTIVE_EMAIL = "bootstrap-staffinactive-e2e+clerk_test@example.com";
 const STAFF_HTTP_EMAIL = "bootstrap-staffhttp-e2e+clerk_test@example.com";
+const NONMATCH_STAFF_EMAIL = "bootstrap-nonmatchstaff-e2e+clerk_test@example.com";
 const API_BASE = process.env.E2E_API_BASE ?? "http://127.0.0.1:8080/api";
 
 // The bootstrap list contains the first three; NONMATCH_EMAIL is excluded.
@@ -160,7 +163,7 @@ const API_BASE = process.env.E2E_API_BASE ?? "http://127.0.0.1:8080/api";
 process.env.DISPATCHER_EMAILS = ` ${VERIFIED_EMAIL.toUpperCase()}, ${UNVERIFIED_EMAIL} , ${CLEANER_EMAIL}`;
 
 console.log("Setting up Clerk test users...");
-const [verifiedId, unverifiedId, cleanerId, nonmatchId, inviteId, staffLinkId, staffInactiveId, staffHttpId] =
+const [verifiedId, unverifiedId, cleanerId, nonmatchId, inviteId, staffLinkId, staffInactiveId, staffHttpId, nonmatchStaffId] =
   await Promise.all([
     ensureUser(VERIFIED_EMAIL),
     ensureUnverifiedMatchUser(
@@ -173,8 +176,9 @@ const [verifiedId, unverifiedId, cleanerId, nonmatchId, inviteId, staffLinkId, s
     ensureUser(STAFF_LINK_EMAIL),
     ensureUser(STAFF_INACTIVE_EMAIL),
     ensureUser(STAFF_HTTP_EMAIL),
+    ensureUser(NONMATCH_STAFF_EMAIL),
   ]);
-const allIds = [verifiedId, unverifiedId, cleanerId, nonmatchId, inviteId, staffLinkId, staffInactiveId, staffHttpId];
+const allIds = [verifiedId, unverifiedId, cleanerId, nonmatchId, inviteId, staffLinkId, staffInactiveId, staffHttpId, nonmatchStaffId];
 console.log(
   `verified=${verifiedId} unverified=${unverifiedId} cleaner=${cleanerId} nonmatch=${nonmatchId} invite=${inviteId} stafflink=${staffLinkId} staffinactive=${staffInactiveId}\n`,
 );
@@ -215,9 +219,10 @@ try {
   check("no allowlist row created for unverified user", noRow.length === 0);
 
   // ------------------------------------------------------------------
-  // 3. Staff-linked (cleaner) account is never elevated, even with a
-  //    matching verified email in DISPATCHER_EMAILS.
-  console.log("\n3. Cleaner account is never elevated:");
+  // 3. Staff-linked account WITH a matching verified email in
+  //    DISPATCHER_EMAILS is elevated to dispatcher and KEEPS its staffId —
+  //    the owner may work as a cleaner but always gets full access.
+  console.log("\n3. Owner's staff-linked account is elevated (keeps staffId):");
   const existingStaff = await db
     .select({ id: staffTable.id })
     .from(staffTable)
@@ -233,11 +238,65 @@ try {
     staffId = row.id;
     tempStaffId = staffId;
   }
-  const r3 = await resolveCallerRole(cleanerId);
-  check("staff-linked user resolves as cleaner (not dispatcher)", r3.role === "cleaner", `role=${r3.role}`);
-  check("cleaner keeps their staffId", r3.role === "cleaner" && r3.staffId === staffId);
+  // Fire the FIRST resolution concurrently ×4 — mobile apps poll several
+  // endpoints at once; the in-flight coalescing must collapse these into a
+  // single Clerk lookup, all returning dispatcher.
+  const callsBefore3 = clerkApiCalls;
+  const r3all = await Promise.all([1, 2, 3, 4].map(() => resolveCallerRole(cleanerId)));
+  const r3 = r3all[0];
+  check(
+    "env-listed staff-linked user is elevated to dispatcher (all concurrent callers)",
+    r3all.every((r) => r.role === "dispatcher"),
+    `roles=${r3all.map((r) => r.role).join(",")}`,
+  );
+  check(
+    "elevated owner keeps their staffId",
+    r3all.every((r) => r.staffId === staffId),
+    `staffId=${r3.staffId}`,
+  );
+  check(
+    "concurrent elevation coalesced into ONE Clerk lookup",
+    clerkApiCalls - callsBefore3 === 1,
+    `calls=${clerkApiCalls - callsBefore3}`,
+  );
   const cleanerRow = await allowlistRow(cleanerId);
-  check("no allowlist row created for cleaner", cleanerRow.length === 0);
+  check("allowlist row persisted for elevated owner", cleanerRow.length === 1);
+  const r3rep = await resolveCallerRole(cleanerId);
+  check(
+    "still dispatcher WITH staffId via allowlist on repeat request",
+    r3rep.role === "dispatcher" && r3rep.staffId === staffId,
+    `role=${r3rep.role} staffId=${r3rep.staffId}`,
+  );
+
+  // ------------------------------------------------------------------
+  // 3b. An ordinary linked cleaner (email NOT in DISPATCHER_EMAILS) under
+  //     concurrent load: one coalesced Clerk lookup, then the negative
+  //     cache serves repeats — bounding Clerk traffic per cleaner.
+  console.log("\n3b. Concurrent non-matching linked cleaner coalesces Clerk lookups:");
+  const [nmStaffRow] = await db
+    .insert(staffTable)
+    .values({ name: "Bootstrap NonmatchStaff E2E", role: "cleaner", clerkUserId: nonmatchStaffId })
+    .returning({ id: staffTable.id });
+  extraStaffIds.push(nmStaffRow.id);
+  const callsBefore3b = clerkApiCalls;
+  const rcAll = await Promise.all([...Array(6)].map(() => resolveCallerRole(nonmatchStaffId)));
+  check(
+    "all concurrent requests resolve as cleaner with their staffId",
+    rcAll.every((r) => r.role === "cleaner" && r.staffId === nmStaffRow.id),
+    `roles=${rcAll.map((r) => r.role).join(",")}`,
+  );
+  check(
+    "6 concurrent requests perform exactly ONE Clerk lookup",
+    clerkApiCalls - callsBefore3b === 1,
+    `calls=${clerkApiCalls - callsBefore3b}`,
+  );
+  const rcRepeat = await resolveCallerRole(nonmatchStaffId);
+  check(
+    "repeat request served from negative cache (no further Clerk call)",
+    rcRepeat.role === "cleaner" && clerkApiCalls - callsBefore3b === 1,
+    `role=${rcRepeat.role} extra calls=${clerkApiCalls - callsBefore3b - 1}`,
+  );
+  check("no allowlist row for non-matching linked cleaner", (await allowlistRow(nonmatchStaffId)).length === 0);
 
   // ------------------------------------------------------------------
   // 4. Non-matching denied user triggers exactly ONE Clerk lookup; repeat

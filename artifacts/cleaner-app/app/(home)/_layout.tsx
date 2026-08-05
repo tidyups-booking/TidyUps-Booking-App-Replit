@@ -71,6 +71,18 @@ export default function HomeLayout() {
             }}
           />
           <Tabs.Screen
+            name="map"
+            options={{
+              title: 'Map',
+              tabBarIcon: ({ color }) =>
+                isIOS ? (
+                  <SymbolView name="map" tintColor={color} size={24} />
+                ) : (
+                  <Feather name="map" size={22} color={color} />
+                ),
+            }}
+          />
+          <Tabs.Screen
             name="profile"
             options={{
               title: 'Profile',

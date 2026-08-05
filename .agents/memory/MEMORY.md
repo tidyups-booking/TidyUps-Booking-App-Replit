@@ -10,5 +10,6 @@
 - [Booking price-breakdown invariants](price-breakdown-invariants.md) — itemized quote must reconcile end-to-end; loyalty last, refuse over-quote discounts, server validates + auto-clears
 - [Live-call scaling](live-call-scaling.md) — Twilio strips query strings from <Stream> URLs (auth must use <Parameter>); state row doubles as strict call lease; single-use HMAC tokens; LISTEN/NOTIFY fan-out
 - [TS project references](ts-project-references.md) — api-server typechecks against lib/*/dist .d.ts; rebuild `tsc --build` in lib/db & lib/api-zod after adding schema/types or "missing export" errors break deploys
-- [Authorization policy](authorization-policy.md) — owner rule: only dispatchers mutate; cleaners view-only except own job status, own contact info, own GPS; new mutations default dispatcher-only
+- [Authorization policy](authorization-policy.md) — only dispatchers mutate; cleaner exceptions: own job status, own contact, own GPS, claim unassigned; DISPATCHER_EMAILS accounts always dispatcher, keep staffId
 - [Clerk email matching](clerk-email-matching.md) — match identity/status against ALL verified Clerk addresses, not the primary email; primary is display-only
+- [Expo web + react-native-maps](expo-web-maps.md) — importing react-native-maps anywhere web-reachable crashes the whole Expo web bundle; platform-split with .web.tsx; scope authed query caches by Clerk userId + clear on sign-out

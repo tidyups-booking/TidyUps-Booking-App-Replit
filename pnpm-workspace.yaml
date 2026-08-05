@@ -124,3 +124,5 @@ overrides:
   rollup>@rollup/rollup-win32-ia32-msvc: '-'
   rollup>@rollup/rollup-win32-x64-gnu: '-'
   rollup>@rollup/rollup-win32-x64-msvc: '-'
+  fast-uri: '>=3.1.5'
+  minimatch@10>brace-expansion: '5.0.9'
