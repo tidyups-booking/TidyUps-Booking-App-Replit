@@ -77,12 +77,12 @@ outputType = "console"
 name = "unassigned-schedule-e2e"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "cd artifacts/api-server && pnpm exec tsx e2e-unassigned-schedule-check.mts"
-
 [workflows.workflow.metadata]
 outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd artifacts/api-server && pnpm exec tsx e2e-unassigned-schedule-check.mts && pnpm exec tsx e2e-booking-search-perf-check.mts"
 
 [[workflows.workflow]]
 name = "staff-liveness-e2e"

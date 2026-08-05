@@ -5,6 +5,10 @@ import { db, bookingsTable, callTranscriptsTable, staffTable } from "@workspace/
 import { syncBookingToJobber, syncBookingUpsertToJobber, getStoredTokens } from "../services/jobber.js";
 import { resolveCallerRole, guardDispatcher } from "../lib/callerRole.js";
 import {
+  buildBookingSearchCondition,
+  buildCustomerSearchCondition,
+} from "./bookingSearchConditions.js";
+import {
   ListBookingsQueryParams,
   CreateBookingBody,
   CreateBookingResponse,
@@ -131,29 +135,10 @@ router.get("/bookings/customers/search", async (req, res): Promise<void> => {
     res.json({ customers: [] });
     return;
   }
-  const pattern = `%${q}%`;
-  const digits = q.replace(/\D/g, "");
-
-  const conditions = [
-    ilike(bookingsTable.firstName, pattern),
-    ilike(bookingsTable.lastName, pattern),
-    ilike(sql`${bookingsTable.firstName} || ' ' || ${bookingsTable.lastName}`, pattern),
-    ilike(bookingsTable.address, pattern),
-    ilike(bookingsTable.phone, pattern),
-  ];
-  // Digits-only match against normalized phone so "4035551234" finds
-  // "(403) 555-1234". Matches the trgm expression index on the same
-  // regexp_replace expression (016 migration) so this stays indexed.
-  if (digits.length >= 3) {
-    conditions.push(
-      ilike(sql`regexp_replace(${bookingsTable.phone}, '\\D', '', 'g')`, `%${digits}%`),
-    );
-  }
-
   const rows = await db
     .select()
     .from(bookingsTable)
-    .where(or(...conditions))
+    .where(buildCustomerSearchCondition(q))
     .orderBy(desc(bookingsTable.id))
     .limit(50);
 
@@ -212,26 +197,7 @@ function buildBookingFilterConditions(params: {
   // Phone also matches on digits-only so "4035551234" finds "(403) 555-1234".
   const search = typeof q === "string" ? q.trim() : "";
   if (search.length > 0) {
-    const pattern = `%${search}%`;
-    const searchConditions = [
-      ilike(bookingsTable.address, pattern),
-      ilike(bookingsTable.city, pattern),
-      ilike(bookingsTable.firstName, pattern),
-      ilike(bookingsTable.lastName, pattern),
-      ilike(sql`${bookingsTable.firstName} || ' ' || ${bookingsTable.lastName}`, pattern),
-      ilike(bookingsTable.phone, pattern),
-    ];
-    // Digits-only match against normalized phone so "4035551234" finds
-    // "(403) 555-1234". Matches the trgm expression index on the same
-    // regexp_replace expression (016 migration) so this stays indexed —
-    // the old interleaved '%4%0%3%…' pattern defeated trigram indexes.
-    const digits = search.replace(/\D/g, "");
-    if (digits.length >= 3) {
-      searchConditions.push(
-        ilike(sql`regexp_replace(${bookingsTable.phone}, '\\D', '', 'g')`, `%${digits}%`),
-      );
-    }
-    conditions.push(or(...searchConditions)!);
+    conditions.push(buildBookingSearchCondition(search));
   }
   return conditions;
 }
