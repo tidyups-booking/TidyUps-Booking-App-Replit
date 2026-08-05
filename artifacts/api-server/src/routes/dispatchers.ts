@@ -19,6 +19,14 @@ type ClerkUserSummary = {
   clerkUserId: string;
   name: string | null;
   email: string | null;
+  /**
+   * ALL verified addresses on the account (lowercased). Access is granted by
+   * matching any verified address (see POST /dispatchers/invites), so status
+   * displays must match against this list — the primary `email` is for
+   * display only. Without it, a staff card whose saved email is a dispatcher's
+   * secondary address would keep offering "Add to Dispatch" (and 409 on click).
+   */
+  verifiedEmails: string[];
   imageUrl: string | null;
 };
 
@@ -27,7 +35,11 @@ function summarizeClerkUser(u: {
   firstName: string | null;
   lastName: string | null;
   imageUrl: string;
-  emailAddresses: { id: string; emailAddress: string }[];
+  emailAddresses: {
+    id: string;
+    emailAddress: string;
+    verification?: { status?: string | null } | null;
+  }[];
   primaryEmailAddressId: string | null;
 }): ClerkUserSummary {
   const name = [u.firstName, u.lastName].filter(Boolean).join(" ") || null;
@@ -35,7 +47,16 @@ function summarizeClerkUser(u: {
     u.emailAddresses.find((e) => e.id === u.primaryEmailAddressId)?.emailAddress ??
     u.emailAddresses[0]?.emailAddress ??
     null;
-  return { clerkUserId: u.id, name, email: primaryEmail, imageUrl: u.imageUrl || null };
+  const verifiedEmails = u.emailAddresses
+    .filter((e) => e.verification?.status === "verified")
+    .map((e) => e.emailAddress.toLowerCase());
+  return {
+    clerkUserId: u.id,
+    name,
+    email: primaryEmail,
+    verifiedEmails,
+    imageUrl: u.imageUrl || null,
+  };
 }
 
 // GET /dispatchers — list current dispatchers, enriched with Clerk profile info
@@ -61,6 +82,7 @@ router.get("/dispatchers", async (req, res): Promise<void> => {
           clerkUserId: row.clerkUserId,
           name: null,
           email: null,
+          verifiedEmails: [] as string[],
           imageUrl: null,
           createdAt: row.createdAt,
         };

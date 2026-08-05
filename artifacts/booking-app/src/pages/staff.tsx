@@ -6,7 +6,7 @@ import {
   useConnectStaffAccount,
   getListUnlinkedSignupsQueryKey,
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getListStaffQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,13 +14,19 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { Users, Plus, Phone, Mail, Pencil, CheckCircle2, X, MapPin, AlertTriangle, Download, Upload, UserPlus, Link2 } from "lucide-react";
+import { Users, Plus, Phone, Mail, Pencil, CheckCircle2, X, MapPin, AlertTriangle, Download, Upload, UserPlus, Link2, ShieldCheck, ShieldPlus, Hourglass } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Staff } from "@workspace/api-client-react";
 import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import React, { useState, useRef } from "react";
 import { DispatcherAccess } from "@/components/dispatcher-access";
+import {
+  fetchJson,
+  type Dispatcher,
+  type PendingInvite,
+  type AddByEmailResult,
+} from "@/components/dispatcher-access";
 
 const ROLE_LABELS: Record<string, string> = {
   cleaner: "Cleaner",
@@ -28,12 +34,38 @@ const ROLE_LABELS: Record<string, string> = {
   supervisor: "Supervisor",
 };
 
+interface StaffLiveness {
+  staffId: number;
+  lastSeen: string;
+  isLive: boolean;
+}
+
+/** Dispatch-access state of a staff member, derived from their saved email. */
+type DispatchStatus = "dispatcher" | "invited" | "can_add" | "no_email";
+
+function timeAgo(iso: string): string {
+  const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60_000));
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} h ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
 function StaffCard({
   staff,
   onEdit,
+  liveness,
+  dispatchStatus,
+  onAddToDispatch,
+  isAdding,
 }: {
   staff: Staff;
   onEdit: (staff: Staff) => void;
+  liveness?: StaffLiveness;
+  dispatchStatus: DispatchStatus;
+  onAddToDispatch: (staff: Staff) => void;
+  isAdding: boolean;
 }) {
   const s = staff as any;
   const hasAddressNoCoords = s.homeAddress && s.homeLat == null;
@@ -41,11 +73,44 @@ function StaffCard({
   return (
     <Card
       className={cn(
-        "shadow-sm transition-all",
+        "relative shadow-sm transition-all",
         !staff.active && "opacity-60 border-dashed",
         hasAddressNoCoords && "border-yellow-400/60"
       )}
     >
+      {/* Live GPS indicator — green when the cleaner app pinged within the
+          freshness window (same rule as the Live Map), grey when stale. */}
+      {liveness && (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className="absolute top-2 right-2 flex items-center gap-1 cursor-default"
+                aria-label={liveness.isLive ? "Live" : "Offline"}
+              >
+                {liveness.isLive ? (
+                  <>
+                    <span className="relative flex h-2.5 w-2.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
+                    </span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-green-600 dark:text-green-400">
+                      Live
+                    </span>
+                  </>
+                ) : (
+                  <span className="inline-flex rounded-full h-2.5 w-2.5 bg-muted-foreground/30" />
+                )}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-[220px] text-center">
+              {liveness.isLive
+                ? `Online now — phone sent its location ${timeAgo(liveness.lastSeen)}`
+                : `Offline — last location ping ${timeAgo(liveness.lastSeen)}`}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )}
       <CardContent className="p-4">
         <div className="flex items-center gap-3">
           <div
@@ -70,6 +135,34 @@ function StaffCard({
               >
                 {ROLE_LABELS[staff.role] ?? staff.role}
               </Badge>
+              {dispatchStatus === "dispatcher" && (
+                <Badge
+                  variant="outline"
+                  className="text-xs px-1.5 py-0 gap-1 text-primary border-primary/40 bg-primary/5"
+                >
+                  <ShieldCheck className="w-3 h-3" />
+                  Dispatcher
+                </Badge>
+              )}
+              {dispatchStatus === "invited" && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Badge
+                        variant="outline"
+                        className="text-xs px-1.5 py-0 gap-1 text-muted-foreground cursor-default"
+                      >
+                        <Hourglass className="w-3 h-3" />
+                        Invited
+                      </Badge>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="max-w-[220px] text-center">
+                      Dispatcher invite sent — they'll get access as soon as they sign up with{" "}
+                      {s.email}.
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
               {!staff.active && (
                 <Badge variant="outline" className="text-xs px-1.5 py-0 text-muted-foreground border-muted">
                   Inactive
@@ -107,14 +200,42 @@ function StaffCard({
               </p>
             )}
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="shrink-0 h-8 w-8"
-            onClick={() => onEdit(staff)}
-          >
-            <Pencil className="w-4 h-4" />
-          </Button>
+          <div className="flex items-center gap-0.5 shrink-0">
+            {(dispatchStatus === "can_add" || dispatchStatus === "no_email") && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-flex">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-primary"
+                        disabled={dispatchStatus === "no_email"}
+                        isLoading={isAdding}
+                        onClick={() => onAddToDispatch(staff)}
+                        aria-label="Add to Dispatch"
+                      >
+                        {!isAdding && <ShieldPlus className="w-4 h-4" />}
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-[230px] text-center">
+                    {dispatchStatus === "no_email"
+                      ? "No email saved — edit this staff member and add an email first."
+                      : `Add to Dispatch — grant dispatcher access using ${s.email}.`}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => onEdit(staff)}
+            >
+              <Pencil className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -165,6 +286,96 @@ export default function StaffManagement() {
   const createStaff = useCreateStaff();
   const updateStaff = useUpdateStaff();
   const connectAccount = useConnectStaffAccount();
+
+  // Dispatcher list + pending invites — same query keys as the DispatcherAccess
+  // card below, so both stay in sync through one cache entry.
+  const { data: dispatchers = [] } = useQuery<Dispatcher[]>({
+    queryKey: ["dispatchers"],
+    queryFn: () => fetchJson<Dispatcher[]>("/dispatchers"),
+  });
+  const { data: invites = [] } = useQuery<PendingInvite[]>({
+    queryKey: ["dispatchers", "invites"],
+    queryFn: () => fetchJson<PendingInvite[]>("/dispatchers/invites"),
+  });
+
+  // Last GPS ping per staff member — polled like the Live Map so the "Live"
+  // dot stays fresh while the page is open.
+  const { data: liveness = [] } = useQuery<StaffLiveness[]>({
+    queryKey: ["staff", "liveness"],
+    queryFn: () => fetchJson<StaffLiveness[]>("/staff/liveness"),
+    refetchInterval: 30_000,
+  });
+
+  // Match against ALL verified addresses (not just the primary) — dispatcher
+  // access is granted by any verified email, so a staff email saved as a
+  // dispatcher's secondary address must still show the Dispatcher badge.
+  const dispatcherEmails = new Set(
+    dispatchers.flatMap((d) =>
+      (d.verifiedEmails && d.verifiedEmails.length > 0
+        ? d.verifiedEmails
+        : d.email
+          ? [d.email]
+          : []
+      ).map((e) => e.trim().toLowerCase()),
+    ),
+  );
+  const invitedEmails = new Set(invites.map((i) => i.email.trim().toLowerCase()));
+  const livenessByStaffId = new Map(liveness.map((l) => [l.staffId, l]));
+
+  const dispatchStatusFor = (staff: Staff): DispatchStatus => {
+    const email = ((staff as any).email as string | undefined)?.trim().toLowerCase();
+    if (!email) return "no_email";
+    if (dispatcherEmails.has(email)) return "dispatcher";
+    if (invitedEmails.has(email)) return "invited";
+    return "can_add";
+  };
+
+  // One-click "Add to Dispatch" from a staff card — reuses the same invite
+  // endpoint as the DispatcherAccess card, with the staff member's saved email.
+  const [dispatchPendingId, setDispatchPendingId] = useState<number | null>(null);
+  const addToDispatch = useMutation({
+    mutationFn: (staff: Staff) =>
+      fetchJson<AddByEmailResult>("/dispatchers/invites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: staff.name,
+          email: ((staff as any).email as string).trim(),
+        }),
+      }),
+    onSuccess: (result, staff) => {
+      if (result.mode === "granted") {
+        toast({
+          title: "Dispatcher added",
+          description: `${staff.name} already had an account, so they have dispatcher access right now.`,
+        });
+      } else if (result.emailSent) {
+        toast({
+          title: "Invite sent",
+          description: `${staff.name} has been emailed a sign-up link. As soon as they sign up with that email, they'll have dispatcher access automatically.`,
+        });
+      } else {
+        toast({
+          title: "Invite saved — email couldn't be sent",
+          description:
+            "The invite is stored, but the notification email failed. Ask them to sign up on this site with that email and they'll get access automatically.",
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: ["dispatchers"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Couldn't add to Dispatch", description: err.message, variant: "destructive" });
+      // A 409 usually means the lists on this page are stale — refresh them.
+      queryClient.invalidateQueries({ queryKey: ["dispatchers"] });
+    },
+    onSettled: () => setDispatchPendingId(null),
+  });
+
+  const handleAddToDispatch = (staff: Staff) => {
+    if (addToDispatch.isPending) return;
+    setDispatchPendingId(staff.id);
+    addToDispatch.mutate(staff);
+  };
 
   // Cleaner-app accounts waiting to be connected to a staff record
   const { data: waitingSignups = [] } = useListUnlinkedSignups();
@@ -655,7 +866,15 @@ export default function StaffManagement() {
         <>
           <div className="grid gap-3 sm:grid-cols-2">
             {displayStaff.map((s) => (
-              <StaffCard key={s.id} staff={s} onEdit={openEdit} />
+              <StaffCard
+                key={s.id}
+                staff={s}
+                onEdit={openEdit}
+                liveness={livenessByStaffId.get(s.id)}
+                dispatchStatus={dispatchStatusFor(s)}
+                onAddToDispatch={handleAddToDispatch}
+                isAdding={dispatchPendingId === s.id && addToDispatch.isPending}
+              />
             ))}
           </div>
 

@@ -14,26 +14,29 @@ function getBaseUrl() {
   return base.endsWith("/") ? base : base + "/";
 }
 
-interface Dispatcher {
+export interface Dispatcher {
   clerkUserId: string;
   name: string | null;
+  /** Primary address — display only. Match against verifiedEmails instead. */
   email: string | null;
+  /** All verified addresses (lowercased) — any of them grants/identifies access. */
+  verifiedEmails?: string[] | null;
   imageUrl: string | null;
   createdAt: string;
 }
 
-interface PendingInvite {
+export interface PendingInvite {
   id: number;
   email: string;
   name: string | null;
   createdAt: string;
 }
 
-type AddByEmailResult =
+export type AddByEmailResult =
   | { mode: "granted" }
   | { mode: "invited"; invite: PendingInvite; emailSent?: boolean };
 
-async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
+export async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${getBaseUrl()}api${path}`, {
     credentials: "include",
     ...init,
