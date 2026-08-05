@@ -20,6 +20,7 @@ import type { Staff } from "@workspace/api-client-react";
 import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import React, { useState, useRef } from "react";
+import { useUser } from "@clerk/react";
 import { DispatcherAccess } from "@/components/dispatcher-access";
 import {
   fetchJson,
@@ -59,6 +60,9 @@ function StaffCard({
   dispatchStatus,
   onAddToDispatch,
   isAdding,
+  onRevokeDispatch,
+  onCancelInvite,
+  isRevoking,
 }: {
   staff: Staff;
   onEdit: (staff: Staff) => void;
@@ -66,6 +70,9 @@ function StaffCard({
   dispatchStatus: DispatchStatus;
   onAddToDispatch: (staff: Staff) => void;
   isAdding: boolean;
+  onRevokeDispatch: (staff: Staff) => void;
+  onCancelInvite: (staff: Staff) => void;
+  isRevoking: boolean;
 }) {
   const s = staff as any;
   const hasAddressNoCoords = s.homeAddress && s.homeLat == null;
@@ -136,29 +143,56 @@ function StaffCard({
                 {ROLE_LABELS[staff.role] ?? staff.role}
               </Badge>
               {dispatchStatus === "dispatcher" && (
-                <Badge
-                  variant="outline"
-                  className="text-xs px-1.5 py-0 gap-1 text-primary border-primary/40 bg-primary/5"
-                >
-                  <ShieldCheck className="w-3 h-3" />
-                  Dispatcher
-                </Badge>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="group inline-flex disabled:opacity-60"
+                        disabled={isRevoking}
+                        onClick={() => onRevokeDispatch(staff)}
+                        aria-label={`Remove ${staff.name}'s dispatcher access`}
+                      >
+                        <Badge
+                          variant="outline"
+                          className="text-xs px-1.5 py-0 gap-1 text-primary border-primary/40 bg-primary/5 group-hover:border-destructive/50 group-hover:text-destructive group-hover:bg-destructive/5 transition-colors"
+                        >
+                          <ShieldCheck className="w-3 h-3 group-hover:hidden" />
+                          <X className="w-3 h-3 hidden group-hover:inline" />
+                          Dispatcher
+                        </Badge>
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="max-w-[220px] text-center">
+                      Has dispatcher access — click to remove it.
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               )}
               {dispatchStatus === "invited" && (
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Badge
-                        variant="outline"
-                        className="text-xs px-1.5 py-0 gap-1 text-muted-foreground cursor-default"
+                      <button
+                        type="button"
+                        className="group inline-flex disabled:opacity-60"
+                        disabled={isRevoking}
+                        onClick={() => onCancelInvite(staff)}
+                        aria-label={`Cancel ${staff.name}'s dispatcher invite`}
                       >
-                        <Hourglass className="w-3 h-3" />
-                        Invited
-                      </Badge>
+                        <Badge
+                          variant="outline"
+                          className="text-xs px-1.5 py-0 gap-1 text-muted-foreground group-hover:border-destructive/50 group-hover:text-destructive group-hover:bg-destructive/5 transition-colors"
+                        >
+                          <Hourglass className="w-3 h-3 group-hover:hidden" />
+                          <X className="w-3 h-3 hidden group-hover:inline" />
+                          Invited
+                        </Badge>
+                      </button>
                     </TooltipTrigger>
                     <TooltipContent side="bottom" className="max-w-[220px] text-center">
                       Dispatcher invite sent — they'll get access as soon as they sign up with{" "}
-                      {s.email}.
+                      {s.email}. Click to cancel the invite.
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
@@ -375,6 +409,112 @@ export default function StaffManagement() {
     if (addToDispatch.isPending) return;
     setDispatchPendingId(staff.id);
     addToDispatch.mutate(staff);
+  };
+
+  // Revoke dispatcher access / cancel a pending invite straight from a staff
+  // card — same endpoints (and last-dispatcher protection) as the
+  // DispatcherAccess card below; shared ["dispatchers"] keys keep it in sync.
+  const { user } = useUser();
+  const currentUserId = user?.id;
+  const [revokePendingId, setRevokePendingId] = useState<number | null>(null);
+
+  const removeDispatcher = useMutation({
+    mutationFn: ({ clerkUserId }: { clerkUserId: string; staffName: string }) =>
+      fetchJson<{ ok: boolean; removedSelf: boolean }>(
+        `/dispatchers/${encodeURIComponent(clerkUserId)}`,
+        { method: "DELETE" },
+      ),
+    onSuccess: (result, { staffName }) => {
+      toast({
+        title: "Dispatcher removed",
+        description: `${staffName}'s dispatcher access has been revoked.`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["dispatchers"] });
+      if (result.removedSelf) {
+        // Caller revoked their own access — reload so the role gate takes effect
+        window.location.reload();
+      }
+    },
+    onError: (err: Error) => {
+      toast({ title: "Couldn't remove dispatcher", description: err.message, variant: "destructive" });
+      // A 409/404 usually means the lists on this page are stale — refresh them.
+      queryClient.invalidateQueries({ queryKey: ["dispatchers"] });
+    },
+    onSettled: () => setRevokePendingId(null),
+  });
+
+  const cancelInvite = useMutation({
+    mutationFn: ({ inviteId }: { inviteId: number; staffName: string }) =>
+      fetchJson<{ ok: boolean; emailRevoked?: boolean }>(`/dispatchers/invites/${inviteId}`, {
+        method: "DELETE",
+      }),
+    onSuccess: (result, { staffName }) => {
+      if (result.emailRevoked === false) {
+        toast({
+          title: "Invite removed",
+          description:
+            "The emailed sign-up link couldn't be cancelled, but they will not get dispatcher access from it.",
+        });
+      } else {
+        toast({ title: "Invite removed", description: `${staffName}'s dispatcher invite has been cancelled.` });
+      }
+      queryClient.invalidateQueries({ queryKey: ["dispatchers"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Couldn't remove invite", description: err.message, variant: "destructive" });
+      queryClient.invalidateQueries({ queryKey: ["dispatchers"] });
+    },
+    onSettled: () => setRevokePendingId(null),
+  });
+
+  const handleRevokeDispatch = (staff: Staff) => {
+    if (removeDispatcher.isPending || cancelInvite.isPending) return;
+    const email = ((staff as any).email as string | undefined)?.trim().toLowerCase();
+    if (!email) return;
+    // Match against ALL verified addresses — same rule as dispatchStatusFor.
+    const dispatcher = dispatchers.find((d) =>
+      (d.verifiedEmails && d.verifiedEmails.length > 0
+        ? d.verifiedEmails
+        : d.email
+          ? [d.email]
+          : []
+      ).some((e) => e.trim().toLowerCase() === email),
+    );
+    if (!dispatcher) {
+      toast({
+        title: "Couldn't find dispatcher",
+        description: "The dispatcher list may be out of date — refreshing.",
+        variant: "destructive",
+      });
+      queryClient.invalidateQueries({ queryKey: ["dispatchers"] });
+      return;
+    }
+    const isSelf = dispatcher.clerkUserId === currentUserId;
+    const warning = isSelf
+      ? `Remove your own dispatcher access? You will immediately lose access to dispatcher pages.`
+      : `Remove ${staff.name}'s dispatcher access?`;
+    if (!window.confirm(warning)) return;
+    setRevokePendingId(staff.id);
+    removeDispatcher.mutate({ clerkUserId: dispatcher.clerkUserId, staffName: staff.name });
+  };
+
+  const handleCancelInvite = (staff: Staff) => {
+    if (removeDispatcher.isPending || cancelInvite.isPending) return;
+    const email = ((staff as any).email as string | undefined)?.trim().toLowerCase();
+    if (!email) return;
+    const invite = invites.find((i) => i.email.trim().toLowerCase() === email);
+    if (!invite) {
+      toast({
+        title: "Couldn't find invite",
+        description: "The invite list may be out of date — refreshing.",
+        variant: "destructive",
+      });
+      queryClient.invalidateQueries({ queryKey: ["dispatchers"] });
+      return;
+    }
+    if (!window.confirm(`Cancel ${staff.name}'s dispatcher invite?`)) return;
+    setRevokePendingId(staff.id);
+    cancelInvite.mutate({ inviteId: invite.id, staffName: staff.name });
   };
 
   // Cleaner-app accounts waiting to be connected to a staff record
@@ -874,6 +1014,12 @@ export default function StaffManagement() {
                 dispatchStatus={dispatchStatusFor(s)}
                 onAddToDispatch={handleAddToDispatch}
                 isAdding={dispatchPendingId === s.id && addToDispatch.isPending}
+                onRevokeDispatch={handleRevokeDispatch}
+                onCancelInvite={handleCancelInvite}
+                isRevoking={
+                  revokePendingId === s.id &&
+                  (removeDispatcher.isPending || cancelInvite.isPending)
+                }
               />
             ))}
           </div>
