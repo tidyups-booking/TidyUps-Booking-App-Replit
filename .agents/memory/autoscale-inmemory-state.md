@@ -13,3 +13,8 @@ description: In-memory one-time tokens and SSE broadcast state break on autoscal
 - Cross-request coordination state must live in a shared store (Postgres/DB) or the deployment must be pinned to a single instance.
 - Diagnosis shortcut: feature works in workspace but not on the live site, and prod logs show the first webhook succeeding followed by a rejected follow-up connection → instance split.
 - The live-call flow spans three connections (voice POST → WS stream → SSE transcript); ALL THREE must agree on state location.
+
+## Geocode limiter decision (2026-08-05)
+The per-process geocode concurrency cap (3) becomes 3×N on autoscale. Decision: accept the 3×N bound, no shared Postgres limiter.
+**Why:** total Google spend is bounded by DB-persisted coords (pacing only changes burst velocity, well under Google quota), and a shared limiter would hold a DB lock across an external HTTP fetch.
+**How to apply:** don't "fix" the per-process limiter for multi-instance; rationale documented in the geocode service comments.

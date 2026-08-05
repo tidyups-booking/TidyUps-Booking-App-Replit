@@ -21,6 +21,25 @@ export const NO_ADDRESS_PLACEHOLDER = "Address not provided";
 // at once. Excess callers queue FIFO and still complete — just serialized into
 // at most MAX_CONCURRENT_GEOCODES in-flight lookups. This caps worst-case
 // spend velocity and avoids OVER_QUERY_LIMIT responses.
+//
+// MULTI-INSTANCE (autoscale) NOTE — reviewed 2026-08-05: this limiter (and the
+// address cache above) is per-process. On an autoscale deployment with N
+// instances the effective global cap is 3×N parallel Google lookups. We accept
+// that bound deliberately instead of adding a shared Postgres lock/token
+// bucket, because:
+//   1. Total spend is bounded regardless of pacing: coords persist to
+//      bookings.address_lat/lng (and the route returns stored coords without
+//      calling Google), so each address is paid for at most ~once — a burst
+//      only changes velocity, not total cost.
+//   2. Even at N instances, 3×N concurrent requests is far below Google
+//      Geocoding's default quota (~50 QPS / 3000 QPM), so OVER_QUERY_LIMIT
+//      remains unlikely; and when it happens the failure is not cached, so a
+//      later attempt retries.
+//   3. A shared limiter would require holding a DB lock/transaction across an
+//      external HTTP fetch — worse failure modes than the risk it removes.
+// The per-instance cache means duplicate addresses may be looked up once per
+// instance in the worst case; that duplication is capped at N and self-heals
+// once coords are stored in the DB.
 const MAX_CONCURRENT_GEOCODES = 3;
 let activeGeocodes = 0;
 const geocodeWaiters: Array<() => void> = [];
