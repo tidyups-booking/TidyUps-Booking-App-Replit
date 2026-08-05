@@ -1,127 +1,93 @@
 modules = ["nodejs-24", "postgresql-16"]
-
 [deployment]
 router = "application"
 deploymentTarget = "autoscale"
-
 [deployment.postBuild]
 args = ["pnpm", "store", "prune"]
 env = { "CI" = "true" }
-
 [workflows]
 runButton = "Project"
-
 [[workflows.workflow]]
 name = "Project"
 mode = "parallel"
 author = "agent"
-
 [[workflows.workflow.tasks]]
 task = "workflow.run"
 args = "dispatcher-access-e2e"
-
 [[workflows.workflow.tasks]]
 task = "workflow.run"
 args = "contact-spam-filter-e2e"
-
 [[workflows.workflow.tasks]]
 task = "workflow.run"
 args = "invite-email-e2e"
-
 [[workflows.workflow.tasks]]
 task = "workflow.run"
 args = "unassigned-schedule-e2e"
-
 [[workflows.workflow.tasks]]
 task = "workflow.run"
 args = "staff-liveness-e2e"
-
 [[workflows.workflow.tasks]]
 task = "workflow.run"
 args = "cleaner-app-bundle-e2e"
-
 [[workflows.workflow]]
 name = "dispatcher-access-e2e"
 author = "agent"
-
 [workflows.workflow.metadata]
 isValidation = true
-
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "cd artifacts/api-server && pnpm exec tsx e2e-dispatcher-access-check.mts && pnpm exec tsx e2e-dispatcher-bootstrap-check.mts"
-
 [[workflows.workflow]]
 name = "contact-spam-filter-e2e"
 author = "agent"
-
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "cd artifacts/api-server && pnpm exec tsx e2e-contact-spam-filter-check.mts"
-
 [workflows.workflow.metadata]
 outputType = "console"
-
 [[workflows.workflow]]
 name = "invite-email-e2e"
 author = "agent"
-
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "cd artifacts/api-server && pnpm exec tsx e2e-invite-email-check.mts"
-
 [workflows.workflow.metadata]
 outputType = "console"
-
 [[workflows.workflow]]
 name = "unassigned-schedule-e2e"
 author = "agent"
-
 [workflows.workflow.metadata]
 outputType = "console"
-
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd artifacts/api-server && pnpm exec tsx e2e-unassigned-schedule-check.mts && pnpm exec tsx e2e-booking-search-perf-check.mts && pnpm exec tsx e2e-customer-loyalty-count-check.mts && cd ../.. && pnpm --filter @workspace/booking-app run test"
-
+args = "cd artifacts/api-server && pnpm exec tsx e2e-unassigned-schedule-check.mts && pnpm exec tsx e2e-booking-search-perf-check.mts && pnpm exec tsx e2e-customer-loyalty-count-check.mts && pnpm exec tsx e2e-safari-install-hint-check.mts && cd ../.. && pnpm --filter @workspace/booking-app run test"
 [[workflows.workflow]]
 name = "staff-liveness-e2e"
 author = "agent"
-
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "cd artifacts/api-server && pnpm exec tsx e2e-staff-liveness-check.mts"
-
 [workflows.workflow.metadata]
 outputType = "console"
-
 [[workflows.workflow]]
 name = "cleaner-app-bundle-e2e"
 author = "agent"
-
 [workflows.workflow.metadata]
 outputType = "console"
-
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "cd artifacts/api-server && pnpm exec tsx e2e-cleaner-app-bundle-check.mts && pnpm exec tsx e2e-account-switch-cache-check.mts"
-
 [agent]
 stack = "PNPM_WORKSPACE"
 expertMode = true
-
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 240000
-
 [nix]
 channel = "stable-25_05"
-
 [objectStorage]
 defaultBucketID = "replit-objstore-72fc7d92-bf51-450e-a0d7-acb8b94efd5b"
-
 [userenv]
-
 [userenv.shared]
 BUSINESS_PHONE_NUMBER = "+17807185092"
 DISPATCHER_EMAILS = "cleaningserviceyeg@gmail.com,richardpenny77@hotmail.com,richard.penny4@icloud.com,support@bookcleaning.com"

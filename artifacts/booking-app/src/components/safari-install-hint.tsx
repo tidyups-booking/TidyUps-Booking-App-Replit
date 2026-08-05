@@ -10,25 +10,10 @@ import {
 
 const DISMISS_KEY = "safari-install-hint-dismissed";
 
-/** True only for real Safari (desktop or iOS), not Chrome/Edge/Firefox on
- *  macOS/iOS which also include "Safari" in their UA string. */
-function isSafari(): boolean {
-  const ua = navigator.userAgent;
-  return (
-    /Safari/i.test(ua) &&
-    !/Chrome|Chromium|CriOS|Edg|EdgiOS|OPR|FxiOS|Firefox/i.test(ua)
-  );
-}
-
-/** iOS/iPadOS installs via the Share sheet; macOS via File → Add to Dock.
- *  Modern iPads report a Mac UA, so check for touch support too. */
-function isIOS(): boolean {
-  const ua = navigator.userAgent;
-  return (
-    /iPhone|iPad|iPod/i.test(ua) ||
-    (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1)
-  );
-}
+import {
+  isIOSUA,
+  shouldShowSafariInstallHint,
+} from "./safari-install-hint-logic";
 
 /**
  * Safari never fires `beforeinstallprompt`, so the one-click install button
@@ -41,20 +26,28 @@ export function SafariInstallHint({ className }: { className?: string }) {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    // Already installed / running standalone — nothing to suggest.
-    if (window.matchMedia("(display-mode: standalone)").matches) return;
-    if ((navigator as { standalone?: boolean }).standalone) return; // iOS Safari
+    let dismissed = false;
     try {
-      if (localStorage.getItem(DISMISS_KEY) === "1") return;
+      dismissed = localStorage.getItem(DISMISS_KEY) === "1";
     } catch {
       // localStorage unavailable (private mode edge cases) — still show
     }
-    if (isSafari()) setShow(true);
+    setShow(
+      shouldShowSafariInstallHint({
+        displayModeStandalone: window.matchMedia("(display-mode: standalone)")
+          .matches,
+        navigatorStandalone: Boolean(
+          (navigator as { standalone?: boolean }).standalone,
+        ),
+        dismissed,
+        userAgent: navigator.userAgent,
+      }),
+    );
   }, []);
 
   if (!show) return null;
 
-  const ios = isIOS();
+  const ios = isIOSUA(navigator.userAgent, navigator.maxTouchPoints);
 
   const dismiss = () => {
     try {
