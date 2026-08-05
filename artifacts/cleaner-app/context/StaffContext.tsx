@@ -6,10 +6,9 @@
  * cleaner signs up with the email on their staff record (or a dispatcher can
  * link manually via PATCH /staff/:id { clerkUserId }).
  */
-import React, { createContext, useContext, useEffect, useRef, ReactNode } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { useAuth } from '@clerk/expo';
-import { useGetStaffMe, getGetStaffMeQueryKey } from '@workspace/api-client-react';
+import React, { createContext, useContext, ReactNode } from 'react';
+import { useGetStaffMe } from '@workspace/api-client-react';
+import { useAccountSwitchGuard } from '@/hooks/useAccountSwitchGuard';
 
 interface StaffContextValue {
   /** DB primary key of the caller's linked staff record, or null if not linked. */
@@ -39,22 +38,10 @@ const StaffContext = createContext<StaffContextValue>({
 });
 
 export function StaffProvider({ children }: { children: ReactNode }) {
-  const { userId } = useAuth();
-  const queryClient = useQueryClient();
-
-  // The /staff/me cache key is NOT user-scoped, so a cached response could
-  // survive an account switch for up to staleTime if sign-out ever skipped
-  // queryClient.clear() (e.g. session expiry, sign-out elsewhere). Track the
-  // Clerk userId and drop the cached staff record the moment it changes so
-  // the next account can never see the previous cleaner's staffId/name/etc.
-  const prevUserIdRef = useRef(userId);
-  const userChanged = prevUserIdRef.current !== userId;
-  useEffect(() => {
-    if (prevUserIdRef.current !== userId) {
-      prevUserIdRef.current = userId;
-      queryClient.removeQueries({ queryKey: getGetStaffMeQueryKey() });
-    }
-  }, [userId, queryClient]);
+  // Shared account-switch guard: drops the non-user-scoped /staff/me cache
+  // entry the moment the Clerk userId changes so the next account can never
+  // see the previous cleaner's staffId/name/etc.
+  const { userId, userChanged } = useAccountSwitchGuard();
 
   const { data, isLoading, refetch } = useGetStaffMe({
     query: {

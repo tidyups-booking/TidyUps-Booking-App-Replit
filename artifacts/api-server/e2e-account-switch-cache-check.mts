@@ -94,13 +94,39 @@ console.log("Source-level guards:");
     "a queryKey override replaces the URL-scoped key (generated hooks use `?? default`)",
   );
 
-  // Per-user state held OUTSIDE React Query must also reset on account switch.
+  // Per-user state held OUTSIDE React Query must also reset on account
+  // switch. The userId-change tracking + /staff/me purge now lives in ONE
+  // shared hook that every screen outside the (home) StaffProvider must use.
+  const guardSrc = read("hooks/useAccountSwitchGuard.ts");
+  check(
+    "useAccountSwitchGuard drops the cached /staff/me record when the Clerk userId changes",
+    /removeQueries\(\s*\{\s*queryKey:\s*getGetStaffMeQueryKey\(\)/.test(guardSrc) &&
+      guardSrc.includes("prevUserIdRef"),
+    "removeQueries(getGetStaffMeQueryKey()) on userId change is required",
+  );
+  check(
+    "useAccountSwitchGuard purges extra caller-supplied query keys too",
+    /removeQueries\(\s*\{\s*queryKey:\s*key\s*\}/.test(guardSrc) &&
+      guardSrc.includes("extraKeysRef.current"),
+    "extra non-user-scoped keys (e.g. ID-keyed booking) must be purged as well",
+  );
+  check(
+    "useAccountSwitchGuard purges the cache BEFORE clearing the user-change guard",
+    (() => {
+      const effect = guardSrc.match(/useEffect\(\(\)\s*=>\s*\{[\s\S]*?\},\s*\[userId/)?.[0] ?? "";
+      const purge = effect.indexOf("removeQueries");
+      const clear = effect.indexOf("prevUserIdRef.current = userId");
+      return purge !== -1 && clear !== -1 && purge < clear;
+    })(),
+    "removeQueries must run before prevUserIdRef.current = userId",
+  );
+
   const staffCtxSrc = read("context/StaffContext.tsx");
   check(
-    "StaffContext drops the cached /staff/me record when the Clerk userId changes",
-    /removeQueries\(\s*\{\s*queryKey:\s*getGetStaffMeQueryKey\(\)/.test(staffCtxSrc) &&
-      staffCtxSrc.includes("prevUserIdRef"),
-    "removeQueries(getGetStaffMeQueryKey()) on userId change is required",
+    "StaffContext consumes the shared account-switch guard (no hand-rolled copy)",
+    staffCtxSrc.includes("useAccountSwitchGuard(") &&
+      !staffCtxSrc.includes("prevUserIdRef"),
+    "must call useAccountSwitchGuard, not duplicate its refs/effects",
   );
   check(
     "StaffContext disables /staff/me and masks data without a signed-in user",
@@ -108,28 +134,18 @@ console.log("Source-level guards:");
   );
 
   // The job detail route lives OUTSIDE (home)'s StaffProvider and resolves
-  // /staff/me itself, so it must carry the same account-switch guard.
+  // /staff/me itself, so it must carry the same shared guard.
   const jobDetailSrc = read("app/job/[id].tsx");
   check(
-    "job/[id] drops the cached /staff/me record when the Clerk userId changes",
-    /removeQueries\(\s*\{\s*queryKey:\s*getGetStaffMeQueryKey\(\)/.test(jobDetailSrc) &&
-      jobDetailSrc.includes("prevUserIdRef"),
-    "removeQueries(getGetStaffMeQueryKey()) on userId change is required",
+    "job/[id] consumes the shared account-switch guard (no hand-rolled copy)",
+    jobDetailSrc.includes("useAccountSwitchGuard(") &&
+      !jobDetailSrc.includes("prevUserIdRef"),
+    "must call useAccountSwitchGuard, not duplicate its refs/effects",
   );
   check(
-    "job/[id] also purges the ID-keyed booking cache entry on userId change",
-    /removeQueries\(\s*\{\s*queryKey:\s*getGetBookingQueryKey\(bookingId\)/.test(jobDetailSrc),
-    "removeQueries(getGetBookingQueryKey(bookingId)) on userId change is required",
-  );
-  check(
-    "job/[id] purges the cache BEFORE clearing the user-change guard",
-    (() => {
-      const effect = jobDetailSrc.match(/useEffect\(\(\)\s*=>\s*\{[\s\S]*?\},\s*\[userId/)?.[0] ?? "";
-      const purge = effect.indexOf("removeQueries");
-      const clear = effect.indexOf("prevUserIdRef.current = userId");
-      return purge !== -1 && clear !== -1 && purge < clear;
-    })(),
-    "removeQueries must run before prevUserIdRef.current = userId",
+    "job/[id] passes the ID-keyed booking key so it is purged on userId change",
+    /useAccountSwitchGuard\(\s*\[\s*getGetBookingQueryKey\(bookingId\)/.test(jobDetailSrc),
+    "getGetBookingQueryKey(bookingId) must be passed to the guard",
   );
   check(
     "job/[id] disables both queries during a switch and masks cached data",
