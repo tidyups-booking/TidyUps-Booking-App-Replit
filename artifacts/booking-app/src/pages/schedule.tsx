@@ -7,6 +7,15 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { ChevronLeft, ChevronRight, CalendarDays, User, Clock, MapPin, Search, X } from "lucide-react";
 import { Link } from "wouter";
+import { BookingMiniMap } from "@/components/booking-mini-map";
+
+// API base (artifact prefix, no trailing slash) — same base the mini map
+// uses on the New Booking form.
+const API_BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+
+function hasCoords(b: { addressLat?: number | null; addressLng?: number | null }) {
+  return b.addressLat != null && b.addressLng != null;
+}
 
 function formatDate(dateStr: string) {
   const [year, month, day] = dateStr.split("-").map(Number);
@@ -98,6 +107,14 @@ export default function Schedule() {
     return [...upcoming, ...past].slice(0, 25);
   }, [searching, matches, today]);
 
+  // Which result is shown on the mini map. Defaults to the first result
+  // that has a saved location; clicking a result row switches the map.
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  React.useEffect(() => setSelectedId(null), [query]);
+  const selected = useMemo(() => {
+    return results.find((b) => b.id === selectedId) ?? results.find(hasCoords) ?? null;
+  }, [results, selectedId]);
+
 
   return (
     <div className="max-w-7xl mx-auto animate-in slide-in-from-bottom-4 duration-500">
@@ -149,9 +166,9 @@ export default function Schedule() {
                   : `${results.length} matching booking${results.length !== 1 ? "s" : ""}`}
             </CardTitle>
           </CardHeader>
-          <CardContent className="p-3 pt-0 space-y-2">
+          <CardContent className="p-3 pt-0">
             {!searchLoading && totalMatches !== undefined && totalMatches > results.length && (
-              <p className="text-xs text-muted-foreground px-1">
+              <p className="text-xs text-muted-foreground px-1 mb-2">
                 Results truncated — refine your search to narrow the list.
               </p>
             )}
@@ -160,11 +177,26 @@ export default function Schedule() {
                 No bookings match "{search.trim()}".
               </p>
             ) : (
-              results.map((booking) => (
-                <Link key={booking.id} href={`/bookings/${booking.id}`}>
-                  <div className="rounded-lg border p-2.5 hover:bg-muted/50 transition-colors cursor-pointer">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
+              <div className="grid gap-3 lg:grid-cols-2">
+                <div className="space-y-2">
+                  {results.map((booking) => (
+                    <div
+                      key={booking.id}
+                      className={cn(
+                        "rounded-lg border p-2.5 flex items-start justify-between gap-2 hover:bg-muted/50 transition-colors",
+                        selected?.id === booking.id &&
+                          "border-primary/60 ring-1 ring-primary/30 bg-primary/5"
+                      )}
+                    >
+                      {/* Selection is a real button so keyboard users can
+                          pick a result (Enter/Space) and see it on the map */}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedId(booking.id)}
+                        aria-pressed={selected?.id === booking.id}
+                        aria-label={`Show ${booking.firstName} ${booking.lastName} on the map`}
+                        className="flex-1 min-w-0 text-left cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
                         <p className="text-sm font-medium truncate">
                           {booking.firstName} {booking.lastName}
                         </p>
@@ -180,19 +212,56 @@ export default function Schedule() {
                             {booking.address}, {booking.city}
                           </span>
                         </div>
+                      </button>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <span
+                          className={cn(
+                            "text-xs px-2 py-0.5 rounded-full border font-medium",
+                            STATUS_COLORS[booking.status]
+                          )}
+                        >
+                          {booking.status}
+                        </span>
+                        <Link
+                          href={`/bookings/${booking.id}`}
+                          aria-label="Open booking"
+                          className="text-xs text-primary hover:underline flex items-center"
+                        >
+                          Open <ChevronRight className="w-3.5 h-3.5" />
+                        </Link>
                       </div>
-                      <span
-                        className={cn(
-                          "text-xs px-2 py-0.5 rounded-full border font-medium shrink-0",
-                          STATUS_COLORS[booking.status]
-                        )}
-                      >
-                        {booking.status}
-                      </span>
                     </div>
-                  </div>
-                </Link>
-              ))
+                  ))}
+                </div>
+                <div>
+                  {selected ? (
+                    hasCoords(selected) ? (
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1.5 flex items-center gap-1">
+                          <MapPin className="w-3 h-3 shrink-0" />
+                          <span className="truncate">
+                            {selected.address}, {selected.city}
+                          </span>
+                        </p>
+                        <BookingMiniMap
+                          lat={selected.addressLat!}
+                          lng={selected.addressLng!}
+                          baseUrl={API_BASE}
+                        />
+                      </div>
+                    ) : (
+                      <div className="h-full min-h-[160px] rounded-lg border border-dashed flex items-center justify-center p-4 text-center text-sm text-muted-foreground">
+                        No map location saved for this address yet — it's added
+                        automatically a few minutes after booking.
+                      </div>
+                    )
+                  ) : (
+                    <div className="h-full min-h-[160px] rounded-lg border border-dashed flex items-center justify-center p-4 text-center text-sm text-muted-foreground">
+                      Click a result to see it on the map.
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
           </CardContent>
         </Card>
