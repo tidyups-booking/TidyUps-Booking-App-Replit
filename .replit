@@ -99,12 +99,12 @@ outputType = "console"
 name = "cleaner-app-bundle-e2e"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "cd artifacts/api-server && pnpm exec tsx e2e-cleaner-app-bundle-check.mts"
-
 [workflows.workflow.metadata]
 outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd artifacts/api-server && pnpm exec tsx e2e-cleaner-app-bundle-check.mts && pnpm exec tsx e2e-account-switch-cache-check.mts"
 
 [agent]
 stack = "PNPM_WORKSPACE"

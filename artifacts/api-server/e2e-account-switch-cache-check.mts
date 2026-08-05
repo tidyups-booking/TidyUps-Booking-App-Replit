@@ -92,6 +92,27 @@ console.log("Source-level guards:");
     !/queryKey\s*:/.test(scheduleSrc),
     "a queryKey override replaces the URL-scoped key (generated hooks use `?? default`)",
   );
+
+  // Per-user state held OUTSIDE React Query must also reset on account switch.
+  const staffCtxSrc = read("context/StaffContext.tsx");
+  check(
+    "StaffContext drops the cached /staff/me record when the Clerk userId changes",
+    /removeQueries\(\s*\{\s*queryKey:\s*getGetStaffMeQueryKey\(\)/.test(staffCtxSrc) &&
+      staffCtxSrc.includes("prevUserIdRef"),
+    "removeQueries(getGetStaffMeQueryKey()) on userId change is required",
+  );
+  check(
+    "StaffContext disables /staff/me and masks data without a signed-in user",
+    /enabled:\s*!!userId/.test(staffCtxSrc) && /userChanged\s*\?\s*undefined\s*:\s*data/.test(staffCtxSrc),
+  );
+
+  const locCtxSrc = read("context/LocationContext.tsx");
+  const clearedBranch = locCtxSrc.match(/if\s*\(!staffId\)\s*\{[\s\S]*?\}/)?.[0] ?? "";
+  check(
+    "LocationContext resets status AND lastUpdate when staffId clears",
+    clearedBranch.includes("setStatus('idle')") && clearedBranch.includes("setLastUpdate(null)"),
+    "both setStatus('idle') and setLastUpdate(null) must run in the !staffId branch",
+  );
 }
 
 // ---------------------------------------------------------------------------

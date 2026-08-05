@@ -6,8 +6,10 @@
  * cleaner signs up with the email on their staff record (or a dispatcher can
  * link manually via PATCH /staff/:id { clerkUserId }).
  */
-import React, { createContext, useContext, ReactNode } from 'react';
-import { useGetStaffMe } from '@workspace/api-client-react';
+import React, { createContext, useContext, useEffect, useRef, ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@clerk/expo';
+import { useGetStaffMe, getGetStaffMeQueryKey } from '@workspace/api-client-react';
 
 interface StaffContextValue {
   /** DB primary key of the caller's linked staff record, or null if not linked. */
@@ -37,8 +39,27 @@ const StaffContext = createContext<StaffContextValue>({
 });
 
 export function StaffProvider({ children }: { children: ReactNode }) {
+  const { userId } = useAuth();
+  const queryClient = useQueryClient();
+
+  // The /staff/me cache key is NOT user-scoped, so a cached response could
+  // survive an account switch for up to staleTime if sign-out ever skipped
+  // queryClient.clear() (e.g. session expiry, sign-out elsewhere). Track the
+  // Clerk userId and drop the cached staff record the moment it changes so
+  // the next account can never see the previous cleaner's staffId/name/etc.
+  const prevUserIdRef = useRef(userId);
+  const userChanged = prevUserIdRef.current !== userId;
+  useEffect(() => {
+    if (prevUserIdRef.current !== userId) {
+      prevUserIdRef.current = userId;
+      queryClient.removeQueries({ queryKey: getGetStaffMeQueryKey() });
+    }
+  }, [userId, queryClient]);
+
   const { data, isLoading, refetch } = useGetStaffMe({
     query: {
+      // Never fetch (or serve cached data) without a signed-in user.
+      enabled: !!userId,
       // On a first sign-in the server links the account during the request,
       // but a parallel request can briefly race it. Retry a couple of times
       // with a delay so a just-linked account settles without a manual
@@ -49,15 +70,19 @@ export function StaffProvider({ children }: { children: ReactNode }) {
     } as any,
   });
 
+  // While the userId just changed (before the effect above removes the stale
+  // cache entry), mask any cached data so it can never render for the new user.
+  const safeData = userChanged ? undefined : data;
+
   return (
     <StaffContext.Provider
       value={{
-        staffId: data?.id ?? null,
-        staffName: data?.name ?? null,
-        staffPhone: (data as any)?.phone ?? null,
-        staffEmail: (data as any)?.email ?? null,
-        isLoaded: !isLoading,
-        isLinked: !!data,
+        staffId: safeData?.id ?? null,
+        staffName: safeData?.name ?? null,
+        staffPhone: (safeData as any)?.phone ?? null,
+        staffEmail: (safeData as any)?.email ?? null,
+        isLoaded: !isLoading && !userChanged,
+        isLinked: !!safeData,
         refetch,
       }}
     >

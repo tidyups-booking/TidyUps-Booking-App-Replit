@@ -104,8 +104,11 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   // When staffId is first set (after /staff/me resolves), auto-check permission
   useEffect(() => {
     if (!staffId) {
-      // staffId was cleared — stop sharing
+      // staffId was cleared (sign-out or account switch) — stop sharing and
+      // drop the previous cleaner's "last updated" timestamp so the next
+      // account on a shared phone never sees stale location status.
       setStatus('idle');
+      setLastUpdate(null);
       return;
     }
     (async () => {
