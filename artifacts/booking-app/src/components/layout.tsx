@@ -5,6 +5,7 @@ import { LayoutDashboard, CalendarPlus, List, Menu, CalendarDays, Users, Map, In
 import { LiveCallProvider, useLiveCall } from "@/contexts/live-call-context";
 import { CallAlertBanner } from "@/components/call-alert-banner";
 import { SiteFooter } from "@/components/footer";
+import { InstallAppButton } from "@/components/install-app-button";
 import logoImg from "@assets/833tidyups-logo.png";
 import {
   useListContactMessages,
@@ -89,6 +90,9 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
               );
             })}
           </nav>
+
+          {/* Shown only in browsers offering PWA install (Chrome/Edge) */}
+          <InstallAppButton className="hidden md:inline-flex" />
 
           {/* Mobile Menu Toggle */}
           <button

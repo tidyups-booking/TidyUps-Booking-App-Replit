@@ -1,11 +1,11 @@
-import React, { useState } from "react";
-import { useGetDaySchedule } from "@workspace/api-client-react";
+import React, { useMemo, useState } from "react";
+import { useGetDaySchedule, useListBookings } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { ChevronLeft, ChevronRight, CalendarDays, User, Clock, MapPin } from "lucide-react";
+import { ChevronLeft, ChevronRight, CalendarDays, User, Clock, MapPin, Search, X } from "lucide-react";
 import { Link } from "wouter";
 
 function formatDate(dateStr: string) {
@@ -53,6 +53,41 @@ export default function Schedule() {
 
   const { data: schedules, isLoading } = useGetDaySchedule({ date: selectedDate });
 
+  // Address search across ALL bookings (any date), filtered client-side.
+  // The endpoint defaults to 50 rows, so ask for a high cap explicitly —
+  // otherwise the search silently misses anything past the first page.
+  const [search, setSearch] = useState("");
+  const query = search.trim().toLowerCase();
+  const searching = query.length >= 2;
+  const { data: allBookings, isLoading: searchLoading } = useListBookings({
+    limit: 1000,
+  });
+  const results = useMemo(() => {
+    if (!searching || !allBookings) return [];
+    const matches = allBookings.filter((b) =>
+      [b.address, b.city, `${b.firstName} ${b.lastName}`, b.phone ?? ""]
+        .join(" ")
+        .toLowerCase()
+        .includes(query)
+    );
+    // Upcoming jobs first (soonest on top), then past jobs (most recent first).
+    const upcoming = matches
+      .filter((b) => b.scheduledDate >= today)
+      .sort(
+        (a, b) =>
+          a.scheduledDate.localeCompare(b.scheduledDate) ||
+          a.scheduledTime.localeCompare(b.scheduledTime)
+      );
+    const past = matches
+      .filter((b) => b.scheduledDate < today)
+      .sort(
+        (a, b) =>
+          b.scheduledDate.localeCompare(a.scheduledDate) ||
+          b.scheduledTime.localeCompare(a.scheduledTime)
+      );
+    return [...upcoming, ...past].slice(0, 25);
+  }, [searching, allBookings, query, today]);
+
 
   return (
     <div className="max-w-7xl mx-auto animate-in slide-in-from-bottom-4 duration-500">
@@ -68,6 +103,83 @@ export default function Schedule() {
           </Button>
         </Link>
       </div>
+
+      {/* Address search — find any booking by address or client, any date */}
+      <Card className="mb-6 shadow-sm">
+        <CardContent className="px-4 py-3">
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search bookings by address or client name…"
+              className="pl-9 pr-9"
+            />
+            {search && (
+              <button
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                onClick={() => setSearch("")}
+                aria-label="Clear search"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {searching && (
+        <Card className="mb-6 shadow-md border-primary/20">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold text-muted-foreground">
+              {searchLoading
+                ? "Searching…"
+                : `${results.length} matching booking${results.length !== 1 ? "s" : ""}`}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-3 pt-0 space-y-2">
+            {!searchLoading && results.length === 0 ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">
+                No bookings match "{search.trim()}".
+              </p>
+            ) : (
+              results.map((booking) => (
+                <Link key={booking.id} href={`/bookings/${booking.id}`}>
+                  <div className="rounded-lg border p-2.5 hover:bg-muted/50 transition-colors cursor-pointer">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {booking.firstName} {booking.lastName}
+                        </p>
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
+                          <CalendarDays className="w-3 h-3 shrink-0" />
+                          <span>{booking.scheduledDate}</span>
+                          <Clock className="w-3 h-3 shrink-0 ml-1" />
+                          <span>{booking.scheduledTime}</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
+                          <MapPin className="w-3 h-3 shrink-0" />
+                          <span className="truncate">
+                            {booking.address}, {booking.city}
+                          </span>
+                        </div>
+                      </div>
+                      <span
+                        className={cn(
+                          "text-xs px-2 py-0.5 rounded-full border font-medium shrink-0",
+                          STATUS_COLORS[booking.status]
+                        )}
+                      >
+                        {booking.status}
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              ))
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Date navigator */}
       <Card className="mb-6 shadow-sm">
