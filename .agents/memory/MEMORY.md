@@ -12,4 +12,5 @@
 - [TS project references](ts-project-references.md) — api-server typechecks against lib/*/dist .d.ts; rebuild `tsc --build` in lib/db & lib/api-zod after adding schema/types or "missing export" errors break deploys
 - [Authorization policy](authorization-policy.md) — only dispatchers mutate; cleaner exceptions: own job status, own contact, own GPS, claim unassigned; DISPATCHER_EMAILS accounts always dispatcher, keep staffId
 - [Clerk email matching](clerk-email-matching.md) — match identity/status against ALL verified Clerk addresses, not the primary email; primary is display-only
+- [Workflow limit](workflow-limit.md) — max 10 workflows; chain e2e scripts into one workflow when full; validation workflows only update via setValidationCommand
 - [Expo web + react-native-maps](expo-web-maps.md) — importing react-native-maps anywhere web-reachable crashes the whole Expo web bundle; platform-split with .web.tsx; scope authed query caches by Clerk userId + clear on sign-out

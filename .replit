@@ -26,10 +26,6 @@ args = "contact-spam-filter-e2e"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "dispatcher-bootstrap-e2e"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
 args = "invite-email-e2e"
 
 [[workflows.workflow.tasks]]
@@ -40,16 +36,20 @@ args = "unassigned-schedule-e2e"
 task = "workflow.run"
 args = "staff-liveness-e2e"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "cleaner-app-bundle-e2e"
+
 [[workflows.workflow]]
 name = "dispatcher-access-e2e"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "cd artifacts/api-server && pnpm exec tsx e2e-dispatcher-access-check.mts"
-
 [workflows.workflow.metadata]
 isValidation = true
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd artifacts/api-server && pnpm exec tsx e2e-dispatcher-access-check.mts && pnpm exec tsx e2e-dispatcher-bootstrap-check.mts"
 
 [[workflows.workflow]]
 name = "contact-spam-filter-e2e"
@@ -58,17 +58,6 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "cd artifacts/api-server && pnpm exec tsx e2e-contact-spam-filter-check.mts"
-
-[workflows.workflow.metadata]
-outputType = "console"
-
-[[workflows.workflow]]
-name = "dispatcher-bootstrap-e2e"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "cd artifacts/api-server && pnpm exec tsx e2e-dispatcher-bootstrap-check.mts"
 
 [workflows.workflow.metadata]
 outputType = "console"
@@ -102,6 +91,17 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "cd artifacts/api-server && pnpm exec tsx e2e-staff-liveness-check.mts"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow]]
+name = "cleaner-app-bundle-e2e"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd artifacts/api-server && pnpm exec tsx e2e-cleaner-app-bundle-check.mts"
 
 [workflows.workflow.metadata]
 outputType = "console"

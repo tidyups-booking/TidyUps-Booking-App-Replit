@@ -49,6 +49,7 @@ The operations hub for 833 Tidyups home cleaning service (Edmonton, AB), live at
 - **Live-call AI panel**: Twilio answers (825) 533-4317, forwards to the business line, streams audio to the API server which transcribes and extracts caller details live on the dispatcher dashboard (SSE fan-out, works across autoscale instances)
 - **Jobber integration**: two-way sync — bookings push to Jobber as client/property/request; Jobber webhooks (create/edit/cancel) flow back; OAuth connect flow in Settings
 - **Cleaner mobile app** (`artifacts/cleaner-app`): Expo + Clerk login, schedule view, GPS tracking 8AM–8PM feeding the dispatcher Live Map (Leaflet + OSM)
+  - `react-native-maps` must ONLY be imported from `components/JobMap.tsx` (native); web resolves `components/JobMap.web.tsx`, which must never import it — otherwise the entire web bundle breaks. The `cleaner-app-bundle-e2e` workflow (`artifacts/api-server/e2e-cleaner-app-bundle-check.mts`) catches this by fetching both Metro bundles (web + ios) from the running Expo dev server.
 - Staff management with dispatcher access control (Clerk-based, email bootstrap via `DISPATCHER_EMAILS`)
 - Public booking site with contact form + spam filtering
 
