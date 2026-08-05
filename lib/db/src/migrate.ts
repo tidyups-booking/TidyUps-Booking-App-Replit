@@ -344,6 +344,30 @@ const MIGRATIONS: { name: string; sql: string }[] = [
       );
     `,
   },
+  {
+    // Mirrors lib/db/migrations/016_add_booking_search_trgm_indexes.sql.
+    // Substring ILIKE search can't use btree indexes; pg_trgm GIN indexes
+    // keep GET /api/bookings?q= fast as the table grows into the thousands.
+    name: "016_add_booking_search_trgm_indexes",
+    sql: `
+      CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+      CREATE INDEX IF NOT EXISTS bookings_address_trgm_idx
+        ON bookings USING gin (address gin_trgm_ops);
+      CREATE INDEX IF NOT EXISTS bookings_city_trgm_idx
+        ON bookings USING gin (city gin_trgm_ops);
+      CREATE INDEX IF NOT EXISTS bookings_first_name_trgm_idx
+        ON bookings USING gin (first_name gin_trgm_ops);
+      CREATE INDEX IF NOT EXISTS bookings_last_name_trgm_idx
+        ON bookings USING gin (last_name gin_trgm_ops);
+      CREATE INDEX IF NOT EXISTS bookings_full_name_trgm_idx
+        ON bookings USING gin ((first_name || ' ' || last_name) gin_trgm_ops);
+      CREATE INDEX IF NOT EXISTS bookings_phone_trgm_idx
+        ON bookings USING gin (phone gin_trgm_ops);
+      CREATE INDEX IF NOT EXISTS bookings_phone_digits_trgm_idx
+        ON bookings USING gin ((regexp_replace(phone, '\\D', '', 'g')) gin_trgm_ops);
+    `,
+  },
 ];
 
 /**

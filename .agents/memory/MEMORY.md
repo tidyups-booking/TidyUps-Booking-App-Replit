@@ -14,4 +14,5 @@
 - [Authorization policy](authorization-policy.md) — only dispatchers mutate; cleaner exceptions: own job status, own contact, own GPS, claim unassigned; DISPATCHER_EMAILS accounts always dispatcher, keep staffId
 - [Clerk email matching](clerk-email-matching.md) — match identity/status against ALL verified Clerk addresses, not the primary email; primary is display-only
 - [Workflow limit](workflow-limit.md) — max 10 workflows; chain e2e scripts into one workflow when full; validation workflows only update via setValidationCommand
+- [Booking search trgm](booking-search-trgm.md) — ILIKE search needs trgm index on the exact expression; interleaved '%4%0%3%' digit patterns defeat trigram indexes, use regexp_replace digits column
 - [Expo web + react-native-maps](expo-web-maps.md) — importing react-native-maps anywhere web-reachable crashes the whole Expo web bundle; platform-split with .web.tsx; scope authed query caches by Clerk userId + clear on sign-out

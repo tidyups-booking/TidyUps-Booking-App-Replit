@@ -133,7 +133,6 @@ router.get("/bookings/customers/search", async (req, res): Promise<void> => {
   }
   const pattern = `%${q}%`;
   const digits = q.replace(/\D/g, "");
-  const phonePattern = digits.length >= 3 ? `%${digits.split("").join("%")}%` : null;
 
   const conditions = [
     ilike(bookingsTable.firstName, pattern),
@@ -142,7 +141,14 @@ router.get("/bookings/customers/search", async (req, res): Promise<void> => {
     ilike(bookingsTable.address, pattern),
     ilike(bookingsTable.phone, pattern),
   ];
-  if (phonePattern) conditions.push(ilike(bookingsTable.phone, phonePattern));
+  // Digits-only match against normalized phone so "4035551234" finds
+  // "(403) 555-1234". Matches the trgm expression index on the same
+  // regexp_replace expression (016 migration) so this stays indexed.
+  if (digits.length >= 3) {
+    conditions.push(
+      ilike(sql`regexp_replace(${bookingsTable.phone}, '\\D', '', 'g')`, `%${digits}%`),
+    );
+  }
 
   const rows = await db
     .select()
@@ -219,9 +225,15 @@ router.get("/bookings", async (req, res): Promise<void> => {
       ilike(sql`${bookingsTable.firstName} || ' ' || ${bookingsTable.lastName}`, pattern),
       ilike(bookingsTable.phone, pattern),
     ];
+    // Digits-only match against normalized phone so "4035551234" finds
+    // "(403) 555-1234". Matches the trgm expression index on the same
+    // regexp_replace expression (016 migration) so this stays indexed —
+    // the old interleaved '%4%0%3%…' pattern defeated trigram indexes.
     const digits = search.replace(/\D/g, "");
     if (digits.length >= 3) {
-      searchConditions.push(ilike(bookingsTable.phone, `%${digits.split("").join("%")}%`));
+      searchConditions.push(
+        ilike(sql`regexp_replace(${bookingsTable.phone}, '\\D', '', 'g')`, `%${digits}%`),
+      );
     }
     conditions.push(or(...searchConditions)!);
   }

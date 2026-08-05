@@ -28,11 +28,9 @@ if [ -z "${DATABASE_URL:-}" ]; then echo "ERROR: DATABASE_URL not set" >&2; exit
 BASE="${DATABASE_URL%/*}"
 url() { echo "$BASE/$1"; }
 
-EXPECTED_LEDGER="000_baseline
-001_add_staff_clerk_user_id
-002_add_dispatcher_allowlist
-003_add_jobber_synced_job_id
-003_seed_owner_dispatcher"
+# Expected ledger = every .sql file in migrations/, sorted by name (the same
+# order psql/_migrations use), so this never goes stale when migrations land.
+EXPECTED_LEDGER=$(ls "$SCRIPT_DIR"/migrations/*.sql | xargs -n1 basename | sed 's/\.sql$//' | sort)
 
 fail() { echo "FAIL: $1" >&2; exit 1; }
 
