@@ -11,6 +11,7 @@ import {
   useListContactMessages,
   getListContactMessagesQueryKey,
 } from "@workspace/api-client-react";
+import { SafariInstallHint } from "@/components/safari-install-hint";
 
 function LayoutInner({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -93,6 +94,10 @@ function LayoutInner({ children }: { children: React.ReactNode }) {
 
           {/* Shown only in browsers offering PWA install (Chrome/Edge) */}
           <InstallAppButton className="hidden md:inline-flex" />
+          {/* Safari never fires beforeinstallprompt — show a how-to hint instead.
+              Visible at all breakpoints: iPhone/iPad Safari users need the
+              "Add to Home Screen" guidance too. */}
+          <SafariInstallHint />
 
           {/* Mobile Menu Toggle */}
           <button

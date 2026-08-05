@@ -14,5 +14,5 @@ The dispatcher web portal is an installable PWA via `public/manifest.webmanifest
 **How to apply:**
 - If offline support is ever requested, prefer network-first with explicit staleness UI, and version-bust aggressively.
 - Icons were generated from `public/logo.png` with ImageMagick (`magick`; sharp unavailable). Maskable icon = logo at ~64% on white 512² canvas.
-- Safari never fires `beforeinstallprompt` — the button correctly stays hidden there; Safari users install via File → Add to Dock (follow-up task exists for an in-app hint).
+- Safari never fires `beforeinstallprompt` — a separate UA-detected hint component guides Safari users (Add to Dock on macOS, Share → Add to Home Screen on iOS); it must be visible at all breakpoints, not desktop-only.
 - `prompt()` on the captured event is single-use: clear captured state synchronously on click before awaiting.
