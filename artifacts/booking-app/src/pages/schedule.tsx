@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { ChevronLeft, ChevronRight, CalendarDays, User, Clock, MapPin, Search, X } from "lucide-react";
 import { Link } from "wouter";
 import { BookingMiniMap } from "@/components/booking-mini-map";
+import { geocodeBooking } from "@/lib/geocode-booking";
 
 // API base (artifact prefix, no trailing slash) — same base the mini map
 // uses on the New Booking form.
@@ -114,6 +115,39 @@ export default function Schedule() {
   const selected = useMemo(() => {
     return results.find((b) => b.id === selectedId) ?? results.find(hasCoords) ?? null;
   }, [results, selectedId]);
+
+  // On-demand geocode for results without stored coords (older/past bookings
+  // the upcoming-only backfill never touched). The server geocodes once and
+  // persists to the booking, so later visits get the pin instantly.
+  // resolvedCoords[id]: coords on success, null = definitively unresolvable,
+  // undefined = not looked up yet.
+  const [resolvedCoords, setResolvedCoords] = useState<
+    Record<number, [number, number] | null>
+  >({});
+  const [geocodePending, setGeocodePending] = useState(false);
+  React.useEffect(() => {
+    if (!selected || hasCoords(selected)) return;
+    if (resolvedCoords[selected.id] !== undefined) return;
+    let cancelled = false;
+    const id = selected.id;
+    setGeocodePending(true);
+    geocodeBooking(API_BASE, id).then((coords) => {
+      if (cancelled) return;
+      setResolvedCoords((prev) => ({ ...prev, [id]: coords }));
+      setGeocodePending(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected, resolvedCoords]);
+
+  // Coordinates to show for the selected booking: stored ones win; otherwise
+  // the on-demand lookup result (if it succeeded).
+  const selectedCoords: [number, number] | null = selected
+    ? hasCoords(selected)
+      ? [selected.addressLat!, selected.addressLng!]
+      : resolvedCoords[selected.id] ?? null
+    : null;
 
 
   return (
@@ -235,7 +269,7 @@ export default function Schedule() {
                 </div>
                 <div>
                   {selected ? (
-                    hasCoords(selected) ? (
+                    selectedCoords ? (
                       <div>
                         <p className="text-xs text-muted-foreground mb-1.5 flex items-center gap-1">
                           <MapPin className="w-3 h-3 shrink-0" />
@@ -244,15 +278,19 @@ export default function Schedule() {
                           </span>
                         </p>
                         <BookingMiniMap
-                          lat={selected.addressLat!}
-                          lng={selected.addressLng!}
+                          lat={selectedCoords[0]}
+                          lng={selectedCoords[1]}
                           baseUrl={API_BASE}
                         />
                       </div>
+                    ) : geocodePending ? (
+                      <div className="h-full min-h-[160px] rounded-lg border border-dashed flex items-center justify-center p-4 text-center text-sm text-muted-foreground">
+                        Looking up this address on the map…
+                      </div>
                     ) : (
                       <div className="h-full min-h-[160px] rounded-lg border border-dashed flex items-center justify-center p-4 text-center text-sm text-muted-foreground">
-                        No map location saved for this address yet — it's added
-                        automatically a few minutes after booking.
+                        This address couldn't be found on the map — check the
+                        street address on the booking.
                       </div>
                     )
                   ) : (

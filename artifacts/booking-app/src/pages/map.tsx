@@ -10,6 +10,7 @@ import { MapPin, Navigation, Users, Home, Clock, Wifi, WifiOff, ChevronLeft, Che
 import { cn } from "@/lib/utils";
 import { format, addDays, subDays, parseISO, isToday as dateFnsIsToday, startOfMonth, endOfMonth, addMonths } from "date-fns";
 import { MonthCalendar, ColumnCalendar, type CalendarBooking } from "@/components/map-calendar";
+import { geocodeBooking } from "@/lib/geocode-booking";
 
 type CalendarView = "day" | "3day" | "week" | "month";
 
@@ -171,50 +172,6 @@ function makeJobIcon(borderColor: string, isNearest: boolean, highlight = false)
   return html;
 }
 
-// ── Geocode (server, on-demand) ──────────────────────────────────────────────
-// Bookings missing stored coordinates ask the API server, which geocodes via
-// Google and persists the result to the booking — so the pin is instant on
-// every later visit. (Replaces the old throttled client-side Nominatim path.)
-
-const geocodeCache = new Map<number, [number, number] | null>();
-// In-flight dedupe: month views + 30s repolls can ask for the same booking at
-// once; requests join the existing promise instead of re-fetching.
-const geocodeInflight = new Map<number, Promise<[number, number] | null>>();
-
-function geocodeBooking(baseUrl: string, bookingId: number): Promise<[number, number] | null> {
-  if (geocodeCache.has(bookingId)) return Promise.resolve(geocodeCache.get(bookingId)!);
-  const inflight = geocodeInflight.get(bookingId);
-  if (inflight) return inflight;
-
-  const p = (async (): Promise<[number, number] | null> => {
-    try {
-      const res = await fetch(`${baseUrl}/api/map/bookings/${bookingId}/geocode`, {
-        method: "POST",
-        credentials: "include",
-      });
-      if (res.status === 422) {
-        // Definitive "address not geocodable" — don't re-ask this session
-        geocodeCache.set(bookingId, null);
-        return null;
-      }
-      if (!res.ok) return null; // transient — allow a later retry
-      const data = await res.json();
-      if (typeof data.lat === "number" && typeof data.lng === "number") {
-        const coord: [number, number] = [data.lat, data.lng];
-        geocodeCache.set(bookingId, coord);
-        return coord;
-      }
-      return null;
-    } catch {
-      // Transient failure — don't cache, allow a later retry
-      return null;
-    }
-  })();
-  geocodeInflight.set(bookingId, p);
-  p.finally(() => geocodeInflight.delete(bookingId));
-  return p;
-}
-
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -224,7 +181,7 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function secondsAgo(iso: string) { return Math.round((Date.now() - new Date(iso).getTime()) / 1000); }
 function formatAgo(iso: string) {

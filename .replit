@@ -67,7 +67,7 @@ outputType = "console"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd artifacts/api-server && pnpm exec tsx e2e-unassigned-schedule-check.mts && pnpm exec tsx e2e-booking-search-perf-check.mts && pnpm exec tsx e2e-customer-loyalty-count-check.mts && pnpm exec tsx e2e-customer-search-contract-check.mts && pnpm exec tsx e2e-safari-install-hint-check.mts && cd ../.. && pnpm --filter @workspace/booking-app run test"
+args = "cd artifacts/api-server && pnpm exec tsx e2e-unassigned-schedule-check.mts && pnpm exec tsx e2e-booking-search-perf-check.mts && pnpm exec tsx e2e-customer-loyalty-count-check.mts && pnpm exec tsx e2e-customer-search-contract-check.mts && pnpm exec tsx e2e-safari-install-hint-check.mts && pnpm exec tsx e2e-geocode-ondemand-check.mts && cd ../.. && pnpm --filter @workspace/booking-app run test"
 [[workflows.workflow]]
 name = "staff-liveness-e2e"
 author = "agent"

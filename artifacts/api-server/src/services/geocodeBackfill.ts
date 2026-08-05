@@ -162,6 +162,73 @@ export async function runGeocodeBackfill(
   }
 }
 
+/**
+ * On-demand geocode for a single booking (used when a dispatcher selects an
+ * old/past booking whose coords the upcoming-only backfill never filled).
+ *
+ * Returns stored coords immediately when present; otherwise geocodes and
+ * persists with the same conditional-update pattern as the backfill (only
+ * fill still-NULL coords for the unchanged address). Returns null when the
+ * address can't be resolved.
+ *
+ * @param geocodeFn injectable for tests — production uses the real
+ *                  Google-backed geocodeToCoords.
+ */
+export async function geocodeBookingOnDemand(
+  bookingId: number,
+  geocodeFn: typeof geocodeToCoords = geocodeToCoords
+): Promise<
+  | { status: "ok"; lat: number; lng: number }
+  | { status: "not_found" }
+  | { status: "unresolvable" }
+> {
+  const [booking] = await db
+    .select({
+      id: bookingsTable.id,
+      address: bookingsTable.address,
+      city: bookingsTable.city,
+      province: bookingsTable.province,
+      postalCode: bookingsTable.postalCode,
+      addressLat: bookingsTable.addressLat,
+      addressLng: bookingsTable.addressLng,
+    })
+    .from(bookingsTable)
+    .where(eq(bookingsTable.id, bookingId));
+
+  if (!booking) return { status: "not_found" };
+
+  // Already has coords (e.g. another client geocoded it moments ago) — return
+  // them without hitting Google again.
+  if (booking.addressLat != null && booking.addressLng != null) {
+    return { status: "ok", lat: booking.addressLat, lng: booking.addressLng };
+  }
+
+  const coords = await geocodeFn(
+    booking.address,
+    booking.city,
+    booking.province,
+    booking.postalCode
+  );
+  if (!coords) return { status: "unresolvable" };
+
+  // Conditional write: only fill still-missing coords for the same address
+  // (an address edited mid-lookup must not get stale coords). If the row
+  // changed under us, still return the freshly geocoded coords for display —
+  // the next lookup will re-resolve against the new address.
+  await db
+    .update(bookingsTable)
+    .set({ addressLat: coords.lat, addressLng: coords.lng })
+    .where(
+      and(
+        eq(bookingsTable.id, booking.id),
+        isNull(bookingsTable.addressLat),
+        eq(bookingsTable.address, booking.address)
+      )
+    );
+
+  return { status: "ok", lat: coords.lat, lng: coords.lng };
+}
+
 let started = false;
 
 /** Starts the recurring backfill. Idempotent; call once at server startup. */
