@@ -749,12 +749,12 @@ export default function StaffManagement() {
         onChange={handleImportFile}
       />
 
-      <div className="mb-6 flex items-center justify-between gap-3">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold tracking-tight brand-gradient-text">Staff</h1>
           <p className="text-muted-foreground">Manage your cleaning team.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {allStaffData.length > 0 && (
             <Button
               variant="outline"
