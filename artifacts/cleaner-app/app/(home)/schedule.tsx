@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useGetStaffSchedule, useGetDaySchedule } from '@workspace/api-client-react';
+import { useGetStaffSchedule, useGetDaySchedule, useClaimBooking } from '@workspace/api-client-react';
 import type { Booking } from '@workspace/api-client-react';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
@@ -87,6 +87,35 @@ export default function ScheduleScreen() {
     flat.sort((a, b) => a.booking.scheduledTime.localeCompare(b.booking.scheduledTime));
     return flat;
   }, [teamSchedules]);
+
+  const [claimError, setClaimError] = useState<string | null>(null);
+  const claimMutation = useClaimBooking({
+    mutation: {
+      onSuccess: () => {
+        setClaimError(null);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        // Refresh both lists so the job shows under the claimer's name
+        void refetchTeam();
+        void refetchMine();
+      },
+      onError: (err: any) => {
+        // 409 = someone else claimed it first — refresh so the card updates
+        const msg =
+          err?.status === 409 || err?.response?.status === 409
+            ? 'That job was just claimed by someone else.'
+            : 'Could not claim the job. Please try again.';
+        setClaimError(msg);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        void refetchTeam();
+      },
+    },
+  });
+
+  const handleClaim = (bookingId: number) => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setClaimError(null);
+    claimMutation.mutate({ id: bookingId });
+  };
 
   const showAll = viewMode === 'all';
   const isLoading = showAll ? teamLoading : myLoading;
@@ -267,6 +296,7 @@ export default function ScheduleScreen() {
           keyExtractor={(item) => String(item.booking.id)}
           renderItem={({ item }) => {
             const isMine = item.staffId !== null && item.staffId === staffId;
+            const isUnassigned = item.staffId === null;
             return (
               <JobCard
                 booking={item.booking}
@@ -274,11 +304,27 @@ export default function ScheduleScreen() {
                 // Teammates' jobs open a read-only detail view (no status
                 // controls) so cleaners can coordinate handoffs and coverage.
                 onPress={() => handleJobPress(item.booking.id)}
+                // Unassigned jobs can be claimed right from the list.
+                onClaim={isUnassigned ? () => handleClaim(item.booking.id) : undefined}
+                claiming={
+                  claimMutation.isPending &&
+                  claimMutation.variables?.id === item.booking.id
+                }
               />
             );
           }}
           contentContainerStyle={{ padding: 16, paddingBottom: botPad }}
           scrollEnabled={!!teamJobs.length}
+          ListHeaderComponent={
+            claimError ? (
+              <View style={[styles.claimErrorWrap, { borderColor: colors.border, borderRadius: colors.radius }]}>
+                <Ionicons name="alert-circle-outline" size={16} color="#B45309" />
+                <Text style={[styles.claimErrorText, { fontFamily: 'Poppins_500Medium' }]}>
+                  {claimError}
+                </Text>
+              </View>
+            ) : null
+          }
           refreshControl={
             <RefreshControl
               refreshing={isLoading}
@@ -356,4 +402,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   retryText: { fontSize: 15 },
+  claimErrorWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    padding: 10,
+    marginBottom: 12,
+  },
+  claimErrorText: { color: '#92400E', fontSize: 13, flex: 1 },
 });

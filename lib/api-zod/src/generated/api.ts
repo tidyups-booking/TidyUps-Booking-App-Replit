@@ -404,6 +404,58 @@ export const GetUpcomingBookingsResponse = zod.array(GetUpcomingBookingsResponse
 
 
 /**
+ * Assigns the booking to the staff record linked to the caller's account. Only succeeds when the booking is currently unassigned; a concurrent claim by another cleaner returns 409.
+ * @summary Claim an unassigned booking for the calling cleaner
+ */
+export const ClaimBookingParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ClaimBookingResponse = zod.object({
+  "id": zod.number(),
+  "staffId": zod.number().nullish(),
+  "firstName": zod.string(),
+  "lastName": zod.string(),
+  "phone": zod.string(),
+  "email": zod.string().nullish(),
+  "address": zod.string(),
+  "city": zod.string(),
+  "province": zod.string().optional(),
+  "postalCode": zod.string().nullish(),
+  "serviceType": zod.enum(['standard_clean', 'deep_clean', 'move_in_out', 'move_in', 'move_out', 'post_construction']),
+  "bedrooms": zod.number(),
+  "bathrooms": zod.number(),
+  "extras": zod.array(zod.string()).optional(),
+  "scheduledDate": zod.string().describe('Date in YYYY-MM-DD format'),
+  "scheduledTime": zod.string().describe('Time in HH:MM format'),
+  "frequency": zod.enum(['one_time', 'weekly', 'biweekly', 'monthly']),
+  "estimatedPrice": zod.number().nullish(),
+  "priceBreakdown": zod.union([zod.object({
+  "hours": zod.number().optional().describe('Hours of cleaning quoted.'),
+  "hourlyRate": zod.number().optional().describe('Hourly rate used ($52.50 one cleaner, $105 two cleaners, or custom).'),
+  "baseAmount": zod.number().optional().describe('hours × hourlyRate before discounts.'),
+  "manualPrice": zod.number().optional().describe('Manually entered quoted price before discounts, recorded instead of hours\/hourlyRate\/baseAmount when the dispatcher typed the price directly rather than deriving it from hours × rate.\n'),
+  "leadSource": zod.string().nullish().describe('Where the customer heard about us, if recorded.'),
+  "leadDiscount": zod.number().optional().describe('Lead-source thank-you discount amount ($10 when applied).'),
+  "quickDiscountTens": zod.number().optional().describe('Number of −$10 quick discounts applied.'),
+  "quickDiscountTwenties": zod.number().optional().describe('Number of −$20 quick discounts applied.'),
+  "loyaltyDiscount": zod.number().optional().describe('Dollar amount of the 10% loyalty discount, if applied.'),
+  "fuelSurcharge": zod.number().optional().describe('Fuel surcharge added to the quote.'),
+  "total": zod.number().describe('Final quoted price including the fuel surcharge.')
+}).describe('Itemized breakdown of how a quoted price was built: hours × rate, each discount applied, and the fuel surcharge.\n'),zod.null()]).optional().describe('Itemized quote breakdown recorded at booking creation. Null for older bookings.'),
+  "notes": zod.string().nullish(),
+  "status": zod.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']),
+  "jobberJobId": zod.string().nullish(),
+  "jobberSyncStatus": zod.enum(['not_started', 'pending', 'synced', 'failed']).optional().describe('Jobber sync state. not_started = never attempted, pending = in progress, synced = succeeded, failed = error (see jobberSyncError).\n'),
+  "jobberSyncError": zod.string().nullish().describe('Error message from the last failed Jobber sync attempt.'),
+  "addressLat": zod.number().nullish().describe('Latitude from Google Places autocomplete, if captured.'),
+  "addressLng": zod.number().nullish().describe('Longitude from Google Places autocomplete, if captured.'),
+  "createdAt": zod.coerce.date(),
+  "hasTranscript": zod.boolean().optional().describe('True when at least one call transcript is attached to this booking.')
+})
+
+
+/**
  * @summary Get a single booking
  */
 export const GetBookingParams = zod.object({

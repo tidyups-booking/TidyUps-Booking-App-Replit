@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, gte, lte, and, or, ilike, desc, sql, inArray } from "drizzle-orm";
+import { eq, gte, lte, and, or, ilike, desc, sql, inArray, isNull } from "drizzle-orm";
 import { getAuth } from "@clerk/express";
 import { db, bookingsTable, callTranscriptsTable, staffTable } from "@workspace/db";
 import { syncBookingToJobber, syncBookingUpsertToJobber, getStoredTokens } from "../services/jobber.js";
@@ -426,6 +426,64 @@ router.get("/bookings/:id", async (req, res): Promise<void> => {
 // PATCH /bookings/:id
 // Cleaners may only update their OWN bookings, and only the status field.
 // Dispatchers may update any field on any booking.
+// POST /bookings/:id/claim — a linked cleaner claims an unassigned booking
+// for themselves. Conditional update on staffId IS NULL so two cleaners
+// claiming at once can't both win — the loser gets a 409.
+router.post("/bookings/:id/claim", async (req, res): Promise<void> => {
+  const params = GetBookingParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+
+  const auth = getAuth(req);
+  const callerId = auth?.userId;
+  if (!callerId) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const caller = await resolveCallerRole(callerId);
+  // Only linked cleaners can claim — a claim assigns the job to the caller's
+  // own staff record, which dispatchers don't have. Dispatchers assign staff
+  // through the booking edit form instead.
+  if (caller.role !== "cleaner" || caller.staffId === null) {
+    res.status(403).json({
+      error:
+        caller.role === "denied"
+          ? "Forbidden: account not authorized. Contact a dispatcher."
+          : "Forbidden: only cleaners with a linked staff record can claim jobs",
+    });
+    return;
+  }
+
+  const [existing] = await db
+    .select({ id: bookingsTable.id, staffId: bookingsTable.staffId })
+    .from(bookingsTable)
+    .where(eq(bookingsTable.id, params.data.id));
+  if (!existing) {
+    res.status(404).json({ error: "Booking not found" });
+    return;
+  }
+
+  const [claimed] = await db
+    .update(bookingsTable)
+    .set({ staffId: caller.staffId })
+    .where(and(eq(bookingsTable.id, params.data.id), isNull(bookingsTable.staffId)))
+    .returning();
+
+  if (!claimed) {
+    res.status(409).json({ error: "This job was just claimed by someone else" });
+    return;
+  }
+
+  req.log.info(
+    { bookingId: claimed.id, staffId: caller.staffId },
+    "Booking claimed by cleaner",
+  );
+  res.json(claimed);
+});
+
 router.patch("/bookings/:id", async (req, res): Promise<void> => {
   const params = UpdateBookingParams.safeParse(req.params);
   if (!params.success) {

@@ -318,6 +318,47 @@ paths:
                 items:
                   $ref: "#/components/schemas/Booking"
 
+  /bookings/{id}/claim:
+    post:
+      operationId: claimBooking
+      tags: [bookings]
+      summary: Claim an unassigned booking for the calling cleaner
+      description: >
+        Assigns the booking to the staff record linked to the caller's
+        account. Only succeeds when the booking is currently unassigned;
+        a concurrent claim by another cleaner returns 409.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: Booking claimed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Booking"
+        "403":
+          description: Caller is not a linked cleaner
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Booking was already claimed by someone else
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /bookings/{id}:
     get:
       operationId: getBooking

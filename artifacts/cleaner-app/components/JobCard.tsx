@@ -9,6 +9,10 @@ interface JobCardProps {
   onPress: () => void;
   /** Shown when viewing the whole team's schedule and the job belongs to someone else (or is unassigned). */
   assigneeName?: string | null;
+  /** When set, renders a Claim button (unassigned jobs in the team view). */
+  onClaim?: () => void;
+  /** Disables the Claim button while a claim request is in flight. */
+  claiming?: boolean;
 }
 
 function statusStyle(status: string) {
@@ -40,7 +44,7 @@ function formatService(type: string) {
   return map[type] ?? type;
 }
 
-export function JobCard({ booking, onPress, assigneeName }: JobCardProps) {
+export function JobCard({ booking, onPress, assigneeName, onClaim, claiming }: JobCardProps) {
   const colors = useColors();
   const st = statusStyle(booking.status);
 
@@ -114,6 +118,29 @@ export function JobCard({ booking, onPress, assigneeName }: JobCardProps) {
         )}
       </View>
 
+      {/* Claim (unassigned jobs in team view) */}
+      {onClaim && (
+        <Pressable
+          testID={`job-claim-${booking.id}`}
+          disabled={claiming}
+          onPress={(e) => {
+            // Don't also open the job detail underneath
+            e.stopPropagation();
+            onClaim();
+          }}
+          style={({ pressed }) => [
+            styles.claimBtn,
+            { backgroundColor: colors.primary, borderRadius: colors.radius },
+            (pressed || claiming) && { opacity: 0.7 },
+          ]}
+        >
+          <Ionicons name="hand-right-outline" size={15} color="#fff" />
+          <Text style={[styles.claimText, { fontFamily: 'Poppins_600SemiBold' }]}>
+            {claiming ? 'Claiming…' : 'Claim this job'}
+          </Text>
+        </Pressable>
+      )}
+
       <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} style={styles.chevron} />
     </Pressable>
   );
@@ -162,4 +189,13 @@ const styles = StyleSheet.create({
   detailText: { fontSize: 12 },
   price: { fontSize: 13 },
   chevron: { position: 'absolute', right: 12, top: '50%', marginTop: -8 },
+  claimBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    marginTop: 12,
+    paddingVertical: 10,
+  },
+  claimText: { color: '#fff', fontSize: 14 },
 });

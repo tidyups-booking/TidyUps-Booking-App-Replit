@@ -1051,6 +1051,78 @@ export function useGetUpcomingBookings<TData = Awaited<ReturnType<typeof getUpco
 
 
 
+export const getClaimBookingUrl = (id: number,) => {
+
+
+
+
+  return `/api/bookings/${id}/claim`
+}
+
+/**
+ * Assigns the booking to the staff record linked to the caller's account. Only succeeds when the booking is currently unassigned; a concurrent claim by another cleaner returns 409.
+ * @summary Claim an unassigned booking for the calling cleaner
+ */
+export const claimBooking = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<Booking> => {
+
+  return customFetch<Booking>(getClaimBookingUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getClaimBookingMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof claimBooking>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof claimBooking>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['claimBooking'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof claimBooking>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  claimBooking(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ClaimBookingMutationResult = NonNullable<Awaited<ReturnType<typeof claimBooking>>>
+
+    export type ClaimBookingMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Claim an unassigned booking for the calling cleaner
+ */
+export const useClaimBooking = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof claimBooking>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof claimBooking>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getClaimBookingMutationOptions(options));
+    }
+
 export const getGetBookingUrl = (id: number,) => {
 
 
