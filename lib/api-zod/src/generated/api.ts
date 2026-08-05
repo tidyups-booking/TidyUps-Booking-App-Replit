@@ -191,6 +191,7 @@ export const ListBookingsQueryParams = zod.object({
   "status": zod.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']).optional(),
   "staffId": zod.coerce.number().optional(),
   "date": zod.coerce.string().optional(),
+  "q": zod.coerce.string().optional(),
   "limit": zod.coerce.number().default(listBookingsQueryLimitDefault),
   "offset": zod.coerce.number().default(listBookingsQueryOffsetDefault)
 })

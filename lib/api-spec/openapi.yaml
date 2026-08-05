@@ -247,6 +247,11 @@ paths:
             type: string
             description: Filter by scheduled date (YYYY-MM-DD)
         - in: query
+          name: q
+          schema:
+            type: string
+            description: Server-side search matching address, city, client name, or phone (case-insensitive substring)
+        - in: query
           name: limit
           schema:
             type: number

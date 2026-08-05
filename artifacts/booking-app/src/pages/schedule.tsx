@@ -47,29 +47,33 @@ const ROLE_LABELS: Record<string, string> = {
   supervisor: "Supervisor",
 };
 
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = React.useState(value);
+  React.useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(t);
+  }, [value, delayMs]);
+  return debounced;
+}
 export default function Schedule() {
   const today = new Date().toISOString().split("T")[0];
   const [selectedDate, setSelectedDate] = useState(today);
 
   const { data: schedules, isLoading } = useGetDaySchedule({ date: selectedDate });
 
-  // Address search across ALL bookings (any date), filtered client-side.
-  // The endpoint defaults to 50 rows, so ask for a high cap explicitly —
-  // otherwise the search silently misses anything past the first page.
+  // Address search across ALL bookings (any date), matched server-side so
+  // results stay complete no matter how large the booking history grows.
   const [search, setSearch] = useState("");
-  const query = search.trim().toLowerCase();
+  const query = useDebouncedValue(search.trim(), 250);
   const searching = query.length >= 2;
-  const { data: allBookings, isLoading: searchLoading } = useListBookings({
-    limit: 1000,
-  });
+  // Cast: the generated option type demands a queryKey, but we must NOT
+  // override it (the generated hook derives a properly scoped key itself).
+  const { data: matches, isLoading: searchLoading } = useListBookings(
+    { q: query, limit: 200 },
+    { query: { enabled: searching } as Parameters<typeof useListBookings>[1] extends { query?: infer Q } ? Q : never }
+  );
   const results = useMemo(() => {
-    if (!searching || !allBookings) return [];
-    const matches = allBookings.filter((b) =>
-      [b.address, b.city, `${b.firstName} ${b.lastName}`, b.phone ?? ""]
-        .join(" ")
-        .toLowerCase()
-        .includes(query)
-    );
+    if (!searching || !matches) return [];
     // Upcoming jobs first (soonest on top), then past jobs (most recent first).
     const upcoming = matches
       .filter((b) => b.scheduledDate >= today)
@@ -86,7 +90,7 @@ export default function Schedule() {
           b.scheduledTime.localeCompare(a.scheduledTime)
       );
     return [...upcoming, ...past].slice(0, 25);
-  }, [searching, allBookings, query, today]);
+  }, [searching, matches, today]);
 
 
   return (

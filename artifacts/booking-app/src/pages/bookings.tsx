@@ -1,32 +1,57 @@
 import React from "react";
 import { Link } from "wouter";
-import { useListBookings, ListBookingsStatus } from "@workspace/api-client-react";
+import { useListBookings, ListBookingsStatus, type Booking } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { StatusBadge, ServiceTypeBadge } from "@/components/badges";
 import { formatDate, formatTime } from "@/lib/utils";
 import { Search, Loader2, Mic } from "lucide-react";
 
+const PAGE_SIZE = 50;
+
+// Debounce a value so search queries fire only after the user pauses typing.
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = React.useState(value);
+  React.useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(t);
+  }, [value, delayMs]);
+  return debounced;
+}
+
 export default function BookingsList() {
   const [statusFilter, setStatusFilter] = React.useState<ListBookingsStatus | "all">("all");
   const [search, setSearch] = React.useState("");
+  const query = useDebouncedValue(search.trim(), 250);
 
-  const { data: bookings, isLoading } = useListBookings(
-    statusFilter === "all" ? {} : { status: statusFilter }
-  );
+  // Server-side search + offset pagination. Rows accumulate across pages;
+  // changing the search or status filter resets to the first page.
+  const [offset, setOffset] = React.useState(0);
+  const [rows, setRows] = React.useState<(Booking & { hasTranscript?: boolean })[]>([]);
+  React.useEffect(() => {
+    setOffset(0);
+  }, [query, statusFilter]);
 
-  const filteredBookings = React.useMemo(() => {
-    if (!bookings) return [];
-    if (!search) return bookings;
-    const lowerSearch = search.toLowerCase();
-    return bookings.filter(b => 
-      b.firstName.toLowerCase().includes(lowerSearch) ||
-      b.lastName.toLowerCase().includes(lowerSearch) ||
-      b.city.toLowerCase().includes(lowerSearch) ||
-      b.phone.includes(search)
-    );
-  }, [bookings, search]);
+  const { data: page, isLoading, isFetching } = useListBookings({
+    ...(statusFilter === "all" ? {} : { status: statusFilter }),
+    ...(query ? { q: query } : {}),
+    limit: PAGE_SIZE,
+    offset,
+  });
+
+  React.useEffect(() => {
+    if (!page) return;
+    setRows(prev => {
+      if (offset === 0) return page;
+      const seen = new Set(prev.map(b => b.id));
+      return [...prev, ...page.filter(b => !seen.has(b.id))];
+    });
+  }, [page, offset]);
+
+  const hasMore = page !== undefined && page.length === PAGE_SIZE;
+  const filteredBookings = rows;
 
   return (
     <div className="space-y-6 animate-in fade-in">
@@ -124,6 +149,21 @@ export default function BookingsList() {
               </tbody>
             </table>
           </div>
+          {hasMore && (
+            <div className="p-4 border-t text-center">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isFetching}
+                onClick={() => setOffset(o => o + PAGE_SIZE)}
+              >
+                {isFetching ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                ) : null}
+                Load more
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

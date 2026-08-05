@@ -461,6 +461,10 @@ staffId?: number;
  * Filter by scheduled date (YYYY-MM-DD)
  */
 date?: string;
+/**
+ * Server-side search matching address, city, client name, or phone (case-insensitive substring)
+ */
+q?: string;
 limit?: number;
 offset?: number;
 };

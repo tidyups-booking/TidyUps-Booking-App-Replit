@@ -197,19 +197,41 @@ router.get("/bookings", async (req, res): Promise<void> => {
     return;
   }
 
-  const { status, staffId, date, limit = 50, offset = 0 } = parsed.data;
+  const { status, staffId, date, q, limit = 50, offset = 0 } = parsed.data;
+  // Sensible cap so a runaway limit can't drag the whole table into memory
+  const cappedLimit = Math.min(Math.max(1, limit), 200);
 
   const conditions = [];
   if (status) conditions.push(eq(bookingsTable.status, status as typeof bookingsTable.status._.data));
   if (staffId !== undefined) conditions.push(eq(bookingsTable.staffId, staffId));
   if (date) conditions.push(eq(bookingsTable.scheduledDate, date));
 
+  // Server-side search: match address, city, client name (first/last/full), or phone.
+  // Phone also matches on digits-only so "4035551234" finds "(403) 555-1234".
+  const search = typeof q === "string" ? q.trim() : "";
+  if (search.length > 0) {
+    const pattern = `%${search}%`;
+    const searchConditions = [
+      ilike(bookingsTable.address, pattern),
+      ilike(bookingsTable.city, pattern),
+      ilike(bookingsTable.firstName, pattern),
+      ilike(bookingsTable.lastName, pattern),
+      ilike(sql`${bookingsTable.firstName} || ' ' || ${bookingsTable.lastName}`, pattern),
+      ilike(bookingsTable.phone, pattern),
+    ];
+    const digits = search.replace(/\D/g, "");
+    if (digits.length >= 3) {
+      searchConditions.push(ilike(bookingsTable.phone, `%${digits.split("").join("%")}%`));
+    }
+    conditions.push(or(...searchConditions)!);
+  }
+
   const rows = await db
     .select()
     .from(bookingsTable)
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(bookingsTable.scheduledDate, bookingsTable.scheduledTime)
-    .limit(limit)
+    .limit(cappedLimit)
     .offset(offset);
 
   // Fetch which booking IDs have at least one transcript in a single query
