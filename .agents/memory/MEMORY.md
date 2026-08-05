@@ -16,3 +16,4 @@
 - [Workflow limit](workflow-limit.md) — max 10 workflows; chain e2e scripts into one workflow when full; validation workflows only update via setValidationCommand
 - [Booking search trgm](booking-search-trgm.md) — ILIKE search needs trgm index on the exact expression; interleaved '%4%0%3%' digit patterns defeat trigram indexes, use regexp_replace digits column
 - [Expo web + react-native-maps](expo-web-maps.md) — importing react-native-maps anywhere web-reachable crashes the whole Expo web bundle; platform-split with .web.tsx; scope authed query caches by Clerk userId + clear on sign-out
+- [Prod outage debugging](prod-outage-debugging.md) — republish wipes old deployment logs (fetch before user republishes); anon curl 307→__replshield = visibility Private; post-merge parallel e2e ECONNREFUSED = race, re-run solo
