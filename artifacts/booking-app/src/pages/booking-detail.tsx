@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { JobberSyncCard, type JobberSyncStatus } from "@/components/jobber-sync-card";
+import { geocodeBooking } from "@/lib/geocode-booking";
 import { BookingMiniMap } from "@/components/booking-mini-map";
 import { PriceDiscountButtons } from "@/components/price-discount-buttons";
 
@@ -139,6 +140,35 @@ export default function BookingDetail() {
       }
     }
   });
+
+  // On-demand geocode for older bookings without saved coordinates (created
+  // before Places autocomplete). Same shared helper as the Schedule/Map pages;
+  // the server persists the result so later visits get the pin instantly.
+  // Keyed by booking id so navigating between bookings never shows a stale pin.
+  // resolvedCoordsById[id]: coords on success, null = definitively unresolvable,
+  // undefined = not looked up yet.
+  const [resolvedCoordsById, setResolvedCoordsById] = useState<
+    Record<number, [number, number] | null>
+  >({});
+  const [geocodePendingId, setGeocodePendingId] = useState<number | null>(null);
+  useEffect(() => {
+    if (!booking || booking.addressLat != null || !booking.address) return;
+    const bookingId = booking.id;
+    if (resolvedCoordsById[bookingId] !== undefined) return;
+    let cancelled = false;
+    setGeocodePendingId(bookingId);
+    geocodeBooking(getBaseUrl().replace(/\/$/, ""), bookingId).then((coords) => {
+      if (cancelled) return;
+      setResolvedCoordsById((prev) => ({ ...prev, [bookingId]: coords }));
+      setGeocodePendingId((prev) => (prev === bookingId ? null : prev));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [booking, resolvedCoordsById]);
+  // Only the current booking's lookup result / pending state count.
+  const resolvedCoords = booking ? resolvedCoordsById[booking.id] ?? null : null;
+  const geocodePending = booking != null && geocodePendingId === booking.id;
 
   const updateBooking = useUpdateBooking();
   const deleteBooking = useDeleteBooking();
@@ -816,6 +846,17 @@ export default function BookingDetail() {
                       lng={booking.addressLng}
                       baseUrl={apiBaseUrl}
                     />
+                  ) : resolvedCoords ? (
+                    <BookingMiniMap
+                      lat={resolvedCoords[0]}
+                      lng={resolvedCoords[1]}
+                      baseUrl={apiBaseUrl}
+                    />
+                  ) : booking.address && geocodePending ? (
+                    <div className="flex items-center gap-2 rounded-lg border border-dashed bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground">
+                      <MapPin className="w-4 h-4 shrink-0 opacity-60 animate-pulse" />
+                      <span>Locating address on the map…</span>
+                    </div>
                   ) : booking.address ? (
                     <MissingCoordinatesHint mode="view" />
                   ) : null}
