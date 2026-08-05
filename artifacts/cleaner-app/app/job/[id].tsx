@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -16,8 +16,14 @@ import { useGetBooking, useUpdateBooking } from '@workspace/api-client-react';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useAuth } from '@clerk/expo';
+import { useQueryClient } from '@tanstack/react-query';
 import { useColors } from '@/hooks/useColors';
-import { useGetStaffMe } from '@workspace/api-client-react';
+import {
+  useGetStaffMe,
+  getGetStaffMeQueryKey,
+  getGetBookingQueryKey,
+} from '@workspace/api-client-react';
 
 function formatTime(time: string) {
   const [h, m] = time.split(':').map(Number);
@@ -95,11 +101,42 @@ export default function JobDetailScreen() {
 
   // This route lives outside (home)'s StaffProvider, so resolve the caller's
   // staff record directly. The query is shared/cached with the provider's.
-  const { data: me } = useGetStaffMe({
-    query: { retry: 2, retryDelay: 2_000, staleTime: 5 * 60 * 1_000 } as any,
+  //
+  // Account-switch safety: because StaffProvider may not be mounted (deep link
+  // straight to this screen right after switching accounts), mirror its guard
+  // here — the moment the Clerk userId changes, PURGE both non-user-scoped
+  // cache entries this screen reads (/staff/me AND the ID-keyed booking), and
+  // keep both queries disabled + masked until the purge has run. Removing the
+  // cache entries (not just masking) matters: once the guard lifts, the hooks
+  // find an empty cache and must refetch under the NEW user's token — they can
+  // never serve the previous cleaner's staff record or booking.
+  const { userId } = useAuth();
+  const queryClient = useQueryClient();
+  const prevUserIdRef = useRef(userId);
+  const userChanged = prevUserIdRef.current !== userId;
+  useEffect(() => {
+    if (prevUserIdRef.current !== userId) {
+      // Purge BEFORE clearing the guard so no render can ever observe the old
+      // user's cached data: by the time userChanged flips false, both entries
+      // are gone and the hooks are in a fresh loading state.
+      queryClient.removeQueries({ queryKey: getGetStaffMeQueryKey() });
+      queryClient.removeQueries({ queryKey: getGetBookingQueryKey(bookingId) });
+      prevUserIdRef.current = userId;
+    }
+  }, [userId, bookingId, queryClient]);
+
+  const queriesEnabled = !!userId && !userChanged;
+  const { data: meRaw } = useGetStaffMe({
+    query: { enabled: queriesEnabled, retry: 2, retryDelay: 2_000, staleTime: 5 * 60 * 1_000 } as any,
   });
+  const me = userChanged ? undefined : meRaw;
   const staffId = me?.id ?? null;
-  const { data: booking, isLoading, isError } = useGetBooking(bookingId);
+  const {
+    data: bookingRaw,
+    isLoading,
+    isError,
+  } = useGetBooking(bookingId, { query: { enabled: queriesEnabled } as any });
+  const booking = userChanged ? undefined : bookingRaw;
   const { mutate: updateBooking, isPending: isUpdating } = useUpdateBooking();
 
   const topPad = insets.top + (Platform.OS === 'web' ? 67 : 0);
@@ -134,8 +171,8 @@ export default function JobDetailScreen() {
     ]);
   };
 
-  // --- Loading ---
-  if (isLoading) {
+  // --- Loading (treat a just-switched account as loading, never "not found") ---
+  if (isLoading || userChanged) {
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
         <ActivityIndicator color={colors.primary} size="large" />

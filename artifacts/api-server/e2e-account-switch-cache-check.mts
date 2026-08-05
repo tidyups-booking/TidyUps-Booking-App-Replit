@@ -42,6 +42,7 @@ import {
   getGetStaffScheduleQueryKey,
   getGetDayScheduleQueryKey,
   getGetStaffMeQueryKey,
+  getGetBookingQueryKey,
 } from "@workspace/api-client-react";
 
 const API_BASE = process.env.E2E_API_BASE ?? "http://127.0.0.1:8080/api";
@@ -104,6 +105,39 @@ console.log("Source-level guards:");
   check(
     "StaffContext disables /staff/me and masks data without a signed-in user",
     /enabled:\s*!!userId/.test(staffCtxSrc) && /userChanged\s*\?\s*undefined\s*:\s*data/.test(staffCtxSrc),
+  );
+
+  // The job detail route lives OUTSIDE (home)'s StaffProvider and resolves
+  // /staff/me itself, so it must carry the same account-switch guard.
+  const jobDetailSrc = read("app/job/[id].tsx");
+  check(
+    "job/[id] drops the cached /staff/me record when the Clerk userId changes",
+    /removeQueries\(\s*\{\s*queryKey:\s*getGetStaffMeQueryKey\(\)/.test(jobDetailSrc) &&
+      jobDetailSrc.includes("prevUserIdRef"),
+    "removeQueries(getGetStaffMeQueryKey()) on userId change is required",
+  );
+  check(
+    "job/[id] also purges the ID-keyed booking cache entry on userId change",
+    /removeQueries\(\s*\{\s*queryKey:\s*getGetBookingQueryKey\(bookingId\)/.test(jobDetailSrc),
+    "removeQueries(getGetBookingQueryKey(bookingId)) on userId change is required",
+  );
+  check(
+    "job/[id] purges the cache BEFORE clearing the user-change guard",
+    (() => {
+      const effect = jobDetailSrc.match(/useEffect\(\(\)\s*=>\s*\{[\s\S]*?\},\s*\[userId/)?.[0] ?? "";
+      const purge = effect.indexOf("removeQueries");
+      const clear = effect.indexOf("prevUserIdRef.current = userId");
+      return purge !== -1 && clear !== -1 && purge < clear;
+    })(),
+    "removeQueries must run before prevUserIdRef.current = userId",
+  );
+  check(
+    "job/[id] disables both queries during a switch and masks cached data",
+    /enabled:\s*queriesEnabled/.test(jobDetailSrc) &&
+      /queriesEnabled\s*=\s*!!userId\s*&&\s*!userChanged/.test(jobDetailSrc) &&
+      /userChanged\s*\?\s*undefined\s*:\s*meRaw/.test(jobDetailSrc) &&
+      /userChanged\s*\?\s*undefined\s*:\s*bookingRaw/.test(jobDetailSrc),
+    "queries must be disabled while userChanged and both data values masked",
   );
 
   const locCtxSrc = read("context/LocationContext.tsx");
@@ -271,6 +305,55 @@ try {
     "B's own-schedule key is empty while A is signed in (staff-scoped key)",
     queryClient.getQueryData(getGetStaffScheduleQueryKey(staffB, { date: today })) === undefined,
   );
+
+  // --- Deep-link job detail after a switch WITHOUT sign-out clear ----------
+  // Simulates app/job/[id].tsx opened right after the Clerk userId changes
+  // while the sign-out clear() never ran (session expiry / switch elsewhere):
+  // the screen's guard must purge /staff/me AND the ID-keyed booking entry,
+  // so an offline B can never observe A's booking.
+  {
+    const jobClient = new QueryClient();
+    const bookingKey = getGetBookingQueryKey(markerBookingId!);
+    await jobClient.fetchQuery({
+      queryKey: getGetStaffMeQueryKey(),
+      queryFn: () => apiJson(`/staff/me`, jwtA),
+    });
+    await jobClient.fetchQuery({
+      queryKey: bookingKey,
+      queryFn: () => apiJson(`/bookings/${markerBookingId}`, jwtA),
+    });
+    const seeded = jobClient.getQueryData<any>(bookingKey);
+    check(
+      "deep-link sim: A's booking detail is cached before the switch",
+      seeded != null && seeded.firstName === MARKER,
+    );
+    // The screen's userId-change effect (purge BEFORE the guard lifts):
+    jobClient.removeQueries({ queryKey: getGetStaffMeQueryKey() });
+    jobClient.removeQueries({ queryKey: bookingKey });
+    check(
+      "deep-link sim: purge leaves no /staff/me and no booking-detail entry",
+      jobClient.getQueryData(getGetStaffMeQueryKey()) === undefined &&
+        jobClient.getQueryData(bookingKey) === undefined,
+    );
+    // B opens the same deep link while offline: fetch fails, and the cache
+    // must surface NOTHING (never A's booking).
+    await jobClient
+      .fetchQuery({
+        queryKey: bookingKey,
+        queryFn: () => Promise.reject(new Error("network unreachable (simulated offline)")),
+        retry: false,
+      })
+      .catch(() => {});
+    const leaked = jobClient
+      .getQueryCache()
+      .getAll()
+      .filter((q) => JSON.stringify(q.state.data ?? null).includes(MARKER));
+    check(
+      "deep-link sim: offline B sees no booking data — never A's cached booking",
+      jobClient.getQueryData(bookingKey) === undefined && leaked.length === 0,
+      `${leaked.length} leaked entries`,
+    );
+  }
 
   // --- Sign out: profile.tsx does queryClient.clear() ----------------------
   queryClient.clear();
