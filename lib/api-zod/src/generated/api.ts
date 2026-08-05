@@ -342,6 +342,21 @@ export const CreateBookingResponse = zod.object({
 
 
 /**
+ * @summary Count bookings matching the same filters as listBookings
+ */
+export const CountBookingsQueryParams = zod.object({
+  "status": zod.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled']).optional(),
+  "staffId": zod.coerce.number().optional(),
+  "date": zod.coerce.string().optional(),
+  "q": zod.coerce.string().optional()
+})
+
+export const CountBookingsResponse = zod.object({
+  "total": zod.number()
+})
+
+
+/**
  * @summary Get booking dashboard stats
  */
 export const GetBookingStatsResponse = zod.object({

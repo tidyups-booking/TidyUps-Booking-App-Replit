@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { useGetDaySchedule, useListBookings } from "@workspace/api-client-react";
+import { useGetDaySchedule, useListBookings, useCountBookings } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -72,6 +72,12 @@ export default function Schedule() {
     { q: query, limit: 200 },
     { query: { enabled: searching } as Parameters<typeof useListBookings>[1] extends { query?: infer Q } ? Q : never }
   );
+  // Total match count so dispatchers know when results are capped/truncated.
+  const { data: countData } = useCountBookings(
+    { q: query },
+    { query: { enabled: searching } as Parameters<typeof useCountBookings>[1] extends { query?: infer Q } ? Q : never }
+  );
+  const totalMatches = countData?.total;
   const results = useMemo(() => {
     if (!searching || !matches) return [];
     // Upcoming jobs first (soonest on top), then past jobs (most recent first).
@@ -138,10 +144,17 @@ export default function Schedule() {
             <CardTitle className="text-sm font-semibold text-muted-foreground">
               {searchLoading
                 ? "Searching…"
-                : `${results.length} matching booking${results.length !== 1 ? "s" : ""}`}
+                : totalMatches !== undefined && totalMatches > results.length
+                  ? `Showing ${results.length} of ${totalMatches} matching bookings`
+                  : `${results.length} matching booking${results.length !== 1 ? "s" : ""}`}
             </CardTitle>
           </CardHeader>
           <CardContent className="p-3 pt-0 space-y-2">
+            {!searchLoading && totalMatches !== undefined && totalMatches > results.length && (
+              <p className="text-xs text-muted-foreground px-1">
+                Results truncated — refine your search to narrow the list.
+              </p>
+            )}
             {!searchLoading && results.length === 0 ? (
               <p className="py-4 text-center text-sm text-muted-foreground">
                 No bookings match "{search.trim()}".

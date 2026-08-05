@@ -194,19 +194,15 @@ router.get("/bookings/customers/search", async (req, res): Promise<void> => {
   res.json({ customers });
 });
 
-// GET /bookings — dispatcher only
-router.get("/bookings", async (req, res): Promise<void> => {
-  if (await guardDispatcher(req, res)) return;
-  const parsed = ListBookingsQueryParams.safeParse(req.query);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
-    return;
-  }
-
-  const { status, staffId, date, q, limit = 50, offset = 0 } = parsed.data;
-  // Sensible cap so a runaway limit can't drag the whole table into memory
-  const cappedLimit = Math.min(Math.max(1, limit), 200);
-
+// Build the shared filter conditions for /bookings and /bookings/count so the
+// reported total always matches what the list query would return.
+function buildBookingFilterConditions(params: {
+  status?: string;
+  staffId?: number;
+  date?: string;
+  q?: string;
+}) {
+  const { status, staffId, date, q } = params;
   const conditions = [];
   if (status) conditions.push(eq(bookingsTable.status, status as typeof bookingsTable.status._.data));
   if (staffId !== undefined) conditions.push(eq(bookingsTable.staffId, staffId));
@@ -237,6 +233,40 @@ router.get("/bookings", async (req, res): Promise<void> => {
     }
     conditions.push(or(...searchConditions)!);
   }
+  return conditions;
+}
+
+// GET /bookings/count — dispatcher only; total matches for the same filters as
+// GET /bookings, so the UI can say "showing X of Y". Must be before /:id.
+router.get("/bookings/count", async (req, res): Promise<void> => {
+  if (await guardDispatcher(req, res)) return;
+  const parsed = ListBookingsQueryParams.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const conditions = buildBookingFilterConditions(parsed.data);
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(bookingsTable)
+    .where(conditions.length > 0 ? and(...conditions) : undefined);
+  res.json({ total: row?.count ?? 0 });
+});
+
+// GET /bookings — dispatcher only
+router.get("/bookings", async (req, res): Promise<void> => {
+  if (await guardDispatcher(req, res)) return;
+  const parsed = ListBookingsQueryParams.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const { limit = 50, offset = 0 } = parsed.data;
+  // Sensible cap so a runaway limit can't drag the whole table into memory
+  const cappedLimit = Math.min(Math.max(1, limit), 200);
+
+  const conditions = buildBookingFilterConditions(parsed.data);
 
   const rows = await db
     .select()

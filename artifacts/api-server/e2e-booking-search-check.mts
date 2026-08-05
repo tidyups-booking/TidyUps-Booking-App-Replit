@@ -125,6 +125,25 @@ try {
   const capped = await list({ limit: "5000" });
   check("limit capped at 200", capped.length <= 200, `got ${capped.length}`);
 
+  // 6b. /bookings/count reports total matches for the same filters
+  const countRes = await fetch(`${API_BASE}/bookings/count?${new URLSearchParams({ q: "Zqxwv" })}`, {
+    headers: { Authorization: `Bearer ${jwt}` },
+  });
+  check("GET /bookings/count returns 200", countRes.ok, `status=${countRes.status}`);
+  const countBody = await countRes.json().catch(() => null);
+  const zqxwvRows = await list({ q: "Zqxwv" });
+  check(
+    "count matches list results for same q",
+    countBody?.total === zqxwvRows.length && countBody?.total >= 4,
+    `total=${countBody?.total}, list=${zqxwvRows.length} (4 test rows match)`,
+  );
+  const countStatusRes = await fetch(
+    `${API_BASE}/bookings/count?${new URLSearchParams({ q: "Zqxwv", status: "completed" })}`,
+    { headers: { Authorization: `Bearer ${jwt}` } },
+  );
+  const countStatusBody = await countStatusRes.json().catch(() => null);
+  check("count composes q + status filter", countStatusBody?.total === 1, `total=${countStatusBody?.total}, expected 1`);
+
   // 7. offset pagination disjoint
   const page1 = await list({ limit: "2", offset: "0" });
   const page2 = await list({ limit: "2", offset: "2" });

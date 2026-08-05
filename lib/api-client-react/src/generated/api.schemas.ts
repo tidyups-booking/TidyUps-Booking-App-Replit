@@ -480,6 +480,34 @@ export const ListBookingsStatus = {
   cancelled: 'cancelled',
 } as const;
 
+export type CountBookingsParams = {
+status?: CountBookingsStatus;
+staffId?: number;
+/**
+ * Filter by scheduled date (YYYY-MM-DD)
+ */
+date?: string;
+/**
+ * Server-side search matching address, city, client name, or phone (case-insensitive substring)
+ */
+q?: string;
+};
+
+export type CountBookingsStatus = typeof CountBookingsStatus[keyof typeof CountBookingsStatus];
+
+
+export const CountBookingsStatus = {
+  pending: 'pending',
+  confirmed: 'confirmed',
+  in_progress: 'in_progress',
+  completed: 'completed',
+  cancelled: 'cancelled',
+} as const;
+
+export type CountBookings200 = {
+  total: number;
+};
+
 export type ListStaffParams = {
 activeOnly?: boolean;
 };

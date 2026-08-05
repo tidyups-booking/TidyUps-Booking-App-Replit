@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "wouter";
-import { useListBookings, ListBookingsStatus, type Booking } from "@workspace/api-client-react";
+import { useListBookings, useCountBookings, ListBookingsStatus, type Booking } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,6 +52,14 @@ export default function BookingsList() {
 
   const hasMore = page !== undefined && page.length === PAGE_SIZE;
   const filteredBookings = rows;
+
+  // Total match count for the current filters so dispatchers can see
+  // "showing X of Y" instead of a silently truncated list.
+  const { data: countData } = useCountBookings({
+    ...(statusFilter === "all" ? {} : { status: statusFilter }),
+    ...(query ? { q: query } : {}),
+  });
+  const totalMatches = countData?.total;
 
   return (
     <div className="space-y-6 animate-in fade-in">
@@ -149,6 +157,12 @@ export default function BookingsList() {
               </tbody>
             </table>
           </div>
+          {!isLoading && filteredBookings.length > 0 && totalMatches !== undefined && (
+            <div className="px-4 py-2 border-t text-xs text-muted-foreground">
+              Showing {Math.min(filteredBookings.length, totalMatches)} of {totalMatches} booking{totalMatches !== 1 ? "s" : ""}
+              {hasMore && totalMatches > filteredBookings.length ? " — load more or refine your search." : ""}
+            </div>
+          )}
           {hasMore && (
             <div className="p-4 border-t text-center">
               <Button

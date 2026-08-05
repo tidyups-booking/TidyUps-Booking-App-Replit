@@ -29,6 +29,8 @@ import type {
   ContactMessageInput,
   ContactMessageStatusUpdate,
   ContactMessagesPage,
+  CountBookings200,
+  CountBookingsParams,
   ErrorResponse,
   GetDayScheduleParams,
   GetStaffScheduleParams,
@@ -896,6 +898,90 @@ export const useCreateBooking = <TError = ErrorType<ErrorResponse>,
       > => {
       return useMutation(getCreateBookingMutationOptions(options));
     }
+
+export const getCountBookingsUrl = (params?: CountBookingsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/bookings/count?${stringifiedParams}` : `/api/bookings/count`
+}
+
+/**
+ * @summary Count bookings matching the same filters as listBookings
+ */
+export const countBookings = async (params?: CountBookingsParams, options?: Parameters<typeof customFetch>[1]): Promise<CountBookings200> => {
+
+  return customFetch<CountBookings200>(getCountBookingsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getCountBookingsQueryKey = (params?: CountBookingsParams,) => {
+    return [
+    `/api/bookings/count`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getCountBookingsQueryOptions = <TData = Awaited<ReturnType<typeof countBookings>>, TError = ErrorType<unknown>>(params?: CountBookingsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof countBookings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getCountBookingsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof countBookings>>> = ({ signal }) => countBookings(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof countBookings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type CountBookingsQueryResult = NonNullable<Awaited<ReturnType<typeof countBookings>>>
+export type CountBookingsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Count bookings matching the same filters as listBookings
+ */
+
+export function useCountBookings<TData = Awaited<ReturnType<typeof countBookings>>, TError = ErrorType<unknown>>(
+ params?: CountBookingsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof countBookings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getCountBookingsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetBookingStatsUrl = () => {
 
