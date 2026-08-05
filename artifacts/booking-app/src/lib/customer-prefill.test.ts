@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildCustomerPrefill } from "./customer-prefill";
 import type { CustomerRecord } from "@/components/customer-autocomplete";
+import { bookingSchema } from "@/pages/new-booking";
 
 // Full record as returned by GET /api/bookings/customers/search
 const fullCustomer: CustomerRecord = {
@@ -82,6 +83,19 @@ describe("buildCustomerPrefill", () => {
     expect(m.get("province")).toBe("AB");
     expect(m.has("serviceType")).toBe(false);
     expect(m.has("frequency")).toBe(false);
+  });
+
+  it("only emits field names that exist on the New Booking form schema", () => {
+    // If a bookingSchema field is renamed, form.setValue would silently drop
+    // the pre-fill — this catches the drift at test time.
+    const schemaKeys = new Set(Object.keys(bookingSchema.shape));
+    const { entries, highlighted } = buildCustomerPrefill(fullCustomer);
+    for (const e of entries) {
+      expect(schemaKeys, `prefill field "${e.field}" missing from bookingSchema`).toContain(e.field);
+    }
+    for (const f of highlighted) {
+      expect(schemaKeys, `highlighted field "${f}" missing from bookingSchema`).toContain(f);
+    }
   });
 
   it("validates the user-typed identity/address fields on fill", () => {

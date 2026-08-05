@@ -23,7 +23,9 @@ import { buildPriceBreakdown } from "@/lib/price-breakdown";
 import { buildCustomerPrefill } from "@/lib/customer-prefill";
 import { PriceDiscountButtons } from "@/components/price-discount-buttons";
 
-const bookingSchema = z.object({
+// Exported so customer-prefill.test.ts can assert every pre-filled field name
+// still exists on this schema (catches silent breakage from a field rename).
+export const bookingSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
   phone: z.string().min(7, "Phone number is required"),
