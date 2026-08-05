@@ -57,6 +57,8 @@ The operations hub for 833 Tidyups home cleaning service (Edmonton, AB), live at
 
 _Populate as you build — explicit user instructions worth remembering across sessions._
 
+- **Publish cadence (owner request, 2026-08-05):** Richard does not want to republish after every task. After finishing work, always tell him explicitly which of two actions applies, with a clear recommendation: (a) "Saved — no need to publish yet" (default; work is committed/checkpointed automatically and accumulates safely), or (b) show the Publish suggestion card ONLY when it's genuinely worth putting live now (meaningful batch of user-visible improvements, or a fix live dispatchers need). Never make him guess — state the recommendation in plain language.
+
 ## Phone numbers (live-call system)
 
 - **(825) 533-4317** — the Twilio number. This is the ONLY number that activates the AI live-call panel; its voice webhook points at `https://bookcleaning.app/api/twilio/voice?sig=...` and calls forward to the business line.
