@@ -7,6 +7,7 @@ import { resolveCallerRole, guardDispatcher } from "../lib/callerRole.js";
 import {
   buildBookingSearchCondition,
   buildCustomerSearchQuery,
+  mapCustomerSearchRow,
 } from "./bookingSearchConditions.js";
 import {
   ListBookingsQueryParams,
@@ -139,24 +140,7 @@ router.get("/bookings/customers/search", async (req, res): Promise<void> => {
   // count (loyalty-discount eligibility) over all matching rows — no row
   // window — plus the most recent booking's details for form pre-fill.
   const rows = await buildCustomerSearchQuery(q);
-  const customers = rows.map(({ booking: r, bookingCount }) => ({
-    bookingCount,
-    firstName: r.firstName,
-    lastName: r.lastName,
-    phone: r.phone,
-    email: r.email,
-    address: r.address,
-    city: r.city,
-    province: r.province,
-    postalCode: r.postalCode,
-    addressLat: r.addressLat,
-    addressLng: r.addressLng,
-    bedrooms: r.bedrooms,
-    bathrooms: r.bathrooms,
-    serviceType: r.serviceType,
-    frequency: r.frequency,
-    lastBookingDate: r.scheduledDate,
-  }));
+  const customers = rows.map(mapCustomerSearchRow);
   res.json({ customers });
 });
 

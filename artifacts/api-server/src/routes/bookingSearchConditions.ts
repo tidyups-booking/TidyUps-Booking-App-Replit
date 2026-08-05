@@ -70,6 +70,43 @@ export function buildCustomerSearchQuery(q: string, limit = 6) {
 }
 
 /**
+ * Maps one grouped row from buildCustomerSearchQuery to the customer object
+ * returned by GET /bookings/customers/search.
+ *
+ * CONTRACT: the keys of the returned object must exactly match the
+ * CustomerRecord interface in
+ * artifacts/booking-app/src/components/customer-autocomplete.tsx — the
+ * booking form pre-fills from these fields. The
+ * e2e-customer-search-contract-check.mts script parses that interface and
+ * fails if either side drifts (renamed/dropped/added keys), so change both
+ * together.
+ */
+export function mapCustomerSearchRow(row: {
+  booking: typeof bookingsTable.$inferSelect;
+  bookingCount: number;
+}) {
+  const { booking: r, bookingCount } = row;
+  return {
+    bookingCount,
+    firstName: r.firstName,
+    lastName: r.lastName,
+    phone: r.phone,
+    email: r.email,
+    address: r.address,
+    city: r.city,
+    province: r.province,
+    postalCode: r.postalCode,
+    addressLat: r.addressLat,
+    addressLng: r.addressLng,
+    bedrooms: r.bedrooms,
+    bathrooms: r.bathrooms,
+    serviceType: r.serviceType,
+    frequency: r.frequency,
+    lastBookingDate: r.scheduledDate,
+  };
+}
+
+/**
  * Search conditions for GET /bookings/customers/search — returning-customer
  * autocomplete: matches name (first/last/full), address, and phone.
  */

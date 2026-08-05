@@ -11,21 +11,27 @@ runButton = "Project"
 name = "Project"
 mode = "parallel"
 author = "agent"
+
 [[workflows.workflow.tasks]]
 task = "workflow.run"
 args = "dispatcher-access-e2e"
+
 [[workflows.workflow.tasks]]
 task = "workflow.run"
 args = "contact-spam-filter-e2e"
+
 [[workflows.workflow.tasks]]
 task = "workflow.run"
 args = "invite-email-e2e"
+
 [[workflows.workflow.tasks]]
 task = "workflow.run"
 args = "unassigned-schedule-e2e"
+
 [[workflows.workflow.tasks]]
 task = "workflow.run"
 args = "staff-liveness-e2e"
+
 [[workflows.workflow.tasks]]
 task = "workflow.run"
 args = "cleaner-app-bundle-e2e"
@@ -58,9 +64,10 @@ name = "unassigned-schedule-e2e"
 author = "agent"
 [workflows.workflow.metadata]
 outputType = "console"
+
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd artifacts/api-server && pnpm exec tsx e2e-unassigned-schedule-check.mts && pnpm exec tsx e2e-booking-search-perf-check.mts && pnpm exec tsx e2e-customer-loyalty-count-check.mts && pnpm exec tsx e2e-safari-install-hint-check.mts && cd ../.. && pnpm --filter @workspace/booking-app run test"
+args = "cd artifacts/api-server && pnpm exec tsx e2e-unassigned-schedule-check.mts && pnpm exec tsx e2e-booking-search-perf-check.mts && pnpm exec tsx e2e-customer-loyalty-count-check.mts && pnpm exec tsx e2e-customer-search-contract-check.mts && pnpm exec tsx e2e-safari-install-hint-check.mts && cd ../.. && pnpm --filter @workspace/booking-app run test"
 [[workflows.workflow]]
 name = "staff-liveness-e2e"
 author = "agent"
