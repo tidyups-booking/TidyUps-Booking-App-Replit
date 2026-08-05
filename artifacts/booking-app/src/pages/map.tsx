@@ -171,47 +171,47 @@ function makeJobIcon(borderColor: string, isNearest: boolean, highlight = false)
   return html;
 }
 
-// ── Geocode (Nominatim) ───────────────────────────────────────────────────────
+// ── Geocode (server, on-demand) ──────────────────────────────────────────────
+// Bookings missing stored coordinates ask the API server, which geocodes via
+// Google and persists the result to the booking — so the pin is instant on
+// every later visit. (Replaces the old throttled client-side Nominatim path.)
 
-const geocodeCache = new Map<string, [number, number] | null>();
-// In-flight dedupe + a shared serial queue keep Nominatim usage at ~1 req/s
-// even when many bookings (month view) and repeated 30s polls ask at once.
-// Requests join the existing promise instead of re-queuing, so progress is
-// never lost when a poll replaces the bookings array mid-geocode.
-const geocodeInflight = new Map<string, Promise<[number, number] | null>>();
-let geocodeQueue: Promise<void> = Promise.resolve();
+const geocodeCache = new Map<number, [number, number] | null>();
+// In-flight dedupe: month views + 30s repolls can ask for the same booking at
+// once; requests join the existing promise instead of re-fetching.
+const geocodeInflight = new Map<number, Promise<[number, number] | null>>();
 
-function geocodeAddress(address: string, city: string): Promise<[number, number] | null> {
-  const key = `${address}, ${city}, AB, Canada`;
-  if (geocodeCache.has(key)) return Promise.resolve(geocodeCache.get(key)!);
-  const inflight = geocodeInflight.get(key);
+function geocodeBooking(baseUrl: string, bookingId: number): Promise<[number, number] | null> {
+  if (geocodeCache.has(bookingId)) return Promise.resolve(geocodeCache.get(bookingId)!);
+  const inflight = geocodeInflight.get(bookingId);
   if (inflight) return inflight;
 
-  const p = new Promise<[number, number] | null>((resolve) => {
-    geocodeQueue = geocodeQueue.then(async () => {
-      if (geocodeCache.has(key)) { resolve(geocodeCache.get(key)!); return; }
-      try {
-        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(key)}&format=json&limit=1&countrycodes=ca`;
-        const res = await fetch(url, { headers: { "Accept-Language": "en", "User-Agent": "833TidyupsDispatch/1.0" } });
-        const data = await res.json();
-        if (data.length > 0) {
-          const coord: [number, number] = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
-          geocodeCache.set(key, coord);
-          resolve(coord);
-        } else {
-          geocodeCache.set(key, null);
-          resolve(null);
-        }
-      } catch {
-        // Transient failure — don't cache, allow a later retry
-        resolve(null);
+  const p = (async (): Promise<[number, number] | null> => {
+    try {
+      const res = await fetch(`${baseUrl}/api/map/bookings/${bookingId}/geocode`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (res.status === 422) {
+        // Definitive "address not geocodable" — don't re-ask this session
+        geocodeCache.set(bookingId, null);
+        return null;
       }
-      // Pace the queue: ~1 request/second (Nominatim usage policy)
-      await new Promise(r => setTimeout(r, 1100));
-    });
-  });
-  geocodeInflight.set(key, p);
-  p.finally(() => geocodeInflight.delete(key));
+      if (!res.ok) return null; // transient — allow a later retry
+      const data = await res.json();
+      if (typeof data.lat === "number" && typeof data.lng === "number") {
+        const coord: [number, number] = [data.lat, data.lng];
+        geocodeCache.set(bookingId, coord);
+        return coord;
+      }
+      return null;
+    } catch {
+      // Transient failure — don't cache, allow a later retry
+      return null;
+    }
+  })();
+  geocodeInflight.set(bookingId, p);
+  p.finally(() => geocodeInflight.delete(bookingId));
   return p;
 }
 
@@ -830,14 +830,15 @@ export default function MapPage() {
     const coordsForFit: [number, number][] = [];
 
     bookings.forEach(async (b) => {
-      // Use stored coordinates if available, otherwise fall back to Nominatim
-      // geocoding (self-throttled to ~1 req/s with in-flight dedupe, so month
-      // views and 30s repolls never hammer the service or lose progress).
+      // Use stored coordinates if available, otherwise ask the server to
+      // geocode on demand (it persists the result, so the pin is instant on
+      // every later visit). In-flight dedupe prevents duplicate requests
+      // across month views and 30s repolls.
       let coords: [number, number] | null = null;
       if (b.addressLat != null && b.addressLng != null) {
         coords = [b.addressLat, b.addressLng];
       } else {
-        coords = await geocodeAddress(b.address, b.city);
+        coords = await geocodeBooking(baseUrl, b.id);
       }
       if (gen !== jobRenderGenRef.current || !coords || !mapRef.current) return;
 

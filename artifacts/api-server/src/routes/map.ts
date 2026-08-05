@@ -10,6 +10,7 @@ import {
 } from "@workspace/db";
 import { requireAuth } from "../app.js";
 import { guardDispatcher, guardStaff } from "../lib/callerRole.js";
+import { geocodeToCoords } from "../services/geocode.js";
 
 const router: IRouter = Router();
 
@@ -292,6 +293,65 @@ router.delete("/map/pins/:id", async (req, res): Promise<void> => {
     return;
   }
   res.json({ ok: true });
+});
+
+// POST /map/bookings/:id/geocode — any staff member. On-demand geocode for a
+// booking missing stored coordinates (old bookings the sync no longer touches).
+// Geocodes with Google, persists to bookings.address_lat/lng, returns coords.
+router.post("/map/bookings/:id/geocode", async (req, res): Promise<void> => {
+  if (!(await guardStaff(req, res))) return;
+  if (!/^\d+$/.test(req.params.id)) {
+    res.status(400).json({ error: "Invalid booking id" });
+    return;
+  }
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id)) {
+    res.status(400).json({ error: "Invalid booking id" });
+    return;
+  }
+
+  const [booking] = await db
+    .select({
+      id: bookingsTable.id,
+      address: bookingsTable.address,
+      city: bookingsTable.city,
+      province: bookingsTable.province,
+      postalCode: bookingsTable.postalCode,
+      addressLat: bookingsTable.addressLat,
+      addressLng: bookingsTable.addressLng,
+    })
+    .from(bookingsTable)
+    .where(eq(bookingsTable.id, id));
+
+  if (!booking) {
+    res.status(404).json({ error: "Booking not found" });
+    return;
+  }
+
+  // Already has coords (e.g. another client geocoded it moments ago) — return
+  // them without hitting Google again.
+  if (booking.addressLat != null && booking.addressLng != null) {
+    res.json({ lat: booking.addressLat, lng: booking.addressLng });
+    return;
+  }
+
+  const coords = await geocodeToCoords(
+    booking.address,
+    booking.city,
+    booking.province,
+    booking.postalCode,
+  );
+  if (!coords) {
+    res.status(422).json({ error: "Address could not be geocoded" });
+    return;
+  }
+
+  await db
+    .update(bookingsTable)
+    .set({ addressLat: coords.lat, addressLng: coords.lng })
+    .where(eq(bookingsTable.id, id));
+
+  res.json({ lat: coords.lat, lng: coords.lng });
 });
 
 // GET /map/counts?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
